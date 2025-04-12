@@ -112,7 +112,7 @@ impl Executor {
                 Assets::get_asset(strategy_pair_asset.pair_asset.quote_asset_id).await;
 
             // get orders
-            let open_orders = Orders::get_stored_orders(
+            let stored_orders = Orders::get_stored_orders(
                 strategy_pair_asset.pair_asset.base_asset_id,
                 strategy_pair_asset.pair_asset.quote_asset_id,
             )
@@ -122,12 +122,18 @@ impl Executor {
             let mut new_orders = Strategies::<Core>::check_price_action_strategies(
                 &strategy_pair_asset.strategy,
                 &ticker,
-                &open_orders,
+                &stored_orders,
                 &strategy_pair_asset.pair_asset,
                 &quote_asset,
             );
 
             let last_price = ticker.last_price;
+
+            let open_orders: Vec<orders::Model> = stored_orders
+                .iter()
+                .filter(|order| order.status_id == 1)
+                .cloned()
+                .collect();
 
             new_orders.append(&mut Strategies::<Core>::check_open_orders(
                 open_orders,

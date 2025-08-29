@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 
 use super::{Balance, CommissionRates};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct AccountInformation {
     pub maker_commission: Decimal,

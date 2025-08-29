@@ -3,61 +3,125 @@ use models::entities::ledgers::{ActiveModel, Column, Entity, Model};
 use sea_orm::{
     ActiveValue, ColumnTrait, Condition, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder,
 };
+use tracing::error_span;
 
 use crate::{
     types::Ledgers,
-    utils::{Data, Outcome, OutcomeError},
+    utils::{handle_db_error, Data, Response},
 };
 
 impl Ledgers<Data> {
-    pub async fn insert_ledger(
-        db: &DatabaseConnection,
-        ledger_type: Self,
-    ) -> Outcome<Model, String, String> {
+    pub async fn insert_ledger_data(self, db: &DatabaseConnection) -> Result<Model, Response> {
         let active_model_ledger = ActiveModel {
             id: ActiveValue::NotSet,
-            order_id: ActiveValue::Set(ledger_type.model.order_id),
-            record_type_id: ActiveValue::Set(ledger_type.model.record_type_id),
+            order_id: ActiveValue::Set(self.model.order_id),
+            record_type_id: ActiveValue::Set(self.model.record_type_id.unwrap_or_default()),
             creation_date: ActiveValue::Set(Local::now().naive_local()),
-            base_asset_id: ActiveValue::Set(ledger_type.model.base_asset_id),
-            base_asset_amount: ActiveValue::Set(ledger_type.model.base_asset_amount),
-            base_asset_previous_balance: ActiveValue::Set(
-                ledger_type.model.base_asset_previous_balance,
+            asset_id: ActiveValue::Set(self.model.asset_id.unwrap_or_default()),
+            free_amount: ActiveValue::Set(self.model.free_amount.unwrap_or_default()),
+            free_previous_balance: ActiveValue::Set(
+                self.model.free_previous_balance.unwrap_or_default(),
             ),
-            base_asset_new_balance: ActiveValue::Set(
-                ledger_type.model.base_asset_new_balance,
+            free_new_balance: ActiveValue::Set(self.model.free_new_balance.unwrap_or_default()),
+            locked_amount: ActiveValue::Set(self.model.locked_amount.unwrap_or_default()),
+            locked_previous_balance: ActiveValue::Set(
+                self.model.locked_previous_balance.unwrap_or_default(),
             ),
-            quote_asset_id: ActiveValue::Set(ledger_type.model.quote_asset_id),
-            quote_asset_amount: ActiveValue::Set(ledger_type.model.quote_asset_amount),
-            quote_asset_previous_balance: ActiveValue::Set(
-                ledger_type.model.quote_asset_previous_balance,
-            ),
-            quote_asset_new_balance: ActiveValue::Set(ledger_type.model.quote_asset_new_balance),
+            locked_new_balance: ActiveValue::Set(self.model.locked_new_balance.unwrap_or_default()),
         };
 
-        Entity::insert(active_model_ledger)
+        match Entity::insert(active_model_ledger)
             .exec_with_returning(db)
             .await
-            .map(|val| Outcome::Ok(val))
-            .map_err(|err| OutcomeError::Error(err.to_string()))?
+        {
+            Err(err) => {
+                error_span!("error - database", error = ?err);
+
+                return Err(handle_db_error(&err));
+            }
+            Ok(val) => Ok(val),
+        }
     }
 
-    pub async fn select_ledger(db: &DatabaseConnection, id: i32) -> Outcome<Model, String, String> {
-        Entity::find()
-            .filter(Condition::all().add(Column::Id.eq(id)))
+    pub async fn select_ledger_data(
+        self,
+        db: &DatabaseConnection,
+    ) -> Result<Option<Model>, Response> {
+        let mut condition = Condition::all();
+
+        if let Some(id) = self.model.id {
+            condition = condition.add(Column::Id.eq(id))
+        }
+
+        if let Some(order_id) = self.model.order_id {
+            condition = condition.add(Column::OrderId.eq(order_id))
+        }
+
+        if let Some(record_type_id) = self.model.record_type_id {
+            condition = condition.add(Column::RecordTypeId.eq(record_type_id))
+        }
+
+        if let Some(creation_date) = self.model.creation_date {
+            condition = condition.add(Column::CreationDate.eq(creation_date))
+        }
+
+        if let Some(asset_id) = self.model.asset_id {
+            condition = condition.add(Column::AssetId.eq(asset_id))
+        }
+
+        match Entity::find()
+            .filter(condition)
+            .order_by(Column::CreationDate, sea_orm::Order::Desc)
             .one(db)
             .await
-            .map_err(|err| OutcomeError::Error(err.to_string()))?
-            .ok_or_else(|| OutcomeError::Failure("Ledger not found".to_string()))
+        {
+            Err(err) => {
+                error_span!("error - database", error = ?err);
+
+                return Err(handle_db_error(&err));
+            }
+            Ok(val) => Ok(val),
+        }
     }
 
-    pub async fn select_ledgers(db: &DatabaseConnection) -> Outcome<Vec<Model>, String, String> {
-        let ledgers = Entity::find()
+    pub async fn select_ledgers_data(
+        self,
+        db: &DatabaseConnection,
+    ) -> Result<Vec<Model>, Response> {
+        let mut condition = Condition::all();
+
+        if let Some(id) = self.model.id {
+            condition = condition.add(Column::Id.eq(id))
+        }
+
+        if let Some(order_id) = self.model.order_id {
+            condition = condition.add(Column::OrderId.eq(order_id))
+        }
+
+        if let Some(record_type_id) = self.model.record_type_id {
+            condition = condition.add(Column::RecordTypeId.eq(record_type_id))
+        }
+
+        if let Some(creation_date) = self.model.creation_date {
+            condition = condition.add(Column::CreationDate.eq(creation_date))
+        }
+
+        if let Some(asset_id) = self.model.asset_id {
+            condition = condition.add(Column::AssetId.eq(asset_id))
+        }
+
+        match Entity::find()
+            .filter(condition)
             .order_by(Column::CreationDate, sea_orm::Order::Desc)
             .all(db)
             .await
-            .map_err(|err| OutcomeError::Error(err.to_string()))?;
+        {
+            Err(err) => {
+                error_span!("error - database", error = ?err);
 
-        Outcome::Ok(ledgers)
+                return Err(handle_db_error(&err));
+            }
+            Ok(val) => Ok(val),
+        }
     }
 }

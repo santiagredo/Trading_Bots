@@ -3,101 +3,131 @@ use sea_orm::{
     ActiveModelTrait, ActiveValue, ColumnTrait, Condition, DatabaseConnection, EntityTrait,
     QueryFilter,
 };
+use tracing::error_span;
 
 use crate::{
     types::Assets,
-    utils::{Data, Outcome, OutcomeError},
+    utils::{handle_db_error, Data, Response},
 };
 
 impl Assets<Data> {
-    pub async fn insert_asset(
-        db: &DatabaseConnection,
-        asset_type: Self,
-    ) -> Outcome<Model, String, String> {
+    pub async fn insert_asset_data(self, db: &DatabaseConnection) -> Result<Model, Response> {
         let active_model_asset = ActiveModel {
             id: ActiveValue::NotSet,
-            name: ActiveValue::Set(asset_type.model.name),
-            ticker: ActiveValue::Set(asset_type.model.ticker),
-            free: ActiveValue::Set(asset_type.model.free),
-            locked: ActiveValue::Set(asset_type.model.locked),
+            name: ActiveValue::Set(self.model.name.unwrap_or_default()),
+            ticker: ActiveValue::Set(self.model.ticker.unwrap_or_default()),
+            free: ActiveValue::Set(self.model.free.unwrap_or_default()),
+            locked: ActiveValue::Set(self.model.locked.unwrap_or_default()),
         };
 
-        Entity::insert(active_model_asset)
+        match Entity::insert(active_model_asset)
             .exec_with_returning(db)
             .await
-            .map(|val| Outcome::Ok(val))
-            .map_err(|err| OutcomeError::Error(err.to_string()))?
+        {
+            Err(err) => {
+                error_span!("error - database", error = ?err);
+
+                return Err(handle_db_error(&err));
+            }
+            Ok(val) => Ok(val),
+        }
     }
 
-    pub async fn select_asset(
+    pub async fn select_asset_data(
+        self,
         db: &DatabaseConnection,
-        asset_type: Self,
-    ) -> Outcome<Model, String, String> {
+    ) -> Result<Option<Model>, Response> {
         let mut condition = Condition::all();
 
-        if asset_type.model.id != 0 {
-            condition = condition.add(Column::Id.eq(asset_type.model.id))
+        if let Some(id) = self.model.id {
+            condition = condition.add(Column::Id.eq(id))
         }
 
-        if !asset_type.model.name.is_empty() {
-            condition = condition.add(Column::Name.eq(asset_type.model.name))
+        if let Some(name) = self.model.name {
+            condition = condition.add(Column::Name.eq(name))
         }
 
-        if !asset_type.model.ticker.is_empty() {
-            condition = condition.add(Column::Ticker.eq(asset_type.model.ticker))
+        if let Some(ticker) = self.model.ticker {
+            condition = condition.add(Column::Name.eq(ticker))
         }
 
-        Entity::find()
-            .filter(condition)
-            .one(db)
-            .await
-            .map_err(|err| OutcomeError::Error(err.to_string()))?
-            .ok_or_else(|| OutcomeError::Failure("Asset not found".to_string()))
+        match Entity::find().filter(condition).one(db).await {
+            Err(err) => {
+                error_span!("error - database", error = ?err);
+
+                return Err(handle_db_error(&err));
+            }
+            Ok(val) => Ok(val),
+        }
     }
 
-    pub async fn select_assets(db: &DatabaseConnection) -> Outcome<Vec<Model>, String, String> {
-        let assets = Entity::find()
-            .all(db)
-            .await
-            .map_err(|err| OutcomeError::Error(err.to_string()))?;
+    pub async fn select_assets_data(self, db: &DatabaseConnection) -> Result<Vec<Model>, Response> {
+        let mut condition = Condition::all();
 
-        Outcome::Ok(assets)
+        if let Some(id) = self.model.id {
+            condition = condition.add(Column::Id.eq(id))
+        }
+
+        if let Some(name) = self.model.name {
+            condition = condition.add(Column::Name.eq(name))
+        }
+
+        if let Some(ticker) = self.model.ticker {
+            condition = condition.add(Column::Name.eq(ticker))
+        }
+
+        match Entity::find().filter(condition).all(db).await {
+            Err(err) => {
+                error_span!("error - database", error = ?err);
+
+                return Err(handle_db_error(&err));
+            }
+            Ok(val) => Ok(val),
+        }
     }
 
-    pub async fn update_asset(
-        db: &DatabaseConnection,
-        asset_type: Self,
-    ) -> Outcome<Model, String, String> {
+    pub async fn update_asset_data(self, db: &DatabaseConnection) -> Result<Model, Response> {
         let mut active_model_asset = assets::ActiveModel {
-            id: ActiveValue::Unchanged(asset_type.model.id),
-            free: ActiveValue::Set(asset_type.model.free),
-            locked: ActiveValue::Set(asset_type.model.locked),
+            id: ActiveValue::Unchanged(self.model.id.unwrap_or_default()),
             ..Default::default()
         };
 
-        if !asset_type.model.name.is_empty() {
-            active_model_asset.name = ActiveValue::Set(asset_type.model.name);
+        if self.model.name.is_some() {
+            active_model_asset.name = ActiveValue::Set(self.model.name.unwrap_or_default());
         }
 
-        if !asset_type.model.ticker.is_empty() {
-            active_model_asset.ticker = ActiveValue::set(asset_type.model.ticker);
+        if self.model.ticker.is_some() {
+            active_model_asset.ticker = ActiveValue::set(self.model.ticker.unwrap_or_default());
+        }
+        if self.model.free.is_some() {
+            active_model_asset.free = ActiveValue::set(self.model.free.unwrap_or_default());
         }
 
-        active_model_asset
-            .update(db)
-            .await
-            .map(|val| Outcome::Ok(val))
-            .map_err(|err| OutcomeError::Error(err.to_string()))?
+        if self.model.locked.is_some() {
+            active_model_asset.locked = ActiveValue::set(self.model.locked.unwrap_or_default());
+        }
+
+        match active_model_asset.update(db).await {
+            Err(err) => {
+                error_span!("error - database", error = ?err);
+
+                return Err(handle_db_error(&err));
+            }
+            Ok(val) => Ok(val),
+        }
     }
 
-    pub async fn delete_asset(
-        db: &DatabaseConnection,
-        asset_type: Self,
-    ) -> Outcome<u64, String, String> {
-        Entity::delete_by_id(asset_type.model.id)
+    pub async fn delete_asset_data(self, db: &DatabaseConnection) -> Result<u64, Response> {
+        match Entity::delete_by_id(self.model.id.unwrap_or_default())
             .exec(db)
             .await
-            .map(|val| Outcome::Ok(val.rows_affected))
-            .map_err(|err| OutcomeError::Error(err.to_string()))?
+        {
+            Err(err) => {
+                error_span!("error - database", error = ?err);
+
+                return Err(handle_db_error(&err));
+            }
+            Ok(val) => Ok(val.rows_affected),
+        }
     }
 }

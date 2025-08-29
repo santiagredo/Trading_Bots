@@ -1,4 +1,4 @@
-use std::{marker::PhantomData, sync::Arc};
+use std::{collections::HashMap, marker::PhantomData, sync::Arc};
 
 use models::structs::Ticker;
 use once_cell::sync::Lazy;
@@ -12,16 +12,14 @@ pub struct Tickers<Phase = Core> {
     pub model: Ticker,
 }
 
-static TICKERS: Lazy<Arc<RwLock<Vec<Ticker>>>> = Lazy::new(|| Arc::new(RwLock::new(Vec::new())));
+static TICKERS: Lazy<Arc<RwLock<HashMap<String, Ticker>>>> =
+    Lazy::new(|| Arc::new(RwLock::new(HashMap::new())));
 
 impl Tickers {
     pub async fn set_ticker(model: Ticker) {
         let mut tickers = TICKERS.write().await;
 
-        if let Some(existing) = tickers
-            .iter_mut()
-            .find(|item| item.symbol == model.symbol && item.event_type == model.event_type)
-        {
+        if let Some(existing) = tickers.get_mut(&model.symbol) {
             existing.event_time = model.event_time;
             existing.price_change = model.price_change;
             existing.price_change_percent = model.price_change_percent;
@@ -44,17 +42,12 @@ impl Tickers {
             existing.last_trade_id = model.last_trade_id;
             existing.total_trades = model.total_trades;
         } else {
-            tickers.push(model);
+            tickers.insert(model.symbol.clone(), model);
         }
     }
 
-    pub async fn get_tickers(symbol: String) -> Vec<Ticker> {
+    pub async fn get_ticker(symbol: String) -> Option<Ticker> {
         let tickers = TICKERS.read().await;
-
-        tickers
-            .iter()
-            .filter(|ticker| ticker.symbol == symbol)
-            .cloned()
-            .collect()
+        tickers.get(&symbol).cloned()
     }
 }

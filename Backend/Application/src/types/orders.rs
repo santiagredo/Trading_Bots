@@ -1,51 +1,113 @@
-use std::{marker::PhantomData, sync::Arc};
+use std::marker::PhantomData;
 
-use models::entities::orders::Model;
-use once_cell::sync::Lazy;
-use tokio::sync::RwLock;
+use models::{
+    entities::{
+        actions,
+        orders::{self, Model},
+        pairs, strategies,
+    },
+    structs::{request::OrderRequest, Ticker},
+};
 
-use crate::utils::Core;
+use crate::utils::{Response, Types};
 
 #[derive(Debug, Default)]
-pub struct Orders<Phase = Core> {
+pub struct Orders<Phase = Types> {
     pub phase: PhantomData<Phase>,
-    pub model: Model,
+    pub model: OrderRequest,
 }
 
-pub static ORDERS: Lazy<Arc<RwLock<Vec<Model>>>> = Lazy::new(|| Arc::new(RwLock::new(Vec::new())));
+// pub static ORDERS: Lazy<Arc<RwLock<Vec<Model>>>> = Lazy::new(|| Arc::new(RwLock::new(Vec::new())));
 
 impl Orders {
-    pub async fn get_stored_orders(base_asset_id: i32, quote_asset_id: i32) -> Vec<Model> {
-        let orders = ORDERS.read().await;
-
-        orders
-            .iter()
-            .filter(|order| {
-                order.base_asset_id == base_asset_id && order.quote_asset_id == quote_asset_id
-            })
-            .cloned()
-            .collect()
+    pub fn new(model: OrderRequest) -> Self {
+        Self {
+            phase: PhantomData::<Types>,
+            model,
+        }
     }
 
-    pub async fn reload_stored_orders() {
-        let mut all_orders = Vec::new();
+    pub fn default() -> Self {
+        Self {
+            phase: PhantomData::<Types>,
+            model: OrderRequest {
+                ..Default::default()
+            },
+        }
+    }
 
-        let mut open_orders = Orders::<Core>::select_open_orders()
-            .await
-            .unwrap_or_default();
+    pub fn from_model(mut self, order: &orders::Model) -> Self {
+        let model = OrderRequest {
+            id: Some(order.id),
+            status_id: Some(order.status_id),
+            creation_date: Some(order.creation_date),
+            update_date: Some(order.update_date),
+            is_sell: Some(order.is_sell),
+            strategy_id: Some(order.strategy_id),
+            base_asset_id: Some(order.base_asset_id),
+            base_asset_amount: Some(order.base_asset_amount),
+            quote_asset_id: Some(order.quote_asset_id),
+            quote_asset_amount: Some(order.quote_asset_amount),
+            price_entry: Some(order.price_entry),
+            price_target: Some(order.price_target),
+            price_abort: Some(order.price_abort),
+        };
 
-        all_orders.append(&mut open_orders);
+        self.model = model;
+        self
+    }
 
-        let mut last_order_by_strategy = Orders::<Core>::select_completed_orders()
-            .await
-            .unwrap_or_default();
+    pub fn from_strategy(mut self, strategy: &strategies::Model) -> Self {
+        self.model.status_id = Some(1);
+        self.model.strategy_id = Some(strategy.id);
 
-        all_orders.append(&mut last_order_by_strategy);
+        self
+    }
 
-        let mut orders = ORDERS.write().await;
+    pub fn from_action(mut self, action: &actions::Model) -> Self {
+        self.model.is_sell = Some(action.is_sell);
 
-        *orders = all_orders;
+        let action_value = action.value;
 
-        println!("Recent orders: {} \n", orders.iter().count());
+        self.model.base_asset_amount = Some(action_value.clone());
+
+        self
+    }
+
+    pub fn from_pair(mut self, pair: &pairs::Model) -> Self {
+        self.model.base_asset_id = Some(pair.base_asset_id);
+        self.model.quote_asset_id = Some(pair.quote_asset_id);
+
+        self
+    }
+
+    pub fn from_ticker(mut self, ticker: &Ticker) -> Self {
+        self.model.price_entry = Some(ticker.last_price);
+        self.model.price_target = Some(ticker.last_price);
+
+        self
+    }
+}
+
+impl<Phase> Orders<Phase> {
+    pub fn next_phase<Next>(self) -> Orders<Next> {
+        Orders {
+            phase: PhantomData::<Next>,
+            model: self.model,
+        }
+    }
+}
+
+impl Orders<Types> {
+    pub async fn insert_order(self) -> Result<Model, Response> {
+        self.next_phase().insert_order_core().await
+    }
+
+    pub async fn select_order(self) -> Result<Model, Response> {
+        self.next_phase().select_order_core().await
+    }
+
+    pub async fn update_order(self) -> Result<Model, Response> {
+        self.next_phase().update_order_core().await
     }
 }

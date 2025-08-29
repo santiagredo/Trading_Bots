@@ -20,27 +20,16 @@ impl MigrationTrait for Migration {
                     .col(ColumnDef::new(Ledgers::OrderId).integer().null())
                     .col(integer(Ledgers::RecordTypeId))
                     .col(date_time(Ledgers::CreationDate))
-                    .col(integer(Ledgers::BaseAssetId))
-                    .col(decimal_len(Ledgers::BaseAssetAmount, 18, 8))
-                    .col(decimal_len(Ledgers::BaseAssetPreviousBalance, 18, 8))
-                    .col(decimal_len(Ledgers::BaseAssetNewBalance, 18, 8))
-                    .col(integer(Ledgers::QuoteAssetId))
-                    .col(decimal_len(Ledgers::QuoteAssetAmount, 18, 8))
-                    .col(decimal_len(Ledgers::QuoteAssetPreviousBalance, 18, 8))
-                    .col(decimal_len(Ledgers::QuoteAssetNewBalance, 18, 8))
+                    .col(integer(Ledgers::AssetId))
+                    .col(decimal_len(Ledgers::FreeAmount, 18, 8))
+                    .col(decimal_len(Ledgers::FreePreviousBalance, 18, 8))
+                    .col(decimal_len(Ledgers::FreeNewBalance, 18, 8))
+                    .col(decimal_len(Ledgers::LockedAmount, 18, 8))
+                    .col(decimal_len(Ledgers::LockedPreviousBalance, 18, 8))
+                    .col(decimal_len(Ledgers::LockedNewBalance, 18, 8))
                     .to_owned(),
             )
             .await?;
-
-        // manager
-        //     .create_foreign_key(
-        //         ForeignKey::create()
-        //             .name("fk_ledgers_orders")
-        //             .from(Ledgers::Table, Ledgers::OrderId)
-        //             .to(Orders::Table, Orders::Id)
-        //             .to_owned(),
-        //     )
-        //     .await?;
 
         manager
             .create_foreign_key(
@@ -55,18 +44,8 @@ impl MigrationTrait for Migration {
         manager
             .create_foreign_key(
                 ForeignKey::create()
-                    .name("fk_ledgers_assets-base")
-                    .from(Ledgers::Table, Ledgers::BaseAssetId)
-                    .to(Assets::Table, Assets::Id)
-                    .to_owned(),
-            )
-            .await?;
-
-        manager
-            .create_foreign_key(
-                ForeignKey::create()
-                    .name("fk_ledgers_assets-quote")
-                    .from(Ledgers::Table, Ledgers::QuoteAssetId)
+                    .name("fk_ledgers_assets")
+                    .from(Ledgers::Table, Ledgers::AssetId)
                     .to(Assets::Table, Assets::Id)
                     .to_owned(),
             )
@@ -89,12 +68,11 @@ enum Ledgers {
     OrderId,
     RecordTypeId,
     CreationDate,
-    BaseAssetId,
-    BaseAssetAmount,
-    BaseAssetPreviousBalance,
-    BaseAssetNewBalance,
-    QuoteAssetId,
-    QuoteAssetAmount,
-    QuoteAssetPreviousBalance,
-    QuoteAssetNewBalance,
+    AssetId,
+    FreeAmount,
+    FreePreviousBalance,
+    FreeNewBalance,
+    LockedAmount,
+    LockedPreviousBalance,
+    LockedNewBalance,
 }

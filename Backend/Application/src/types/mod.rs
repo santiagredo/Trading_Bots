@@ -13,20 +13,41 @@ pub use ledgers::*;
 pub mod orders;
 pub use orders::*;
 
-pub mod executor;
-pub use executor::*;
-
-pub mod pair_assets;
-pub use pair_assets::*;
+pub mod pairs;
+pub use pairs::*;
 
 pub mod ticker;
 pub use ticker::*;
 
-pub mod mini_ticker;
-pub use mini_ticker::*;
+pub mod binance;
+pub use binance::*;
 
-pub mod strategies_pair_assets;
-pub use strategies_pair_assets::*;
+pub mod indicators;
+pub use indicators::*;
 
-pub mod solicitor;
-pub use solicitor::*;
+pub mod actions;
+pub use actions::*;
+
+pub mod senders;
+pub use senders::*;
+
+pub mod subscribed_indicators;
+pub use subscribed_indicators::*;
+
+pub mod strategies_overview;
+pub use strategies_overview::*;
+
+pub mod websocket_streams;
+pub use websocket_streams::*;
+
+pub mod user_commands;
+pub use user_commands::*;
+
+pub mod coin_paprika;
+pub use coin_paprika::*;
+
+pub mod tasks;
+pub use tasks::*;
+
+pub mod metrics;
+pub use metrics::*;

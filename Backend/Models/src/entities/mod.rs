@@ -2,11 +2,12 @@
 
 pub mod prelude;
 
+pub mod actions;
 pub mod assets;
+pub mod indicators;
 pub mod ledgers;
 pub mod orders;
-pub mod pair_assets;
+pub mod pairs;
 pub mod record_types;
 pub mod status;
 pub mod strategies;
-pub mod strategies_pair_assets;

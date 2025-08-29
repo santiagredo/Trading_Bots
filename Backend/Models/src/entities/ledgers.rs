@@ -20,14 +20,13 @@ pub struct Model {
     pub order_id: Option<i32>,
     pub record_type_id: i32,
     pub creation_date: DateTime,
-    pub base_asset_id: i32,
-    pub base_asset_amount: Decimal,
-    pub base_asset_previous_balance: Decimal,
-    pub base_asset_new_balance: Decimal,
-    pub quote_asset_id: i32,
-    pub quote_asset_amount: Decimal,
-    pub quote_asset_previous_balance: Decimal,
-    pub quote_asset_new_balance: Decimal,
+    pub asset_id: i32,
+    pub free_amount: Decimal,
+    pub free_previous_balance: Decimal,
+    pub free_new_balance: Decimal,
+    pub locked_amount: Decimal,
+    pub locked_previous_balance: Decimal,
+    pub locked_new_balance: Decimal,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveColumn)]
@@ -36,14 +35,13 @@ pub enum Column {
     OrderId,
     RecordTypeId,
     CreationDate,
-    BaseAssetId,
-    BaseAssetAmount,
-    BaseAssetPreviousBalance,
-    BaseAssetNewBalance,
-    QuoteAssetId,
-    QuoteAssetAmount,
-    QuoteAssetPreviousBalance,
-    QuoteAssetNewBalance,
+    AssetId,
+    FreeAmount,
+    FreePreviousBalance,
+    FreeNewBalance,
+    LockedAmount,
+    LockedPreviousBalance,
+    LockedNewBalance,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DerivePrimaryKey)]
@@ -60,8 +58,7 @@ impl PrimaryKeyTrait for PrimaryKey {
 
 #[derive(Copy, Clone, Debug, EnumIter)]
 pub enum Relation {
-    Assets2,
-    Assets1,
+    Assets,
     RecordTypes,
 }
 
@@ -73,14 +70,13 @@ impl ColumnTrait for Column {
             Self::OrderId => ColumnType::Integer.def().null(),
             Self::RecordTypeId => ColumnType::Integer.def(),
             Self::CreationDate => ColumnType::DateTime.def(),
-            Self::BaseAssetId => ColumnType::Integer.def(),
-            Self::BaseAssetAmount => ColumnType::Decimal(Some((18u32, 8u32))).def(),
-            Self::BaseAssetPreviousBalance => ColumnType::Decimal(Some((18u32, 8u32))).def(),
-            Self::BaseAssetNewBalance => ColumnType::Decimal(Some((18u32, 8u32))).def(),
-            Self::QuoteAssetId => ColumnType::Integer.def(),
-            Self::QuoteAssetAmount => ColumnType::Decimal(Some((18u32, 8u32))).def(),
-            Self::QuoteAssetPreviousBalance => ColumnType::Decimal(Some((18u32, 8u32))).def(),
-            Self::QuoteAssetNewBalance => ColumnType::Decimal(Some((18u32, 8u32))).def(),
+            Self::AssetId => ColumnType::Integer.def(),
+            Self::FreeAmount => ColumnType::Decimal(Some((18u32, 8u32))).def(),
+            Self::FreePreviousBalance => ColumnType::Decimal(Some((18u32, 8u32))).def(),
+            Self::FreeNewBalance => ColumnType::Decimal(Some((18u32, 8u32))).def(),
+            Self::LockedAmount => ColumnType::Decimal(Some((18u32, 8u32))).def(),
+            Self::LockedPreviousBalance => ColumnType::Decimal(Some((18u32, 8u32))).def(),
+            Self::LockedNewBalance => ColumnType::Decimal(Some((18u32, 8u32))).def(),
         }
     }
 }
@@ -88,12 +84,8 @@ impl ColumnTrait for Column {
 impl RelationTrait for Relation {
     fn def(&self) -> RelationDef {
         match self {
-            Self::Assets2 => Entity::belongs_to(super::assets::Entity)
-                .from(Column::BaseAssetId)
-                .to(super::assets::Column::Id)
-                .into(),
-            Self::Assets1 => Entity::belongs_to(super::assets::Entity)
-                .from(Column::QuoteAssetId)
+            Self::Assets => Entity::belongs_to(super::assets::Entity)
+                .from(Column::AssetId)
                 .to(super::assets::Column::Id)
                 .into(),
             Self::RecordTypes => Entity::belongs_to(super::record_types::Entity)
@@ -101,6 +93,12 @@ impl RelationTrait for Relation {
                 .to(super::record_types::Column::Id)
                 .into(),
         }
+    }
+}
+
+impl Related<super::assets::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::Assets.def()
     }
 }
 

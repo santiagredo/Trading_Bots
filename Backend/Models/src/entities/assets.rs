@@ -45,7 +45,9 @@ impl PrimaryKeyTrait for PrimaryKey {
 }
 
 #[derive(Copy, Clone, Debug, EnumIter)]
-pub enum Relation {}
+pub enum Relation {
+    Ledgers,
+}
 
 impl ColumnTrait for Column {
     type EntityName = Entity;
@@ -62,7 +64,15 @@ impl ColumnTrait for Column {
 
 impl RelationTrait for Relation {
     fn def(&self) -> RelationDef {
-        panic!("No RelationDef")
+        match self {
+            Self::Ledgers => Entity::has_many(super::ledgers::Entity).into(),
+        }
+    }
+}
+
+impl Related<super::ledgers::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::Ledgers.def()
     }
 }
 

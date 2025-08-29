@@ -1,3 +1,5 @@
+pub static BINANCE_WEBSOCKET_STREAM_URL: &'static str = "wss://stream.binance.com:9443/ws";
+
 pub static X_MBX_APIKEY: &'static str = "X-MBX-APIKEY";
 
 pub static ORDERS_TEST_ENDPOINT: &'static str = "https://api1.binance.com/api/v3/order/test";

@@ -6,8 +6,9 @@ mod m20250121_024945_create_strategies_table;
 mod m20250121_025306_create_orders_table;
 mod m20250121_031110_create_record_types_table;
 mod m20250121_031549_create_ledgers_table;
-mod m20250130_013341_create_pair_assets_table;
-mod m20250306_005527_create_strategies_pair_assets_table;
+mod m20250130_013341_create_pairs_table;
+mod m20250625_024136_create_indicators_table;
+mod m20250625_030535_create_actions_table;
 
 pub struct Migrator;
 
@@ -21,8 +22,9 @@ impl MigratorTrait for Migrator {
             Box::new(m20250121_025306_create_orders_table::Migration),
             Box::new(m20250121_031110_create_record_types_table::Migration),
             Box::new(m20250121_031549_create_ledgers_table::Migration),
-            Box::new(m20250130_013341_create_pair_assets_table::Migration),
-            Box::new(m20250306_005527_create_strategies_pair_assets_table::Migration),
+            Box::new(m20250130_013341_create_pairs_table::Migration),
+            Box::new(m20250625_024136_create_indicators_table::Migration),
+            Box::new(m20250625_030535_create_actions_table::Migration),
         ]
     }
 }

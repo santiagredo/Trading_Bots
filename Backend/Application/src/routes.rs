@@ -1,10 +1,14 @@
 use actix_web::web;
 
 use crate::controller::{
-    delete_asset, delete_strategy, insert_asset, insert_backtests, insert_ledger, insert_order,
-    insert_pair_asset, insert_strategy, select_active_strategies, select_asset, select_assets,
-    select_ledger, select_ledgers, select_order, select_pair_asset, select_record_types,
-    select_strategy, update_asset, update_order, update_pair_asset, update_strategy,
+    delete_action, delete_asset, delete_indicator, delete_strategy, get_account, get_assets,
+    get_subscribed_indicators, insert_action, insert_asset, insert_indicator, insert_ledger,
+    insert_order, insert_pair, insert_strategy, refresh_everything, select_action, select_actions,
+    select_asset, select_assets, select_indicator, select_indicators, select_ledger,
+    select_ledgers, select_metrics, select_order, select_pair, select_record_types,
+    select_strategies, select_strategies_overview, select_strategy, start_everything,
+    stop_everything, update_action, update_asset, update_indicator, update_order, update_pair,
+    update_strategy,
 };
 
 pub fn routes_config(cfg: &mut web::ServiceConfig) {
@@ -12,7 +16,7 @@ pub fn routes_config(cfg: &mut web::ServiceConfig) {
         web::scope("/strategies")
             .service(insert_strategy)
             .service(select_strategy)
-            .service(select_active_strategies)
+            .service(select_strategies)
             .service(update_strategy)
             .service(delete_strategy),
     )
@@ -21,6 +25,7 @@ pub fn routes_config(cfg: &mut web::ServiceConfig) {
             .service(insert_asset)
             .service(select_asset)
             .service(select_assets)
+            .service(get_assets)
             .service(update_asset)
             .service(delete_asset),
     )
@@ -37,11 +42,36 @@ pub fn routes_config(cfg: &mut web::ServiceConfig) {
             .service(select_ledger)
             .service(select_ledgers),
     )
-    .service(web::scope("/backtest").service(insert_backtests))
     .service(
-        web::scope("/pair_assets")
-            .service(insert_pair_asset)
-            .service(select_pair_asset)
-            .service(update_pair_asset),
-    );
+        web::scope("/pairs")
+            .service(insert_pair)
+            .service(select_pair)
+            .service(update_pair),
+    )
+    .service(
+        web::scope("/indicators")
+            .service(insert_indicator)
+            .service(select_indicator)
+            .service(select_indicators)
+            .service(update_indicator)
+            .service(delete_indicator)
+            .service(get_subscribed_indicators),
+    )
+    .service(
+        web::scope("/actions")
+            .service(insert_action)
+            .service(select_action)
+            .service(select_actions)
+            .service(update_action)
+            .service(delete_action),
+    )
+    .service(web::scope("/strategies_overview").service(select_strategies_overview))
+    .service(
+        web::scope("/user_commands")
+            .service(start_everything)
+            .service(stop_everything)
+            .service(refresh_everything),
+    )
+    .service(web::scope("/metrics").service(select_metrics))
+    .service(web::scope("/binance").service(get_account));
 }

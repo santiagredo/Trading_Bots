@@ -1,13 +1,15 @@
-use actix_web::{get, HttpResponse, Responder};
+use actix_web::{get, web, HttpResponse, Responder};
+use models::structs::RecordTypeRequest;
 
-use crate::{types::RecordTypes, utils::{Core, OutcomeError}};
+use crate::{types::RecordTypes, utils::error_response};
 
-
-#[get("/many")]
-pub async fn select_record_types() -> impl Responder {
-    match RecordTypes::<Core>::select_record_types().await {
+#[get("/all")]
+pub async fn select_record_types(record_types: web::Query<RecordTypeRequest>) -> impl Responder {
+    match RecordTypes::new(record_types.into_inner())
+        .select_record_types()
+        .await
+    {
         Ok(val) => HttpResponse::Ok().json(val),
-        Err(OutcomeError::Failure(fail)) => HttpResponse::BadRequest().json(fail),
-        Err(OutcomeError::Error(err)) => HttpResponse::InternalServerError().json(err),
+        Err(err) => error_response(err),
     }
 }

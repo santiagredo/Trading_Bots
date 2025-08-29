@@ -15,52 +15,12 @@ impl MigrationTrait for Migration {
                     .col(string(Strategies::Name).not_null())
                     .col(boolean(Strategies::IsActive).not_null())
                     .col(boolean(Strategies::CanTrade).not_null())
-                    .col(string(Strategies::StreamName).not_null())
-                    .col(string(Strategies::Description))
+                    .col(ColumnDef::new(Strategies::Description).string().null())
+                    .col(ColumnDef::new(Strategies::LastExecution).date_time().null())
+                    .col(ColumnDef::new(Strategies::Cooldown).integer().null())
                     .to_owned(),
             )
             .await?;
-
-        let insert_strategies = Query::insert()
-            .into_table(Strategies::Table)
-            .columns([
-                Strategies::Name,
-                Strategies::IsActive,
-                Strategies::CanTrade,
-                Strategies::StreamName,
-                Strategies::Description,
-            ])
-            .values_panic([
-                "LTE85%".into(),
-                true.into(),
-                true.into(),
-                "ticker".into(),
-                "Buys when price is lesser than or equal to 85%".into(),
-            ])
-            .values_panic([
-                "WAP".into(),
-                false.into(),
-                false.into(),
-                "ticker".into(),
-                "Buys when last price deviates x percentage from weighted average price".into(),
-            ])
-            .values_panic([
-                "HGH".into(),
-                false.into(),
-                false.into(),
-                "ticker".into(),
-                "Buys when last price deviates x percentage from highest price".into(),
-            ])
-            .values_panic([
-                "OPN".into(),
-                false.into(),
-                false.into(),
-                "ticker".into(),
-                "Buys when last price deviates x percentage from open price".into(),
-            ])
-            .to_owned();
-
-        manager.exec_stmt(insert_strategies).await?;
 
         Ok(())
     }
@@ -79,6 +39,7 @@ pub enum Strategies {
     Name,
     IsActive,
     CanTrade,
-    StreamName,
     Description,
+    LastExecution,
+    Cooldown,
 }

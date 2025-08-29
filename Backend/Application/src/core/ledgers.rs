@@ -3,26 +3,31 @@ use models::entities::ledgers::Model;
 use crate::{
     config::get_config,
     types::Ledgers,
-    utils::{Core, Data, Logic, Outcome, OutcomeError},
+    utils::{handle_user_err, Core, Response},
 };
 
 impl Ledgers<Core> {
-    pub async fn insert_ledger(ledger: Model) -> Outcome<Model, String, String> {
-        let data_type =
-            Ledgers::<Logic>::insert_ledger(ledger).map_err(|err| OutcomeError::Failure(err))?;
+    pub async fn insert_ledger_core(self) -> Result<Model, Response> {
+        let logic_type = self
+            .next_phase()
+            .insert_ledger_logic()
+            .map_err(handle_user_err)?;
 
-        Ledgers::<Data>::insert_ledger(&get_config().await.db, data_type).await
+        logic_type
+            .next_phase()
+            .insert_ledger_data(&get_config().await.db)
+            .await
     }
 
-    pub async fn select_ledger(id: i32) -> Outcome<Model, String, String> {
-        Ledgers::<Logic>::select_ledger(id).map_err(|err| OutcomeError::Failure(err))?;
-
-        Ledgers::<Data>::select_ledger(&get_config().await.db, id).await
+    pub async fn select_ledger_core(self) -> Result<Option<Model>, Response> {
+        self.next_phase()
+            .select_ledger_data(&get_config().await.db)
+            .await
     }
 
-    pub async fn select_ledgers() -> Outcome<Vec<Model>, String, String> {
-        // Ledgers::<Logic>::select_ledgers().map_err(|err| OutcomeError::Failure(err))?;
-
-        Ledgers::<Data>::select_ledgers(&get_config().await.db).await
+    pub async fn select_ledgers_core(self) -> Result<Vec<Model>, Response> {
+        self.next_phase()
+            .select_ledgers_data(&get_config().await.db)
+            .await
     }
 }

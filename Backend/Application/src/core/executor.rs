@@ -2,7 +2,7 @@
 // use sea_orm::prelude::Decimal;
 
 // use crate::{
-//     types::{reload_open_orders, Assets, Executor, Ledgers, Orders, PairAssets, Strategies},
+//     types::{reload_open_orders, Assets, Executor, Ledgers, Orders, Pairs, Strategies},
 //     utils::Core,
 // };
 
@@ -15,7 +15,7 @@
 //         h: Decimal,
 //         l: Decimal,
 //     ) {
-//         let pair_asset = PairAssets::<Core>::select_pair_asset(entities::pair_assets::Model {
+//         let pair = Pairs::<Core>::select_pair(entities::pairs::Model {
 //             pair_ticker: s.to_ascii_uppercase(),
 //             ..Default::default()
 //         })
@@ -26,21 +26,21 @@
 
 //         let mut base_asset = assets
 //             .iter()
-//             .find(|item| item.id == pair_asset.base_asset_id)
+//             .find(|item| item.id == pair.base_asset_id)
 //             .unwrap()
 //             .to_owned();
 
 //         let mut quote_asset = assets
 //             .iter()
-//             .find(|item| item.id == pair_asset.quote_asset_id)
+//             .find(|item| item.id == pair.quote_asset_id)
 //             .unwrap()
 //             .to_owned();
 
 //         let open_orders = open_orders
 //             .into_iter()
 //             .filter(|item| {
-//                 item.base_asset_id == pair_asset.base_asset_id
-//                     && item.quote_asset_id == pair_asset.quote_asset_id
+//                 item.base_asset_id == pair.base_asset_id
+//                     && item.quote_asset_id == pair.quote_asset_id
 //             })
 //             .collect();
 

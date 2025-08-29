@@ -27,6 +27,7 @@ pub fn run(
     };
 
     setup_logger(module_name).expect("Failed to set up logger");
+    let socket_addr = listener.local_addr().expect("Failed to get local address");
 
     let server = HttpServer::new(move || {
         App::new()
@@ -47,6 +48,8 @@ pub fn run(
     })
     .listen(listener)?
     .run();
+
+    dbg!(format!("Program started on {socket_addr}"));
 
     Ok(server)
 }

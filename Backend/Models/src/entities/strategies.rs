@@ -20,8 +20,9 @@ pub struct Model {
     pub name: String,
     pub is_active: bool,
     pub can_trade: bool,
-    pub stream_name: String,
-    pub description: String,
+    pub description: Option<String>,
+    pub last_execution: Option<DateTime>,
+    pub cooldown: Option<i32>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveColumn)]
@@ -30,8 +31,9 @@ pub enum Column {
     Name,
     IsActive,
     CanTrade,
-    StreamName,
     Description,
+    LastExecution,
+    Cooldown,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DerivePrimaryKey)]
@@ -48,8 +50,9 @@ impl PrimaryKeyTrait for PrimaryKey {
 
 #[derive(Copy, Clone, Debug, EnumIter)]
 pub enum Relation {
+    Actions,
+    Indicators,
     Orders,
-    StrategiesPairAssets,
 }
 
 impl ColumnTrait for Column {
@@ -60,8 +63,9 @@ impl ColumnTrait for Column {
             Self::Name => ColumnType::String(StringLen::None).def(),
             Self::IsActive => ColumnType::Boolean.def(),
             Self::CanTrade => ColumnType::Boolean.def(),
-            Self::StreamName => ColumnType::String(StringLen::None).def(),
-            Self::Description => ColumnType::String(StringLen::None).def(),
+            Self::Description => ColumnType::String(StringLen::None).def().null(),
+            Self::LastExecution => ColumnType::DateTime.def().null(),
+            Self::Cooldown => ColumnType::Integer.def().null(),
         }
     }
 }
@@ -69,23 +73,28 @@ impl ColumnTrait for Column {
 impl RelationTrait for Relation {
     fn def(&self) -> RelationDef {
         match self {
+            Self::Actions => Entity::has_many(super::actions::Entity).into(),
+            Self::Indicators => Entity::has_many(super::indicators::Entity).into(),
             Self::Orders => Entity::has_many(super::orders::Entity).into(),
-            Self::StrategiesPairAssets => {
-                Entity::has_many(super::strategies_pair_assets::Entity).into()
-            }
         }
+    }
+}
+
+impl Related<super::actions::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::Actions.def()
+    }
+}
+
+impl Related<super::indicators::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::Indicators.def()
     }
 }
 
 impl Related<super::orders::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::Orders.def()
-    }
-}
-
-impl Related<super::strategies_pair_assets::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::StrategiesPairAssets.def()
     }
 }
 

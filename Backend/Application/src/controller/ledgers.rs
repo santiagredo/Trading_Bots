@@ -1,34 +1,28 @@
-
 use actix_web::{get, post, web, HttpResponse, Responder};
-use models::entities::ledgers::Model;
+use models::structs::LedgerRequest;
 
-use crate::{types::Ledgers, utils::{Core, OutcomeError}};
+use crate::{types::Ledgers, utils::error_response};
 
 #[post("")]
-pub async fn insert_ledger(web::Json(ledger): web::Json<Model>) -> impl Responder {
-    match Ledgers::<Core>::insert_ledger(ledger).await {
+pub async fn insert_ledger(web::Json(ledger): web::Json<LedgerRequest>) -> impl Responder {
+    match Ledgers::new(ledger).insert_ledger().await {
         Ok(val) => HttpResponse::Ok().json(val),
-        Err(OutcomeError::Failure(fail)) => HttpResponse::BadRequest().json(fail),
-        Err(OutcomeError::Error(err)) => HttpResponse::InternalServerError().json(err),
+        Err(err) => error_response(err),
     }
 }
 
-#[get("/{id}")]
-pub async fn select_ledger(path: web::Path<i32>) -> impl Responder {
-    let id = path.into_inner();
-
-    match Ledgers::<Core>::select_ledger(id).await {
+#[get("")]
+pub async fn select_ledger(query: web::Query<LedgerRequest>) -> impl Responder {
+    match Ledgers::new(query.into_inner()).select_ledger().await {
         Ok(val) => HttpResponse::Ok().json(val),
-        Err(OutcomeError::Failure(fail)) => HttpResponse::BadRequest().json(fail),
-        Err(OutcomeError::Error(err)) => HttpResponse::InternalServerError().json(err),
+        Err(err) => error_response(err),
     }
 }
 
-#[get("/many")]
-pub async fn select_ledgers() -> impl Responder {
-    match Ledgers::<Core>::select_ledgers().await {
+#[get("/all")]
+pub async fn select_ledgers(query: web::Query<LedgerRequest>) -> impl Responder {
+    match Ledgers::new(query.into_inner()).select_ledgers().await {
         Ok(val) => HttpResponse::Ok().json(val),
-        Err(OutcomeError::Failure(fail)) => HttpResponse::BadRequest().json(fail),
-        Err(OutcomeError::Error(err)) => HttpResponse::InternalServerError().json(err),
+        Err(err) => error_response(err),
     }
 }

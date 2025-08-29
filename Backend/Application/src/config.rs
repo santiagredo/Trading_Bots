@@ -11,6 +11,8 @@ pub struct Config {
     pub api_key: String,
     pub secret_pass: String,
     pub environment: Environments,
+    pub url: String,
+    pub port: String,
 }
 
 fn get_env_val<T: FromStr>(key: &str) -> T
@@ -44,11 +46,16 @@ pub async fn get_config() -> Config {
         _ => Environments::DEV,
     };
 
+    let url = get_env_val::<String>("URL");
+    let port = get_env_val::<String>("PORT");
+
     Config {
         db,
         api_key,
         secret_pass,
         environment,
+        url,
+        port,
     }
 }
 

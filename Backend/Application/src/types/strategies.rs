@@ -2,7 +2,10 @@ use std::{collections::HashMap, marker::PhantomData, sync::Arc, time::Instant};
 
 use chrono::{Local, NaiveDateTime};
 use models::{
-    entities::strategies::{self, Model},
+    entities::{
+        orders,
+        strategies::{self, Model},
+    },
     enums::MetricType,
     structs::{AssetRequest, LedgerRequest, StrategyOverview, StrategyRequest},
 };
@@ -208,26 +211,25 @@ impl Strategies {
     pub async fn evalute_active_strategies(strategy_overview: StrategyOverview) {
         let start = Instant::now();
 
-        let Ok(mut order) = Self::evaluate_custom_logic(&strategy_overview) else {
+        let Ok(order) = Self::evaluate_custom_logic(&strategy_overview) else {
             return;
         };
-        order.model.status_id = Some(2);
 
         if strategy_overview.strategy.can_trade {}
 
         let order = match order.insert_order().await {
             Err(err) => {
-                println!("{}", err.message);
+                dbg!(eprintln!("{}", err.message));
                 return;
             }
             Ok(val) => val,
         };
 
         // update base asset
-        let base_asset_request = AssetRequest::from_model(&strategy_overview.base_asset)
-            .update_values(false, order.base_asset_amount);
+        let (base_asset_request, base_asset_ledger) =
+            Self::build_asset_ledger_request(&strategy_overview, &order, true);
 
-        let base_asset_model = match Assets::new(base_asset_request)
+        if let Err(err) = Assets::new(base_asset_request)
             .update_asset_value(
                 order.base_asset_amount,
                 false,
@@ -235,32 +237,20 @@ impl Strategies {
             )
             .await
         {
-            Err(err) => {
-                println!("{}", err.message);
-                return;
-            }
-            Ok(val) => val,
+            dbg!(eprintln!("{}", err.message));
+            return;
         };
 
-        let base_asset_ledger = LedgerRequest::from_asset(&strategy_overview.base_asset)
-            .from_order(&order)
-            .update_values(
-                false,
-                order.base_asset_amount,
-                strategy_overview.base_asset.free,
-                base_asset_model.free,
-            );
-
         if let Err(err) = Ledgers::new(base_asset_ledger).insert_ledger().await {
-            println!("{}", err.message);
+            dbg!(eprintln!("{}", err.message));
             return;
         };
 
         // update quote asset
-        let quote_asset_request = AssetRequest::from_model(&strategy_overview.quote_asset)
-            .update_values(false, order.quote_asset_amount);
+        let (quote_asset_request, quote_asset_ledger) =
+            Self::build_asset_ledger_request(&strategy_overview, &order, false);
 
-        let quote_asset_model = match Assets::new(quote_asset_request)
+        if let Err(err) = Assets::new(quote_asset_request)
             .update_asset_value(
                 order.quote_asset_amount,
                 false,
@@ -268,24 +258,12 @@ impl Strategies {
             )
             .await
         {
-            Err(err) => {
-                println!("{}", err.message);
-                return;
-            }
-            Ok(val) => val,
+            dbg!(eprintln!("{}", err.message));
+            return;
         };
 
-        let quote_asset_ledger = LedgerRequest::from_asset(&strategy_overview.quote_asset)
-            .from_order(&order)
-            .update_values(
-                false,
-                order.quote_asset_amount,
-                strategy_overview.quote_asset.free,
-                quote_asset_model.free,
-            );
-
         if let Err(err) = Ledgers::new(quote_asset_ledger).insert_ledger().await {
-            println!("{}", err.message);
+            dbg!(eprintln!("{}", err.message));
             return;
         };
 
@@ -295,14 +273,12 @@ impl Strategies {
         let mut strategy_request = Self::default().into_request(strategy_overview.strategy);
         strategy_request.model.last_execution = Some(now);
 
-        match strategy_request.update_strategy().await {
-            Err(err) => {
-                println!("{}", err.message);
-                return;
-            }
-            Ok(val) => val,
+        if let Err(err) = strategy_request.update_strategy().await {
+            dbg!(eprintln!("{}", err.message));
+            return;
         };
 
+        // update speed metrics
         let now = Local::now().naive_local();
         Metrics::set_active_metric(MetricType::Completed, start.elapsed(), now).await;
 
@@ -350,9 +326,45 @@ impl Strategies {
             .from_strategy(&strategy_overview.strategy)
             .from_action(&action)
             .from_pair(&strategy_overview.pair)
-            .from_ticker(&strategy_overview.ticker);
+            .from_ticker(&strategy_overview.ticker)
+            .from_status(2);
 
         Ok(order)
+    }
+
+    pub fn build_asset_ledger_request(
+        strategy_overview: &StrategyOverview,
+        order: &orders::Model,
+        is_base: bool,
+    ) -> (AssetRequest, LedgerRequest) {
+        let asset = match is_base {
+            true => &strategy_overview.base_asset,
+            false => &strategy_overview.quote_asset,
+        };
+
+        let value = match is_base {
+            true => &order.base_asset_amount,
+            false => &order.quote_asset_amount,
+        };
+
+        let previous_balance = match is_base {
+            true => &strategy_overview.base_asset.free,
+            false => &strategy_overview.quote_asset.free,
+        };
+
+        let asset_request =
+            AssetRequest::from_model(asset).aggregate_values(*value, false, is_base);
+
+        let asset_ledger = LedgerRequest::from_asset(asset)
+            .from_order(&order)
+            .update_values(
+                false,
+                *value,
+                *previous_balance,
+                asset_request.free.unwrap_or_default(),
+            );
+
+        (asset_request, asset_ledger)
     }
 }
 

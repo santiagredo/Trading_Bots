@@ -87,6 +87,12 @@ impl Orders {
 
         self
     }
+
+    pub fn from_status(mut self, status_id: i32) -> Self {
+        self.model.status_id = Some(status_id);
+
+        self
+    }
 }
 
 impl<Phase> Orders<Phase> {

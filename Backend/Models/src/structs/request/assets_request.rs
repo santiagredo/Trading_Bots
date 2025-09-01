@@ -32,4 +32,31 @@ impl AssetRequest {
 
         self
     }
+
+    pub fn aggregate_values(mut self, value: Decimal, is_locked: bool, is_sell: bool) -> Self {
+        match (is_locked, is_sell) {
+            (true, true) => {
+                if let Some(val) = self.locked.as_mut() {
+                    *val -= value
+                }
+            }
+            (true, false) => {
+                if let Some(val) = self.locked.as_mut() {
+                    *val += value
+                }
+            }
+            (false, true) => {
+                if let Some(val) = self.free.as_mut() {
+                    *val -= value
+                }
+            }
+            (false, false) => {
+                if let Some(val) = self.free.as_mut() {
+                    *val += value
+                }
+            }
+        }
+
+        self
+    }
 }

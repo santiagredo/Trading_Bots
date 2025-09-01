@@ -424,3 +424,217 @@ impl Strategies<Types> {
         self.evaluate_cooldown_core(last_exec, cooldown)
     }
 }
+
+#[cfg(test)]
+mod fn_evaluate_custom_logic {
+    use models::{
+        entities::{actions, assets, indicators, pairs},
+        structs::Ticker,
+    };
+    use sea_orm::prelude::Decimal;
+
+    use super::*;
+
+    fn make_strategy_overview() -> StrategyOverview {
+        StrategyOverview {
+            strategy: strategies::Model {
+                id: 1,
+                name: "Scalping".to_string(),
+                is_active: true,
+                can_trade: true,
+                last_execution: None,
+                cooldown: Some(1),
+                ..Default::default()
+            },
+            indicator: indicators::Model {
+                id: 1,
+                strategy_id: 1,
+                is_active: true,
+                nick: "lst".to_string(),      // last_price
+                direction: "gte".to_string(), // >=
+                value: Decimal::ONE,          // 1
+                ..Default::default()
+            },
+            action: actions::Model {
+                id: 1,
+                strategy_id: 1,
+                is_active: true,
+                is_sell: false,
+                is_quote_asset: false,
+                is_percentage: false,
+                value: Decimal::ONE, // 1 base asset
+                pair_id: 1,
+            },
+            pair: pairs::Model {
+                id: 1,
+                base_asset_id: 1,
+                quote_asset_id: 2,
+                symbol: "BTCUSDT".to_string(),
+                update_date: chrono::Local::now().naive_local(),
+                all_time_high_price: Decimal::new(100000, 0),
+                all_time_high_date: chrono::Local::now().naive_local(),
+                percent_from_all_time_high: Decimal::new(10, 0),
+                lot_size_step_size: Decimal::ONE,
+                notional_min_notional: Decimal::ONE,
+                ..Default::default()
+            },
+            base_asset: assets::Model {
+                id: 1,
+                name: "BTC".to_string(),
+                ticker: "BTC".to_string(),
+                free: Decimal::new(10, 0),
+                locked: Decimal::ZERO,
+            },
+            quote_asset: assets::Model {
+                id: 2,
+                name: "USDT".to_string(),
+                ticker: "USDT".to_string(),
+                free: Decimal::new(100000, 0),
+                locked: Decimal::ZERO,
+            },
+            ticker: Ticker {
+                symbol: "BTCUSDT".to_string(),
+                last_price: Decimal::new(20000, 0),
+                ..Default::default()
+            },
+        }
+    }
+
+    #[test]
+    fn evaluate_custom_logic_cases() {
+        let base_case = make_strategy_overview();
+
+        let cases = vec![
+            (
+                "err_cooldown_active",
+                {
+                    let mut s = base_case.clone();
+                    s.strategy.last_execution = Some(chrono::Local::now().naive_local());
+                    s
+                },
+                false,
+            ),
+            (
+                "err_indicator_not_met",
+                {
+                    let mut s = base_case.clone();
+                    s.indicator.direction = "gt".to_string(); // exige last_price > 1
+                    s.indicator.value = Decimal::new(30000, 0); // 30k
+                    s
+                },
+                false,
+            ),
+            (
+                "ok_valid_case",
+                {
+                    let s = base_case.clone();
+                    s
+                },
+                true,
+            ),
+        ];
+
+        for (name, overview, should_pass) in cases {
+            let result = Strategies::evaluate_custom_logic(&overview);
+
+            assert_eq!(
+                result.is_ok(),
+                should_pass,
+                "case `{}` failed: expected {}, got {:?}",
+                name,
+                should_pass,
+                result
+            );
+        }
+    }
+}
+
+#[cfg(test)]
+mod fn_build_asset_ledger_request {
+    use models::entities::assets;
+    use sea_orm::prelude::Decimal;
+
+    use super::*;
+
+    fn make_strategy_overview() -> StrategyOverview {
+        StrategyOverview {
+            base_asset: assets::Model {
+                id: 1,
+                name: "BTC".to_string(),
+                ticker: "BTC".to_string(),
+                free: Decimal::new(10, 0),
+                locked: Decimal::ZERO,
+            },
+            quote_asset: assets::Model {
+                id: 2,
+                name: "USDT".to_string(),
+                ticker: "USDT".to_string(),
+                free: Decimal::new(1000, 0),
+                locked: Decimal::ZERO,
+            },
+            ..Default::default()
+        }
+    }
+
+    fn make_order() -> orders::Model {
+        orders::Model {
+            id: 1,
+            status_id: 1,
+            creation_date: chrono::Local::now().naive_local(),
+            update_date: chrono::Local::now().naive_local(),
+            is_sell: false,
+            strategy_id: 1,
+            base_asset_id: 1,
+            base_asset_amount: Decimal::new(2, 0), // 2 BTC
+            quote_asset_id: 2,
+            quote_asset_amount: Decimal::new(40000, 0), // 40,000 USDT
+            price_entry: Decimal::new(20000, 0),
+            price_target: Decimal::new(20000, 0),
+            price_abort: Decimal::ZERO,
+        }
+    }
+
+    #[test]
+    fn build_asset_ledger_request_cases() {
+        let overview = make_strategy_overview();
+        let order = make_order();
+
+        let cases = vec![
+            ("ok_base_asset", true, overview.clone(), order.clone()),
+            ("ok_quote_asset", false, overview.clone(), order.clone()),
+        ];
+
+        for (name, is_base, overview, order) in cases {
+            let (asset_req, ledger_req) =
+                Strategies::build_asset_ledger_request(&overview, &order, is_base);
+
+            if is_base {
+                assert_eq!(
+                    asset_req.id,
+                    Some(overview.base_asset.id),
+                    "case `{}` failed: expected base_asset id",
+                    name
+                );
+                assert_eq!(
+                    ledger_req.asset_id,
+                    Some(overview.base_asset.id),
+                    "case `{}` failed: expected ledger to use base_asset",
+                    name
+                );
+            } else {
+                assert_eq!(
+                    asset_req.id,
+                    Some(overview.quote_asset.id),
+                    "case `{}` failed: expected quote_asset id",
+                    name
+                );
+                assert_eq!(
+                    ledger_req.asset_id,
+                    Some(overview.quote_asset.id),
+                    "case `{}` failed: expected ledger to use quote_asset",
+                    name
+                );
+            }
+        }
+    }
+}

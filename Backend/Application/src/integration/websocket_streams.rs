@@ -39,10 +39,10 @@ impl WebsocketStreams<Integration> {
                     Err(err) => {
                         attempt += 1;
 
-                        eprintln!(
+                        dbg!(eprintln!(
                             "Connection failed: {err} -- Retrying in {} secs",
                             2u64.pow(attempt.min(5))
-                        );
+                        ));
 
                         sleep(Duration::from_secs(2u64.pow(attempt.min(5)))).await;
                         continue;
@@ -92,11 +92,11 @@ impl WebsocketStreams<Integration> {
                                     }
                                 }
                                 Some(Ok(Message::Close(close))) => {
-                                    println!("Socket closed: {close:?}");
+                                    dbg!(println!("Socket closed: {close:?}"));
                                     break 'outer;
                                 }
                                 Some(Err(err)) => {
-                                    println!("Socket err: {err:?}");
+                                    dbg!(println!("Socket err: {err:?}"));
                                     break 'inner;
                                 }
                                 None => break,
@@ -114,7 +114,7 @@ impl WebsocketStreams<Integration> {
                                     //     break 'inner;
                                     // }
                                     WebsocketCommand::Shutdown => {
-                                        println!("Shutting down WebSocket...");
+                                        dbg!(println!("Shutting down WebSocket..."));
                                         let _ = write.send(Message::Close(None)).await;
                                         break 'outer;
                                     }
@@ -124,7 +124,7 @@ impl WebsocketStreams<Integration> {
 
                         // breaks inner loop as no texts have beeen received
                         _ = timeout => {
-                            println!("No messages received in {:?}, closing socket", timeout_duration);
+                            dbg!(println!("No messages received in {:?}, closing socket", timeout_duration));
                             break 'inner;
                         }
                     }

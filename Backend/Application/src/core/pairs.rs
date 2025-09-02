@@ -46,18 +46,6 @@ impl Pairs<Core> {
     }
 
     pub async fn select_pairs_core(self) -> Result<Vec<Model>, Response> {
-        let memory_pairs = Pairs::<Cache>::get_active_pairs().await;
-
-        if let Some(pairs) = memory_pairs {
-            let pairs: Vec<Model> = pairs
-                .values()
-                .into_iter()
-                .map(|val| val.to_owned())
-                .collect();
-
-            return Ok(pairs);
-        }
-
         self.next_phase::<Data>()
             .select_pairs_data(&get_config().await.db)
             .await

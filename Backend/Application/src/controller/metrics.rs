@@ -1,6 +1,6 @@
 use actix_web::{get, HttpResponse, Responder};
 
-use crate::types::Metrics;
+use crate::handler::Metrics;
 
 #[get("")]
 pub async fn select_metrics() -> impl Responder {

@@ -1,7 +1,7 @@
 use actix_web::{get, patch, post, web, HttpResponse, Responder};
 use models::structs::request::OrderRequest;
 
-use crate::{types::Orders, utils::error_response};
+use crate::{handler::Orders, utils::error_response};
 
 #[post("")]
 pub async fn insert_order(web::Json(order): web::Json<OrderRequest>) -> impl Responder {

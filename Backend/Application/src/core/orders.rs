@@ -2,7 +2,7 @@ use models::entities::orders::Model;
 
 use crate::{
     config::get_config,
-    types::Orders,
+    handler::Orders,
     utils::{handle_user_err, Core, Data, Logic, Response},
 };
 

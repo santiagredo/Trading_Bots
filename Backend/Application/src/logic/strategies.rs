@@ -1,7 +1,7 @@
 use chrono::{Duration, Local, NaiveDateTime};
 
 use crate::{
-    types::Strategies,
+    handler::Strategies,
     utils::{Logic, Utils},
 };
 
@@ -60,7 +60,7 @@ impl Strategies<Logic> {
 
 #[cfg(test)]
 mod fn_insert_strategy_logic {
-    use crate::types::Strategies;
+    use crate::handler::Strategies;
     use crate::utils::Logic;
 
     #[test]
@@ -109,7 +109,7 @@ mod fn_insert_strategy_logic {
 
 #[cfg(test)]
 mod fn_update_strategy_logic {
-    use crate::types::Strategies;
+    use crate::handler::Strategies;
     use crate::utils::Logic;
 
     #[test]
@@ -174,7 +174,7 @@ mod fn_update_strategy_logic {
 
 #[cfg(test)]
 mod fn_delete_strategy_logic {
-    use crate::types::Strategies;
+    use crate::handler::Strategies;
     use crate::utils::Logic;
 
     #[test]
@@ -205,7 +205,7 @@ mod fn_delete_strategy_logic {
 
 #[cfg(test)]
 mod fn_evaluate_cooldown_logic {
-    use crate::types::Strategies;
+    use crate::handler::Strategies;
     use crate::utils::Logic;
     use chrono::{Duration, Local};
 

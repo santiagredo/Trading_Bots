@@ -1,6 +1,6 @@
 use actix_web::{post, HttpResponse, Responder};
 
-use crate::{types::UserCommands, utils::error_response};
+use crate::{handler::UserCommands, utils::error_response};
 
 #[post("/start_everything")]
 pub async fn start_everything() -> impl Responder {

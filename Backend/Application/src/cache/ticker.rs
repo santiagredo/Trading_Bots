@@ -1,22 +1,16 @@
-use std::{collections::HashMap, marker::PhantomData, sync::Arc};
+use crate::{handler::Tickers, utils::Cache};
+
+use std::{collections::HashMap, sync::Arc};
 
 use models::structs::Ticker;
 use once_cell::sync::Lazy;
 use tokio::sync::RwLock;
 
-use crate::utils::Core;
-
-#[derive(Debug, Default, Clone)]
-pub struct Tickers<Phase = Core> {
-    pub phase: PhantomData<Phase>,
-    pub model: Ticker,
-}
-
 static TICKERS: Lazy<Arc<RwLock<HashMap<String, Ticker>>>> =
     Lazy::new(|| Arc::new(RwLock::new(HashMap::new())));
 
-impl Tickers {
-    pub async fn set_ticker(model: Ticker) {
+impl Tickers<Cache> {
+    pub async fn set_ticker_cache(model: Ticker) {
         let mut tickers = TICKERS.write().await;
 
         if let Some(existing) = tickers.get_mut(&model.symbol) {
@@ -46,7 +40,7 @@ impl Tickers {
         }
     }
 
-    pub async fn get_ticker(symbol: String) -> Option<Ticker> {
+    pub async fn get_ticker_cache(symbol: String) -> Option<Ticker> {
         let tickers = TICKERS.read().await;
         tickers.get(&symbol).cloned()
     }

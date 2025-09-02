@@ -2,7 +2,7 @@ use models::entities::record_types::Model;
 
 use crate::{
     config::get_config,
-    types::RecordTypes,
+    handler::RecordTypes,
     utils::{Core, Data, Response},
 };
 

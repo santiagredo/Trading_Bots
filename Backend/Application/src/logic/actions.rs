@@ -4,7 +4,7 @@ use models::{
 };
 use sea_orm::prelude::Decimal;
 
-use crate::{types::Actions, utils::Logic};
+use crate::{handler::Actions, utils::Logic};
 
 impl Actions<Logic> {
     pub fn insert_action_logic(self) -> Result<Self, String> {

@@ -1,7 +1,7 @@
 use actix_web::{delete, get, post, put, web, HttpResponse, Responder};
 use models::structs::ActionRequest;
 
-use crate::{types::Actions, utils::error_response};
+use crate::{handler::Actions, utils::error_response};
 
 #[post("")]
 pub async fn insert_action(web::Json(action): web::Json<ActionRequest>) -> impl Responder {

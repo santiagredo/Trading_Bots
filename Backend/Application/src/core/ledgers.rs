@@ -2,7 +2,7 @@ use models::entities::ledgers::Model;
 
 use crate::{
     config::get_config,
-    types::Ledgers,
+    handler::Ledgers,
     utils::{handle_user_err, Core, Response},
 };
 

@@ -4,7 +4,7 @@ use chrono::DateTime;
 use models::structs::{CoinPaprikaTicker, Quote};
 use sea_orm::prelude::Decimal;
 
-use crate::{types::Pairs, utils::Types};
+use crate::{handler::Pairs, utils::Types};
 
 pub struct CoinPaprika<Phase = Types> {
     phase: PhantomData<Phase>,

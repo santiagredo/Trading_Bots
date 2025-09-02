@@ -3,7 +3,7 @@ use sea_orm::{DatabaseConnection, EntityTrait};
 use tracing::error_span;
 
 use crate::{
-    types::OrderStatus,
+    handler::OrderStatus,
     utils::{handle_db_error, Data, Response},
 };
 

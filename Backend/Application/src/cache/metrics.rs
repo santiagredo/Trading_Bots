@@ -1,21 +1,17 @@
-use crate::utils::Types;
+use std::{collections::HashMap, sync::Arc, time::Duration};
+
 use models::{enums::MetricType, structs::Metric};
 use once_cell::sync::Lazy;
 use sea_orm::prelude::DateTime;
-use std::{collections::HashMap, marker::PhantomData, sync::Arc, time::Duration};
 use tokio::sync::RwLock;
 
-#[derive(Debug, Default)]
-pub struct Metrics<Phase = Types> {
-    phase: PhantomData<Phase>,
-    pub model: Metric,
-}
+use crate::{handler::Metrics, utils::Cache};
 
 static ACTIVE_METRICS: Lazy<Arc<RwLock<Option<HashMap<MetricType, Metric>>>>> =
     Lazy::new(|| Arc::new(RwLock::new(None)));
 
-impl Metrics {
-    pub async fn set_active_metrics(metrics: Option<Vec<Metric>>) -> Option<Vec<Metric>> {
+impl Metrics<Cache> {
+    pub async fn set_active_metrics_cache(metrics: Option<Vec<Metric>>) -> Option<Vec<Metric>> {
         let mut active_metrics = ACTIVE_METRICS.write().await;
 
         let Some(metrics) = metrics else {
@@ -34,7 +30,7 @@ impl Metrics {
         Some(metrics)
     }
 
-    pub async fn set_active_metric(
+    pub async fn set_active_metric_cache(
         metric_type: MetricType,
         elapsed: Duration,
         date_time: DateTime,
@@ -52,13 +48,13 @@ impl Metrics {
         active_metric.add(elapsed, date_time);
     }
 
-    pub async fn get_active_metrics() -> Option<HashMap<MetricType, Metric>> {
+    pub async fn get_active_metrics_cache() -> Option<HashMap<MetricType, Metric>> {
         let active_metrics = ACTIVE_METRICS.read().await;
 
         active_metrics.clone()
     }
 
-    pub async fn get_active_metric(key: &MetricType) -> Option<Metric> {
+    pub async fn get_active_metric_cache(key: &MetricType) -> Option<Metric> {
         let active_metrics = ACTIVE_METRICS.read().await;
 
         let Some(active_metrics) = active_metrics.as_ref() else {
@@ -68,8 +64,8 @@ impl Metrics {
         active_metrics.get(key).cloned()
     }
 
-    pub async fn start_active_metrics() {
-        if Self::get_active_metrics()
+    pub async fn start_active_metrics_cache() {
+        if Self::get_active_metrics_cache()
             .await
             .is_none_or(|map| map.is_empty())
         {
@@ -81,11 +77,11 @@ impl Metrics {
 
             let metrics_vec = vec![all_metrics, completed_metrics];
 
-            Self::set_active_metrics(Some(metrics_vec)).await;
+            Self::set_active_metrics_cache(Some(metrics_vec)).await;
         }
     }
 
-    pub async fn stop_active_metrics() {
-        Self::set_active_metrics(None).await;
+    pub async fn stop_active_metrics_cache() {
+        Self::set_active_metrics_cache(None).await;
     }
 }

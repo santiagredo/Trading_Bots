@@ -21,7 +21,7 @@ use crate::{
         ACCOUNT_INFORMATION_ENDPOINT, EXCHANGE_INFORMATION_ENDPOINT, ORDERS_ENDPOINT,
         ORDERS_TEST_ENDPOINT, X_MBX_APIKEY,
     },
-    types::Binance,
+    handler::Binance,
     utils::Integration,
 };
 

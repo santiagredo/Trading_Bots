@@ -6,7 +6,7 @@ use models::{
 use sea_orm::prelude::Decimal;
 
 use crate::{
-    types::Indicators,
+    handler::Indicators,
     utils::{Logic, Utils},
 };
 

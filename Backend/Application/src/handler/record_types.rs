@@ -10,15 +10,6 @@ pub struct RecordTypes<Phase = Types> {
     pub model: RecordTypeRequest,
 }
 
-impl RecordTypes {
-    pub fn new(model: RecordTypeRequest) -> Self {
-        Self {
-            phase: PhantomData::<Types>,
-            model,
-        }
-    }
-}
-
 impl<Phase> RecordTypes<Phase> {
     pub fn next_phase<Next>(self) -> RecordTypes<Next> {
         RecordTypes {
@@ -28,7 +19,14 @@ impl<Phase> RecordTypes<Phase> {
     }
 }
 
-impl RecordTypes<Types> {
+impl RecordTypes {
+    pub fn new(model: RecordTypeRequest) -> Self {
+        Self {
+            phase: PhantomData::<Types>,
+            model,
+        }
+    }
+
     pub async fn select_record_types(self) -> Result<Vec<Model>, Response> {
         self.next_phase().select_record_types_core().await
     }

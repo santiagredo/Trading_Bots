@@ -1,7 +1,7 @@
 use models::structs::CoinPaprikaTicker;
 use reqwest::Client;
 
-use crate::{static_strings::COINPAPRIKA_TICKERS_ENDPOINT, types::CoinPaprika, utils::Integration};
+use crate::{static_strings::COINPAPRIKA_TICKERS_ENDPOINT, handler::CoinPaprika, utils::Integration};
 
 impl CoinPaprika<Integration> {
     pub async fn get_tickers_integration(self) -> Result<Vec<CoinPaprikaTicker>, String> {

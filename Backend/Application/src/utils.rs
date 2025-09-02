@@ -17,6 +17,9 @@ pub struct Types;
 #[derive(Debug, Clone, Copy)]
 pub struct Integration;
 
+#[derive(Debug, Clone, Copy)]
+pub struct Cache;
+
 pub struct Utils;
 
 impl Utils {
@@ -39,6 +42,15 @@ pub struct Conditions {
 pub struct Response {
     pub code: u16,
     pub message: String,
+}
+
+impl Response {
+    pub fn not_found(item: String) -> Response {
+        Response {
+            code: 404,
+            message: format!("{item} not found"),
+        }
+    }
 }
 
 pub fn error_response(response: Response) -> HttpResponse {

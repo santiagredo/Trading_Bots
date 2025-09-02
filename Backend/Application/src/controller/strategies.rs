@@ -1,7 +1,7 @@
 use actix_web::{delete, get, patch, post, web, HttpResponse, Responder};
 use models::structs::StrategyRequest;
 
-use crate::{types::Strategies, utils::error_response};
+use crate::{handler::Strategies, utils::error_response};
 
 #[post("")]
 pub async fn insert_strategy(web::Json(strategy): web::Json<StrategyRequest>) -> impl Responder {

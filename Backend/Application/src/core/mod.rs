@@ -12,3 +12,8 @@ pub mod strategies_overview;
 pub mod binance;
 pub mod coin_paprika;
 pub mod status;
+pub mod subscribed_indicators;
+pub mod metrics;
+pub mod senders;
+pub mod tasks;
+pub mod ticker;

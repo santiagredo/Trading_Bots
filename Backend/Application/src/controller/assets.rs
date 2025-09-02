@@ -1,7 +1,7 @@
 use actix_web::{delete, get, patch, post, web, HttpResponse, Responder};
 use models::structs::AssetRequest;
 
-use crate::{types::Assets, utils::error_response};
+use crate::{handler::Assets, utils::error_response};
 
 #[post("")]
 pub async fn insert_asset(web::Json(asset): web::Json<AssetRequest>) -> impl Responder {

@@ -10,6 +10,15 @@ pub struct Ledgers<Phase = Types> {
     pub model: LedgerRequest,
 }
 
+impl<Phase> Ledgers<Phase> {
+    pub fn next_phase<Next>(self) -> Ledgers<Next> {
+        Ledgers {
+            phase: PhantomData::<Next>,
+            model: self.model,
+        }
+    }
+}
+
 impl Ledgers {
     pub fn new(model: LedgerRequest) -> Self {
         Self {
@@ -26,18 +35,7 @@ impl Ledgers {
             },
         }
     }
-}
 
-impl<Phase> Ledgers<Phase> {
-    pub fn next_phase<Next>(self) -> Ledgers<Next> {
-        Ledgers {
-            phase: PhantomData::<Next>,
-            model: self.model,
-        }
-    }
-}
-
-impl Ledgers<Types> {
     pub async fn insert_ledger(self) -> Result<Model, Response> {
         self.next_phase().insert_ledger_core().await
     }

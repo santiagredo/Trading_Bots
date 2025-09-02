@@ -6,7 +6,7 @@ use sea_orm::{
 use tracing::error_span;
 
 use crate::{
-    types::Ledgers,
+    handler::Ledgers,
     utils::{handle_db_error, Data, Response},
 };
 

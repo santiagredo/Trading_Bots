@@ -1,55 +1,98 @@
 use models::entities::assets::Model;
+use sea_orm::prelude::Decimal;
 
 use crate::{
     config::get_config,
-    types::Assets,
-    utils::{handle_user_err, Core, Data, Logic, Response},
+    handler::Assets,
+    utils::{handle_user_err, Cache, Core, Data, Logic, Response},
 };
 
 impl Assets<Core> {
     pub async fn insert_asset_core(self) -> Result<Model, Response> {
-        let logic_type = self
+        let asset = self
             .next_phase::<Logic>()
             .insert_asset_logic()
-            .map_err(handle_user_err)?;
-
-        logic_type
+            .map_err(handle_user_err)?
             .next_phase::<Data>()
             .insert_asset_data(&get_config().await.db)
-            .await
+            .await?;
+
+        Ok(Assets::<Cache>::set_active_asset(asset, false).await)
     }
 
     pub async fn select_asset_core(self) -> Result<Option<Model>, Response> {
+        let memory_asset =
+            Assets::<Cache>::get_active_asset(&self.model.id.unwrap_or_default()).await;
+
+        if memory_asset.is_some() {
+            return Ok(memory_asset);
+        }
+
         self.next_phase::<Data>()
             .select_asset_data(&get_config().await.db)
             .await
     }
 
     pub async fn select_assets_core(self) -> Result<Vec<Model>, Response> {
+        let memory_assets = Assets::<Cache>::get_active_assets().await;
+
+        if let Some(memory_assets) = memory_assets {
+            let results = memory_assets
+                .into_iter()
+                .map(|(_, val)| val.to_owned())
+                .collect::<Vec<Model>>();
+
+            return Ok(results);
+        }
+
         self.next_phase::<Data>()
             .select_assets_data(&get_config().await.db)
             .await
     }
 
     pub async fn update_asset_core(self) -> Result<Model, Response> {
-        let logic_type = self
+        let asset = self
             .next_phase::<Logic>()
             .update_asset_logic()
-            .map_err(handle_user_err)?;
-
-        logic_type
+            .map_err(handle_user_err)?
             .next_phase::<Data>()
             .update_asset_data(&get_config().await.db)
+            .await?;
+
+        Ok(Assets::<Cache>::set_active_asset(asset, false).await)
+    }
+
+    pub async fn update_asset_value_core(
+        self,
+        value: Decimal,
+        is_locked: bool,
+        is_sell: bool,
+    ) -> Result<Model, Response> {
+        let Some(memory_asset) = Assets::<Cache>::set_active_asset_value(
+            &self.model.id.unwrap_or_default(),
+            value,
+            is_locked,
+            is_sell,
+        )
+        .await
+        else {
+            return Err(Response::not_found("Memory asset".to_string()));
+        };
+
+        Assets::default()
+            .into_request(memory_asset)
+            .next_phase()
+            .update_asset_core()
             .await
     }
 
     pub async fn delete_asset_core(self) -> Result<u64, Response> {
-        let logic_type = self
-            .next_phase::<Logic>()
-            .delete_asset_logic()
-            .map_err(handle_user_err)?;
+        let asset = Assets::into_model(self.model.clone());
+        Assets::<Cache>::set_active_asset(asset, true).await;
 
-        logic_type
+        self.next_phase::<Logic>()
+            .delete_asset_logic()
+            .map_err(handle_user_err)?
             .next_phase::<Data>()
             .delete_asset_data(&get_config().await.db)
             .await

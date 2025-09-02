@@ -2,8 +2,8 @@ use models::{entities::pairs::Model, structs::AssetRequest};
 
 use crate::{
     config::get_config,
-    types::{Assets, Pairs},
-    utils::{handle_user_err, Core, Data, Logic, Response},
+    handler::{Assets, Pairs},
+    utils::{handle_user_err, Cache, Core, Data, Logic, Response},
 };
 
 impl Pairs<Core> {
@@ -22,36 +22,46 @@ impl Pairs<Core> {
         .select_asset()
         .await?;
 
-        let logic_type = self
+        let pair = self
             .next_phase::<Logic>()
             .insert_pair_logic(base_asset, quote_asset)
-            .map_err(handle_user_err)?;
-
-        logic_type
+            .map_err(handle_user_err)?
             .next_phase::<Data>()
             .insert_pair_data(&get_config().await.db)
-            .await
+            .await?;
+
+        Ok(Pairs::<Cache>::set_active_pair(pair, false).await)
     }
 
     pub async fn select_pair_core(self) -> Result<Option<Model>, Response> {
+        let memory_pair = Pairs::<Cache>::get_active_pair(&self.model.id.unwrap_or_default()).await;
+
+        if memory_pair.is_some() {
+            return Ok(memory_pair);
+        }
+
         self.next_phase::<Data>()
             .select_pair_data(&get_config().await.db)
             .await
     }
 
     pub async fn select_pairs_core(self) -> Result<Vec<Model>, Response> {
+        let memory_pairs = Pairs::<Cache>::get_active_pairs().await;
+
+        if let Some(pairs) = memory_pairs {
+            let pairs: Vec<Model> = pairs
+                .values()
+                .into_iter()
+                .map(|val| val.to_owned())
+                .collect();
+
+            return Ok(pairs);
+        }
+
         self.next_phase::<Data>()
             .select_pairs_data(&get_config().await.db)
             .await
     }
-
-    // pub async fn select_all_pairs() -> Outcome<Vec<Model>, String, String> {
-    //     Pairs::<Data>::select_all_pairs(&get_config().await.db).await
-    // }
-
-    // pub async fn select_pairs_by_ids(ids: Vec<i32>) -> Outcome<Vec<Model>, String, String> {
-    //     Pairs::<Data>::select_pairs_by_ids(&get_config().await.db, ids).await
-    // }
 
     pub async fn update_pair_core(self) -> Result<Model, Response> {
         let base_asset = Assets::new(AssetRequest {
@@ -68,14 +78,14 @@ impl Pairs<Core> {
         .select_asset()
         .await?;
 
-        let logic_type = self
+        let pair = self
             .next_phase::<Logic>()
             .update_pair_logic(base_asset, quote_asset)
-            .map_err(handle_user_err)?;
-
-        logic_type
+            .map_err(handle_user_err)?
             .next_phase::<Data>()
             .update_pair_data(&get_config().await.db)
-            .await
+            .await?;
+
+        Ok(Pairs::<Cache>::set_active_pair(pair, false).await)
     }
 }

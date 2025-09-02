@@ -1,6 +1,6 @@
 use actix_web::{get, HttpResponse, Responder};
 
-use crate::{types::OrderStatus, utils::error_response};
+use crate::{handler::OrderStatus, utils::error_response};
 
 #[get("")]
 pub async fn select_status() -> impl Responder {

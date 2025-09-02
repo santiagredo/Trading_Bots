@@ -1,6 +1,6 @@
 use models::entities::assets;
 
-use crate::{types::Pairs, utils::Logic};
+use crate::{handler::Pairs, utils::Logic};
 
 impl Pairs<Logic> {
     pub fn insert_pair_logic(
@@ -48,7 +48,7 @@ impl Pairs<Logic> {
 
 #[cfg(test)]
 mod fn_insert_pair_logic {
-    use crate::types::Pairs;
+    use crate::handler::Pairs;
     use crate::utils::Core;
     use models::entities::assets;
 
@@ -141,7 +141,7 @@ mod fn_insert_pair_logic {
 
 #[cfg(test)]
 mod fn_update_pair_logic {
-    use crate::types::Pairs;
+    use crate::handler::Pairs;
     use crate::utils::Core;
     use models::entities::assets;
 

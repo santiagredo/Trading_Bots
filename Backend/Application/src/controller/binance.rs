@@ -1,6 +1,6 @@
 use actix_web::{get, HttpResponse, Responder};
 
-use crate::types::Binance;
+use crate::handler::Binance;
 
 #[get("")]
 pub async fn get_account() -> impl Responder {

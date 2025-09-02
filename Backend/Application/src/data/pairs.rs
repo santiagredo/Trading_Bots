@@ -4,7 +4,7 @@ use sea_orm::{ActiveValue, ColumnTrait, Condition, DatabaseConnection, EntityTra
 use tracing::error_span;
 
 use crate::{
-    types::Pairs,
+    handler::Pairs,
     utils::{handle_db_error, Data, Response},
 };
 

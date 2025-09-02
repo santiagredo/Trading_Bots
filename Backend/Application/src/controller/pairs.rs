@@ -1,7 +1,7 @@
 use actix_web::{get, patch, post, web, HttpResponse, Responder};
 use models::structs::PairRequest;
 
-use crate::{types::Pairs, utils::error_response};
+use crate::{handler::Pairs, utils::error_response};
 
 #[post("")]
 pub async fn insert_pair(web::Json(pair): web::Json<PairRequest>) -> impl Responder {

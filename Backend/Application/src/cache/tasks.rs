@@ -1,23 +1,18 @@
-use std::{marker::PhantomData, sync::Arc, time::Duration};
+use std::{sync::Arc, time::Duration};
 
 use once_cell::sync::Lazy;
 use tokio::{sync::RwLock, task::AbortHandle, time::sleep};
 
 use crate::{
-    types::{Binance, CoinPaprika},
-    utils::Types,
+    handler::{Binance, CoinPaprika, Tasks},
+    utils::Cache,
 };
-
-#[derive(Debug, Default)]
-pub struct Tasks<Phase = Types> {
-    phase: PhantomData<Phase>,
-}
 
 static TASKS_ABORT_HANDLES: Lazy<Arc<RwLock<Vec<AbortHandle>>>> =
     Lazy::new(|| Arc::new(RwLock::new(Vec::new())));
 
-impl Tasks {
-    pub async fn start_async_tasks() {
+impl Tasks<Cache> {
+    pub async fn start_async_tasks_cache() {
         let tasks_abort_handles = TASKS_ABORT_HANDLES.read().await;
 
         if !tasks_abort_handles.is_empty() {
@@ -91,7 +86,7 @@ impl Tasks {
         *tasks_abort_handles = vec_handles;
     }
 
-    pub async fn stop_async_tasks() {
+    pub async fn stop_async_tasks_cache() {
         let mut tasks_abort_handles = TASKS_ABORT_HANDLES.write().await;
 
         tasks_abort_handles.iter().for_each(|handle| handle.abort());

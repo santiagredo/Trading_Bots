@@ -1,4 +1,4 @@
-use crate::{types::Ledgers, utils::Logic};
+use crate::{handler::Ledgers, utils::Logic};
 
 impl Ledgers<Logic> {
     pub fn insert_ledger_logic(self) -> Result<Self, String> {
@@ -43,7 +43,7 @@ mod fn_insert_ledger_logic {
     use models::structs::LedgerRequest;
     use sea_orm::prelude::Decimal;
 
-    use crate::types::Ledgers;
+    use crate::handler::Ledgers;
     use crate::utils::Logic;
 
     #[test]

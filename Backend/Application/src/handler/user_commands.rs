@@ -4,9 +4,9 @@ use chrono::Local;
 use models::enums::WebsocketCommand;
 
 use crate::{
-    types::{
-        Actions, Assets, Indicators, Metrics, OrderStatus, Pairs, Senders, Strategies, Tasks,
-        WebsocketStreams,
+    handler::{
+        Actions, Assets, Indicators, Metrics, OrderStatus, Pairs, Senders, Strategies,
+        SubscribedIndicators, Tasks, WebsocketStreams,
     },
     utils::{Response, Types},
 };
@@ -34,7 +34,9 @@ impl UserCommands {
 
         Indicators::start_active_indicators().await?;
 
-        Indicators::start_subscribed_indicators().await;
+        SubscribedIndicators::default()
+            .start_subscribed_indicators()
+            .await;
 
         Actions::start_active_actions().await?;
 
@@ -70,7 +72,9 @@ impl UserCommands {
 
         Indicators::stop_active_indicators().await;
 
-        Indicators::stop_subscribed_indicators().await;
+        SubscribedIndicators::default()
+            .stop_subscribed_indicators()
+            .await;
 
         Actions::stop_active_actions().await;
 

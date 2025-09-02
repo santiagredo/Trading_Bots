@@ -11,8 +11,8 @@ use tokio_tungstenite::{connect_async, tungstenite::Message};
 use tracing::error_span;
 
 use crate::{
+    handler::{Senders, SubscribedIndicators, Tickers, WebsocketStreams},
     static_strings::BINANCE_WEBSOCKET_STREAM_URL,
-    types::{Indicators, Senders, Tickers, WebsocketStreams},
     utils::Integration,
 };
 
@@ -53,7 +53,8 @@ impl WebsocketStreams<Integration> {
                 let (mut write, mut read) = ws_stream.split();
 
                 // gets the subscribed indicators symbols to resubscribe in case the websocket connection drops
-                let symbols: Vec<String> = Indicators::get_subscribed_indicators()
+                let symbols: Vec<String> = SubscribedIndicators::default()
+                    .select_subscribed_indicators()
                     .await
                     .unwrap_or_default()
                     .keys()

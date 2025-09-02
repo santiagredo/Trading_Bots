@@ -9,7 +9,7 @@ use sea_orm::{ColumnTrait, Condition, DatabaseConnection, EntityTrait, QueryFilt
 use tracing::error_span;
 
 use crate::{
-    types::StrategiesOverview,
+    handler::StrategiesOverview,
     utils::{handle_db_error, Data, Response},
 };
 

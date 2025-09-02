@@ -17,7 +17,14 @@ pub struct Orders<Phase = Types> {
     pub model: OrderRequest,
 }
 
-// pub static ORDERS: Lazy<Arc<RwLock<Vec<Model>>>> = Lazy::new(|| Arc::new(RwLock::new(Vec::new())));
+impl<Phase> Orders<Phase> {
+    pub fn next_phase<Next>(self) -> Orders<Next> {
+        Orders {
+            phase: PhantomData::<Next>,
+            model: self.model,
+        }
+    }
+}
 
 impl Orders {
     pub fn new(model: OrderRequest) -> Self {
@@ -93,18 +100,7 @@ impl Orders {
 
         self
     }
-}
 
-impl<Phase> Orders<Phase> {
-    pub fn next_phase<Next>(self) -> Orders<Next> {
-        Orders {
-            phase: PhantomData::<Next>,
-            model: self.model,
-        }
-    }
-}
-
-impl Orders<Types> {
     pub async fn insert_order(self) -> Result<Model, Response> {
         self.next_phase().insert_order_core().await
     }

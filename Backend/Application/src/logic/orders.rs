@@ -1,7 +1,7 @@
 use models::structs::request::OrderRequest;
 use sea_orm::prelude::Decimal;
 
-use crate::{types::Orders, utils::Logic};
+use crate::{handler::Orders, utils::Logic};
 
 impl Orders<Logic> {
     pub fn insert_order_logic(mut self) -> Result<Self, String> {
@@ -118,7 +118,7 @@ impl Orders<Logic> {
 
 #[cfg(test)]
 mod insert_order_logic_tests {
-    use crate::types::Orders;
+    use crate::handler::Orders;
     use models::structs::request::OrderRequest;
     use sea_orm::prelude::Decimal;
 
@@ -205,7 +205,7 @@ mod insert_order_logic_tests {
 
 #[cfg(test)]
 mod select_order_logic_tests {
-    use crate::types::Orders;
+    use crate::handler::Orders;
     use models::structs::request::OrderRequest;
 
     #[test]
@@ -242,7 +242,7 @@ mod select_order_logic_tests {
 
 #[cfg(test)]
 mod update_order_logic_tests {
-    use crate::types::Orders;
+    use crate::handler::Orders;
     use models::structs::request::OrderRequest;
 
     #[test]

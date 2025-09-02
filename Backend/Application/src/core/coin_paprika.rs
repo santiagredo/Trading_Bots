@@ -1,7 +1,7 @@
 use models::structs::CoinPaprikaTicker;
 use tracing::error_span;
 
-use crate::{types::CoinPaprika, utils::Core};
+use crate::{handler::CoinPaprika, utils::Core};
 
 impl CoinPaprika<Core> {
     pub async fn get_tickers_core(self) -> Option<Vec<CoinPaprikaTicker>> {

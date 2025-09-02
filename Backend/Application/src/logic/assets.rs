@@ -1,5 +1,5 @@
 use crate::{
-    types::Assets,
+    handler::Assets,
     utils::{Logic, Utils},
 };
 

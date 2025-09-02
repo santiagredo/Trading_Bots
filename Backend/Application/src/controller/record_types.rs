@@ -1,7 +1,7 @@
 use actix_web::{get, web, HttpResponse, Responder};
 use models::structs::RecordTypeRequest;
 
-use crate::{types::RecordTypes, utils::error_response};
+use crate::{handler::RecordTypes, utils::error_response};
 
 #[get("/all")]
 pub async fn select_record_types(record_types: web::Query<RecordTypeRequest>) -> impl Responder {

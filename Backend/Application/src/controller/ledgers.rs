@@ -1,7 +1,7 @@
 use actix_web::{get, post, web, HttpResponse, Responder};
 use models::structs::LedgerRequest;
 
-use crate::{types::Ledgers, utils::error_response};
+use crate::{handler::Ledgers, utils::error_response};
 
 #[post("")]
 pub async fn insert_ledger(web::Json(ledger): web::Json<LedgerRequest>) -> impl Responder {

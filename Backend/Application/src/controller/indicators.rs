@@ -1,7 +1,10 @@
 use actix_web::{delete, get, post, put, web, HttpResponse, Responder};
 use models::structs::IndicatorRequest;
 
-use crate::{types::Indicators, utils::error_response};
+use crate::{
+    handler::{Indicators, SubscribedIndicators},
+    utils::error_response,
+};
 
 #[post("")]
 pub async fn insert_indicator(web::Json(indicator): web::Json<IndicatorRequest>) -> impl Responder {
@@ -59,6 +62,8 @@ pub async fn delete_indicator(web::Json(indicator): web::Json<IndicatorRequest>)
 
 #[get("/memory")]
 pub async fn get_subscribed_indicators() -> impl Responder {
-    let val = Indicators::get_subscribed_indicators().await;
+    let val = SubscribedIndicators::default()
+        .select_subscribed_indicators()
+        .await;
     HttpResponse::Ok().json(val)
 }

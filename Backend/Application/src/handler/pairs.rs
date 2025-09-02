@@ -1,8 +1,6 @@
-use std::{collections::HashMap, marker::PhantomData, sync::Arc};
+use std::marker::PhantomData;
 
 use models::{entities::pairs::Model, structs::PairRequest};
-use once_cell::sync::Lazy;
-use tokio::sync::RwLock;
 
 use crate::utils::{Core, Response, Types};
 
@@ -12,8 +10,14 @@ pub struct Pairs<Phase = Types> {
     pub model: PairRequest,
 }
 
-static ACTIVE_PAIRS: Lazy<Arc<RwLock<Option<HashMap<i32, Model>>>>> =
-    Lazy::new(|| Arc::new(RwLock::new(None)));
+impl<Phase> Pairs<Phase> {
+    pub fn next_phase<Next>(self) -> Pairs<Next> {
+        Pairs {
+            phase: PhantomData::<Next>,
+            model: self.model,
+        }
+    }
+}
 
 impl Pairs {
     pub fn new(model: PairRequest) -> Self {
@@ -99,67 +103,6 @@ impl Pairs {
         self
     }
 
-    async fn set_active_pairs(pairs: Option<Vec<Model>>) -> Option<Vec<Model>> {
-        let mut memory_pairs = ACTIVE_PAIRS.write().await;
-
-        let Some(pairs) = pairs else {
-            *memory_pairs = None;
-            return None;
-        };
-
-        let mut active_pairs_map: HashMap<i32, Model> = HashMap::new();
-
-        for pair in pairs.iter() {
-            active_pairs_map.insert(pair.id, pair.clone());
-        }
-
-        *memory_pairs = Some(active_pairs_map);
-        Some(pairs)
-    }
-
-    pub async fn get_active_pairs() -> Option<HashMap<i32, Model>> {
-        let memory_pairs = ACTIVE_PAIRS.read().await;
-
-        memory_pairs.clone()
-    }
-
-    pub async fn get_active_pair(key: &i32) -> Option<Model> {
-        let active_pairs = ACTIVE_PAIRS.read().await;
-
-        let Some(pairs_map) = active_pairs.as_ref() else {
-            return None;
-        };
-
-        pairs_map.get(key).cloned()
-    }
-
-    pub async fn start_active_pairs() -> Result<(), Response> {
-        if Self::get_active_pairs()
-            .await
-            .is_none_or(|pairs| pairs.is_empty())
-        {
-            let pairs = Self::default().select_pairs().await?;
-            Self::set_active_pairs(Some(pairs)).await;
-        }
-
-        Ok(())
-    }
-
-    pub async fn stop_active_pairs() {
-        Self::set_active_pairs(None).await;
-    }
-}
-
-impl<Phase> Pairs<Phase> {
-    pub fn next_phase<Next>(self) -> Pairs<Next> {
-        Pairs {
-            phase: PhantomData::<Next>,
-            model: self.model,
-        }
-    }
-}
-
-impl Pairs<Types> {
     pub async fn insert_pair(self) -> Result<Model, Response> {
         self.next_phase::<Core>().insert_pair_core().await
     }

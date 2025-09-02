@@ -4,7 +4,7 @@ use models::{
 };
 use tracing::error_span;
 
-use crate::{config::get_config, types::Binance, utils::Core};
+use crate::{config::get_config, handler::Binance, utils::Core};
 
 impl Binance<Core> {
     pub async fn get_account_core(self) -> Option<AccountInformation> {

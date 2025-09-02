@@ -3,7 +3,7 @@ use std::marker::PhantomData;
 use models::structs::{StrategyOverview, StrategyRequest};
 
 use crate::{
-    types::{Actions, Assets, Indicators, Pairs, Strategies, Tickers},
+    types::{Actions, Assets, Indicators, OrderStatus, Pairs, Strategies, Tickers},
     utils::{Core, Response, Types},
 };
 
@@ -68,6 +68,10 @@ impl StrategiesOverview {
             return None;
         };
 
+        let Some(order_status) = OrderStatus::get_active_status().await else {
+            return None;
+        };
+
         let strategy_overview = StrategyOverview {
             strategy,
             indicator,
@@ -76,6 +80,7 @@ impl StrategiesOverview {
             base_asset,
             quote_asset,
             ticker,
+            order_status,
         };
 
         Some(strategy_overview)

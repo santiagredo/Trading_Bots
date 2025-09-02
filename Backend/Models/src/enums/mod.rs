@@ -36,3 +36,6 @@ pub use operation_keys::*;
 
 pub mod metric_type;
 pub use metric_type::*;
+
+pub mod status;
+pub use status::*;

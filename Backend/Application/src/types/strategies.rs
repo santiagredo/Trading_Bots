@@ -6,7 +6,7 @@ use models::{
         orders,
         strategies::{self, Model},
     },
-    enums::MetricType,
+    enums::{MetricType, Status},
     structs::{AssetRequest, LedgerRequest, StrategyOverview, StrategyRequest},
 };
 use once_cell::sync::Lazy;
@@ -322,12 +322,17 @@ impl Strategies {
         };
 
         // create order
+        let order_status = *strategy_overview
+            .order_status
+            .get(&Status::Completed)
+            .unwrap_or(&2);
+
         let order = Orders::default()
             .from_strategy(&strategy_overview.strategy)
             .from_action(&action)
             .from_pair(&strategy_overview.pair)
             .from_ticker(&strategy_overview.ticker)
-            .from_status(2);
+            .from_status(order_status);
 
         Ok(order)
     }
@@ -429,6 +434,7 @@ impl Strategies<Types> {
 mod fn_evaluate_custom_logic {
     use models::{
         entities::{actions, assets, indicators, pairs},
+        enums::Status,
         structs::Ticker,
     };
     use sea_orm::prelude::Decimal;
@@ -436,6 +442,11 @@ mod fn_evaluate_custom_logic {
     use super::*;
 
     fn make_strategy_overview() -> StrategyOverview {
+        let mut order_status = HashMap::new();
+        order_status.insert(Status::Open, 1);
+        order_status.insert(Status::Completed, 2);
+        order_status.insert(Status::Aborted, 3);
+
         StrategyOverview {
             strategy: strategies::Model {
                 id: 1,
@@ -497,6 +508,7 @@ mod fn_evaluate_custom_logic {
                 last_price: Decimal::new(20000, 0),
                 ..Default::default()
             },
+            order_status,
         }
     }
 

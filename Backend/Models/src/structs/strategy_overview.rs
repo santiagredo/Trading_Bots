@@ -1,7 +1,10 @@
+use std::collections::HashMap;
+
 use serde::{Deserialize, Serialize};
 
 use crate::{
     entities::{actions, assets, indicators, pairs, strategies},
+    enums::Status,
     structs::Ticker,
 };
 
@@ -14,4 +17,5 @@ pub struct StrategyOverview {
     pub base_asset: assets::Model,
     pub quote_asset: assets::Model,
     pub ticker: Ticker,
+    pub order_status: HashMap<Status, i32>,
 }

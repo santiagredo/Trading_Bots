@@ -33,3 +33,6 @@ pub use metrics::*;
 
 pub mod binance;
 pub use binance::*;
+
+pub mod status;
+pub use status::*;

@@ -5,7 +5,8 @@ use models::enums::WebsocketCommand;
 
 use crate::{
     types::{
-        Actions, Assets, Indicators, Metrics, Pairs, Senders, Strategies, Tasks, WebsocketStreams,
+        Actions, Assets, Indicators, Metrics, OrderStatus, Pairs, Senders, Strategies, Tasks,
+        WebsocketStreams,
     },
     utils::{Response, Types},
 };
@@ -20,6 +21,8 @@ impl UserCommands {
         let start = Instant::now();
 
         Tasks::start_async_tasks().await;
+
+        OrderStatus::start_active_status().await?;
 
         Assets::start_active_assets().await?;
 
@@ -54,6 +57,8 @@ impl UserCommands {
         let start = Instant::now();
 
         Tasks::stop_async_tasks().await;
+
+        OrderStatus::stop_active_status().await;
 
         Assets::stop_active_assets().await;
 

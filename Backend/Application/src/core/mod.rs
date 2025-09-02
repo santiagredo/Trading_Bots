@@ -11,3 +11,4 @@ pub mod websocket_streams;
 pub mod strategies_overview;
 pub mod binance;
 pub mod coin_paprika;
+pub mod status;

@@ -5,7 +5,7 @@ use crate::controller::{
     get_subscribed_indicators, insert_action, insert_asset, insert_indicator, insert_ledger,
     insert_order, insert_pair, insert_strategy, refresh_everything, select_action, select_actions,
     select_asset, select_assets, select_indicator, select_indicators, select_ledger,
-    select_ledgers, select_metrics, select_order, select_pair, select_record_types,
+    select_ledgers, select_metrics, select_order, select_pair, select_record_types, select_status,
     select_strategies, select_strategies_overview, select_strategy, start_everything,
     stop_everything, update_action, update_asset, update_indicator, update_order, update_pair,
     update_strategy,
@@ -73,5 +73,6 @@ pub fn routes_config(cfg: &mut web::ServiceConfig) {
             .service(refresh_everything),
     )
     .service(web::scope("/metrics").service(select_metrics))
-    .service(web::scope("/binance").service(get_account));
+    .service(web::scope("/binance").service(get_account))
+    .service(web::scope("/order_status").service(select_status));
 }

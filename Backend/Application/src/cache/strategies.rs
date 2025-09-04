@@ -171,6 +171,7 @@ impl Strategies<Cache> {
         let order = match order.insert_order().await {
             Err(err) => {
                 dbg!(eprintln!("{}", err.message));
+                Strategies::update_strategy_last_dates(&strategy_overview.strategy, true).await;
                 return;
             }
             Ok(val) => val,
@@ -189,11 +190,13 @@ impl Strategies<Cache> {
             .await
         {
             dbg!(eprintln!("{}", err.message));
+            Strategies::update_strategy_last_dates(&strategy_overview.strategy, true).await;
             return;
         };
 
         if let Err(err) = Ledgers::new(base_asset_ledger).insert_ledger().await {
             dbg!(eprintln!("{}", err.message));
+            Strategies::update_strategy_last_dates(&strategy_overview.strategy, true).await;
             return;
         };
 
@@ -210,24 +213,18 @@ impl Strategies<Cache> {
             .await
         {
             dbg!(eprintln!("{}", err.message));
+            Strategies::update_strategy_last_dates(&strategy_overview.strategy, true).await;
             return;
         };
 
         if let Err(err) = Ledgers::new(quote_asset_ledger).insert_ledger().await {
             dbg!(eprintln!("{}", err.message));
+            Strategies::update_strategy_last_dates(&strategy_overview.strategy, true).await;
             return;
         };
 
         // update strategy last execution datetime
-        let now = Local::now().naive_local();
-
-        let mut strategy_request = Strategies::default().into_request(strategy_overview.strategy);
-        strategy_request.model.last_execution = Some(now);
-
-        if let Err(err) = strategy_request.update_strategy().await {
-            dbg!(eprintln!("{}", err.message));
-            return;
-        };
+        Strategies::update_strategy_last_dates(&strategy_overview.strategy, false).await;
 
         // update speed metrics
         let now = Local::now().naive_local();
@@ -238,5 +235,22 @@ impl Strategies<Cache> {
         //     now,
         //     start.elapsed()
         // ));
+    }
+
+    async fn update_strategy_last_dates(strategy: &Model, is_error: bool) {
+        let now = Local::now().naive_local();
+
+        let mut strategy_request = Strategies::default().into_request(strategy.clone());
+
+        if is_error {
+            strategy_request.model.error_last_date = Some(now);
+        } else {
+            strategy_request.model.last_execution = Some(now);
+        }
+
+        if let Err(err) = strategy_request.update_strategy().await {
+            dbg!(eprintln!("{}", err.message));
+            return;
+        };
     }
 }

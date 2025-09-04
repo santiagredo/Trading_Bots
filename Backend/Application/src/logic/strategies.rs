@@ -9,8 +9,19 @@ impl Strategies<Logic> {
     pub fn insert_strategy_logic(self) -> Result<Self, String> {
         Utils::validate_empty_field(self.model.name.clone().unwrap_or_default(), "Strategy name")?;
 
-        if self.model.cooldown.is_none_or(|cooldown| cooldown == 0) {
+        if self.model.cooldown.is_none_or(|cooldown| cooldown <= 0) {
             return Err(format!("Invalid cooldown: {:?}", self.model.cooldown));
+        };
+
+        if self
+            .model
+            .error_cooldown
+            .is_none_or(|error_cooldown| error_cooldown <= 0)
+        {
+            return Err(format!(
+                "Invalid error cooldown: {:?}",
+                self.model.error_cooldown
+            ));
         };
 
         Ok(self)
@@ -27,6 +38,17 @@ impl Strategies<Logic> {
 
         if self.model.cooldown.is_some_and(|cooldown| cooldown <= 0) {
             return Err(format!("Invalid cooldown: {:?}", self.model.cooldown));
+        };
+
+        if self
+            .model
+            .error_cooldown
+            .is_some_and(|error_cooldown| error_cooldown <= 0)
+        {
+            return Err(format!(
+                "Invalid error cooldown: {:?}",
+                self.model.error_cooldown
+            ));
         };
 
         Ok(self)
@@ -70,13 +92,21 @@ mod fn_insert_strategy_logic {
                 "ok_valid_insert",
                 Some("Scalping".to_string()),
                 Some(10),
+                Some(10),
                 true,
             ),
-            ("err_empty_name", Some("".to_string()), Some(10), false),
-            ("err_none_name", None, Some(10), false),
+            (
+                "err_empty_name",
+                Some("".to_string()),
+                Some(10),
+                Some(10),
+                false,
+            ),
+            ("err_none_name", None, Some(10), Some(10), false),
             (
                 "err_invalid_cooldown",
                 Some("Scalping".to_string()),
+                Some(0),
                 Some(0),
                 false,
             ),
@@ -84,14 +114,30 @@ mod fn_insert_strategy_logic {
                 "err_none_cooldown",
                 Some("Scalping".to_string()),
                 None,
+                None,
+                false,
+            ),
+            (
+                "err_invalid_error_cooldown",
+                Some("Scalping".to_string()),
+                Some(10),
+                Some(0),
+                false,
+            ),
+            (
+                "err_none_error_cooldown",
+                Some("Scalping".to_string()),
+                Some(10),
+                None,
                 false,
             ),
         ];
 
-        for (name, strategy_name, cooldown, should_pass) in cases {
+        for (name, strategy_name, cooldown, error_cooldown, should_pass) in cases {
             let mut strategy = Strategies::default();
             strategy.model.name = strategy_name;
             strategy.model.cooldown = cooldown;
+            strategy.model.error_cooldown = error_cooldown;
 
             let result = strategy.next_phase::<Logic>().insert_strategy_logic();
 
@@ -120,12 +166,14 @@ mod fn_update_strategy_logic {
                 Some(1),
                 Some("Swing".to_string()),
                 Some(30),
+                Some(30),
                 true,
             ),
             (
                 "err_invalid_id",
                 Some(0),
                 Some("Swing".to_string()),
+                Some(30),
                 Some(30),
                 false,
             ),
@@ -134,12 +182,14 @@ mod fn_update_strategy_logic {
                 None,
                 Some("Swing".to_string()),
                 Some(30),
+                Some(30),
                 false,
             ),
             (
                 "err_empty_name",
                 Some(1),
                 Some("".to_string()),
+                Some(30),
                 Some(30),
                 false,
             ),
@@ -148,15 +198,25 @@ mod fn_update_strategy_logic {
                 Some(1),
                 Some("Swing".to_string()),
                 Some(0),
+                Some(30),
+                false,
+            ),
+            (
+                "err_invalid_error_cooldown",
+                Some(1),
+                Some("Scalping".to_string()),
+                Some(30),
+                Some(0),
                 false,
             ),
         ];
 
-        for (name, id, strategy_name, cooldown, should_pass) in cases {
+        for (name, id, strategy_name, cooldown, error_cooldown, should_pass) in cases {
             let mut strategy = Strategies::default();
             strategy.model.id = id;
             strategy.model.name = strategy_name;
             strategy.model.cooldown = cooldown;
+            strategy.model.error_cooldown = error_cooldown;
 
             let result = strategy.next_phase::<Logic>().update_strategy_logic();
 

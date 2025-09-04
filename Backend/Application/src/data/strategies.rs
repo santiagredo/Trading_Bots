@@ -20,6 +20,8 @@ impl Strategies<Data> {
             can_trade: ActiveValue::Set(self.model.can_trade.unwrap_or_default()),
             last_execution: ActiveValue::Set(self.model.last_execution),
             cooldown: ActiveValue::Set(self.model.cooldown),
+            error_cooldown: ActiveValue::Set(self.model.error_cooldown),
+            error_last_date: ActiveValue::Set(self.model.error_last_date),
         };
 
         match Entity::insert(active_model_strategy)
@@ -87,6 +89,14 @@ impl Strategies<Data> {
             condition = condition.add(Column::Cooldown.eq(cooldown))
         }
 
+        if let Some(error_cooldown) = self.model.error_cooldown {
+            condition = condition.add(Column::ErrorCooldown.eq(error_cooldown))
+        }
+
+        if let Some(error_last_date) = self.model.error_last_date {
+            condition = condition.add(Column::ErrorLastDate.eq(error_last_date))
+        }
+
         match Entity::find().filter(condition).all(db).await {
             Err(err) => {
                 error_span!("error - database", error = ?err);
@@ -125,6 +135,14 @@ impl Strategies<Data> {
 
         if let Some(cooldown) = self.model.cooldown {
             strategy.cooldown = ActiveValue::Set(Some(cooldown))
+        }
+
+        if let Some(error_cooldown) = self.model.error_cooldown {
+            strategy.error_cooldown = ActiveValue::Set(Some(error_cooldown))
+        }
+
+        if let Some(error_last_date) = self.model.error_last_date {
+            strategy.error_last_date = ActiveValue::Set(Some(error_last_date))
         }
 
         match strategy.update(db).await {

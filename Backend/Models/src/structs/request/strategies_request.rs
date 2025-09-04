@@ -10,4 +10,6 @@ pub struct StrategyRequest {
     pub description: Option<String>,
     pub last_execution: Option<DateTime>,
     pub cooldown: Option<i32>,
+    pub error_cooldown: Option<i32>,
+    pub error_last_date: Option<DateTime>,
 }

@@ -46,6 +46,8 @@ impl Strategies {
             description: Some(strategy.description.unwrap_or_default()),
             last_execution: Some(strategy.last_execution.unwrap_or_default()),
             cooldown: Some(strategy.cooldown.unwrap_or_default()),
+            error_cooldown: Some(strategy.error_cooldown.unwrap_or_default()),
+            error_last_date: Some(strategy.error_last_date.unwrap_or_default()),
         }
     }
 
@@ -58,6 +60,8 @@ impl Strategies {
             description: model.description,
             last_execution: model.last_execution,
             cooldown: model.cooldown,
+            error_cooldown: model.error_cooldown,
+            error_last_date: model.error_last_date,
         };
 
         self.model = strategy_request;

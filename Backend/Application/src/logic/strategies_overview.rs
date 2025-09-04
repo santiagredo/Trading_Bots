@@ -65,6 +65,14 @@ impl StrategiesOverview<Logic> {
             return Err(format!("Cooldown is active"));
         }
 
+        // evaluate error cooldown has passed
+        if !Strategies::default().evaluate_cooldown(
+            strategy_overview.strategy.error_last_date,
+            strategy_overview.strategy.error_cooldown,
+        ) {
+            return Err(format!("Error cooldown is active"));
+        }
+
         // evalute indicator
         match Indicators::evalute_active_indicators(
             &strategy_overview.ticker,
@@ -165,6 +173,7 @@ mod fn_evaluate_strategy_overview_logic {
                 can_trade: true,
                 last_execution: None,
                 cooldown: Some(1),
+                error_cooldown: Some(1),
                 ..Default::default()
             },
             indicator: indicators::Model {
@@ -253,6 +262,15 @@ mod fn_evaluate_strategy_overview_logic {
                     s
                 },
                 true,
+            ),
+            (
+                "err_cooldown_error_active",
+                {
+                    let mut s = base_case.clone();
+                    s.strategy.error_last_date = Some(chrono::Local::now().naive_local());
+                    s
+                },
+                false,
             ),
         ];
 

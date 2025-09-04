@@ -9,6 +9,7 @@ mod m20250121_031549_create_ledgers_table;
 mod m20250130_013341_create_pairs_table;
 mod m20250625_024136_create_indicators_table;
 mod m20250625_030535_create_actions_table;
+mod m20250904_011953_create_tasks_table;
 
 pub struct Migrator;
 
@@ -25,6 +26,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20250130_013341_create_pairs_table::Migration),
             Box::new(m20250625_024136_create_indicators_table::Migration),
             Box::new(m20250625_030535_create_actions_table::Migration),
+            Box::new(m20250904_011953_create_tasks_table::Migration),
         ]
     }
 }

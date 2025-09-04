@@ -1,96 +1,152 @@
-use std::{sync::Arc, time::Duration};
+use std::{collections::HashMap, sync::Arc, time::Duration};
 
+use models::entities::tasks::Model;
 use once_cell::sync::Lazy;
 use tokio::{sync::RwLock, task::AbortHandle, time::sleep};
 
 use crate::{
     handler::{Binance, CoinPaprika, Tasks},
-    utils::Cache,
+    utils::{Cache, Response},
 };
 
-static TASKS_ABORT_HANDLES: Lazy<Arc<RwLock<Vec<AbortHandle>>>> =
-    Lazy::new(|| Arc::new(RwLock::new(Vec::new())));
+static ACTIVE_TASKS: Lazy<Arc<RwLock<Option<HashMap<i32, (Model, AbortHandle)>>>>> =
+    Lazy::new(|| Arc::new(RwLock::new(None)));
 
 impl Tasks<Cache> {
-    pub async fn start_async_tasks_cache() {
-        let tasks_abort_handles = TASKS_ABORT_HANDLES.read().await;
+    pub async fn set_active_tasks_cache(tasks: Option<Vec<Model>>) -> Option<Vec<Model>> {
+        let mut active_tasks = ACTIVE_TASKS.write().await;
 
-        if !tasks_abort_handles.is_empty() {
-            return;
+        let Some(tasks) = tasks else {
+            *active_tasks = None;
+            return None;
+        };
+
+        let mut active_tasks_map: HashMap<i32, (Model, AbortHandle)> = HashMap::new();
+
+        for task in tasks.iter() {
+            if let Some(abort_handle) = Tasks::get_abort_handle(task).await {
+                active_tasks_map.insert(task.id, (task.clone(), abort_handle));
+            }
         }
 
-        // drop needed in order to prevent a deadlock
-        drop(tasks_abort_handles);
+        *active_tasks = Some(active_tasks_map);
 
-        let account_information_handle = tokio::spawn(async move {
-            loop {
-                // Binance::update_account_balances().await;
-                sleep(Duration::from_secs(86400)).await;
-            }
-        })
-        .abort_handle();
+        Some(tasks)
+    }
 
-        let exchange_information_handle = tokio::spawn(async move {
-            loop {
-                // let start = Instant::now();
+    pub async fn set_active_task_cache(task: Model) -> Model {
+        let mut active_tasks = ACTIVE_TASKS.write().await;
 
-                Binance::update_exchange_information().await;
+        let Some(tasks_map) = active_tasks.as_mut() else {
+            return task;
+        };
 
-                // let now = Local::now().naive_local();
+        if let Some((_, abort_handle)) = tasks_map.remove(&task.id) {
+            abort_handle.abort();
+        };
 
-                // dbg!(format!(
-                //     "Update exchange information completed at {} -- duration of {:?}",
-                //     now,
-                //     start.elapsed()
-                // ));
+        if !task.is_active {
+            return task;
+        }
 
-                sleep(Duration::from_secs(86400)).await;
-            }
-        })
-        .abort_handle();
+        if let Some(abort_handle) = Tasks::<Cache>::get_abort_handle(&task).await {
+            tasks_map.insert(task.id, (task.clone(), abort_handle));
+        };
 
-        let pair_statistics_handle = tokio::spawn(async move {
-            loop {
-                CoinPaprika::update_pairs_statistics().await;
-                sleep(Duration::from_secs(300)).await;
-            }
-        })
-        .abort_handle();
+        task
+    }
 
-        // let metrics_handle = tokio::spawn(async move {
-        //     loop {
-        //         if let Some(mut metrics) = Metrics::get_active_metrics().await {
-        //             for (metric_type, metric) in metrics.drain() {
-        //                 dbg!(metric_type);
-        //                 dbg!(metric.total_duration);
-        //                 dbg!(metric.average().as_millis());
-        //                 dbg!(metric.count);
-        //                 dbg!(metric.fastest_duration);
-        //                 dbg!(metric.slowest_duration);
-        //             }
-        //         }
-        //         sleep(Duration::from_secs(1800)).await;
-        //     }
-        // })
-        // .abort_handle();
+    pub async fn get_active_tasks_cache() -> Option<Vec<Model>> {
+        let active_tasks = ACTIVE_TASKS.read().await;
 
-        let vec_handles = vec![
-            exchange_information_handle,
-            pair_statistics_handle,
-            // metrics_handle,
-            account_information_handle,
-        ];
+        if let Some(tasks) = active_tasks.as_ref() {
+            let models = tasks
+                .iter()
+                .map(|(_, (model, _))| model.clone())
+                .collect::<Vec<Model>>();
 
-        let mut tasks_abort_handles = TASKS_ABORT_HANDLES.write().await;
+            return Some(models);
+        }
 
-        *tasks_abort_handles = vec_handles;
+        None
+    }
+
+    pub async fn get_active_task_cache(key: &i32) -> Option<Model> {
+        let active_tasks = ACTIVE_TASKS.read().await;
+
+        let Some(tasks_map) = active_tasks.as_ref() else {
+            return None;
+        };
+
+        let Some((model, _)) = tasks_map.get(key).cloned() else {
+            return None;
+        };
+
+        Some(model)
+    }
+
+    pub async fn start_async_tasks_cache() -> Result<(), Response> {
+        if Tasks::get_active_tasks_cache()
+            .await
+            .is_none_or(|map| map.is_empty())
+        {
+            let mut tasks_request = Tasks::default();
+            tasks_request.model.is_active = Some(true);
+            let active_tasks = tasks_request.select_tasks().await?;
+            Tasks::set_active_tasks_cache(Some(active_tasks)).await;
+        }
+
+        Ok(())
     }
 
     pub async fn stop_async_tasks_cache() {
-        let mut tasks_abort_handles = TASKS_ABORT_HANDLES.write().await;
+        let mut tasks_abort_handles = ACTIVE_TASKS.write().await;
 
-        tasks_abort_handles.iter().for_each(|handle| handle.abort());
+        if let Some(map) = tasks_abort_handles.as_mut() {
+            for (_, abort_handle) in map.values() {
+                abort_handle.abort();
+            }
+        }
 
-        *tasks_abort_handles = Vec::new();
+        *tasks_abort_handles = None;
+    }
+
+    pub async fn get_abort_handle(task: &Model) -> Option<AbortHandle> {
+        let (delay, cooldown) = (task.delay as u64, task.cooldown as u64);
+
+        match task.nick.as_ref() {
+            "BNUAB" => Some(
+                tokio::spawn(async move {
+                    loop {
+                        sleep(Duration::from_secs(delay)).await;
+                        Binance::update_account_balances().await;
+                        sleep(Duration::from_secs(cooldown)).await;
+                    }
+                })
+                .abort_handle(),
+            ),
+            "BNUEI" => Some(
+                tokio::spawn(async move {
+                    loop {
+                        sleep(Duration::from_secs(delay)).await;
+                        Binance::update_exchange_information().await;
+                        sleep(Duration::from_secs(cooldown)).await;
+                    }
+                })
+                .abort_handle(),
+            ),
+            "CPUPS" => Some(
+                tokio::spawn(async move {
+                    loop {
+                        sleep(Duration::from_secs(delay)).await;
+                        CoinPaprika::update_pairs_statistics().await;
+                        sleep(Duration::from_secs(cooldown)).await;
+                    }
+                })
+                .abort_handle(),
+            ),
+
+            _ => None,
+        }
     }
 }

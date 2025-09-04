@@ -36,3 +36,6 @@ pub use binance::*;
 
 pub mod status;
 pub use status::*;
+
+pub mod tasks;
+pub use tasks::*;

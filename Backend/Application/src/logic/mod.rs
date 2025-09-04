@@ -7,3 +7,4 @@ pub mod pairs;
 pub mod record_types;
 pub mod strategies;
 pub mod strategies_overview;
+pub mod tasks;

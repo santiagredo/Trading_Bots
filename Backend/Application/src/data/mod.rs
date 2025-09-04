@@ -8,3 +8,4 @@ pub mod record_types;
 pub mod strategies;
 pub mod strategies_overview;
 pub mod status;
+pub mod tasks;

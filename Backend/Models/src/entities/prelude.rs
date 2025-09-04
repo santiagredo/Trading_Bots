@@ -9,3 +9,4 @@ pub use super::pairs::Entity as Pairs;
 pub use super::record_types::Entity as RecordTypes;
 pub use super::status::Entity as Status;
 pub use super::strategies::Entity as Strategies;
+pub use super::tasks::Entity as Tasks;

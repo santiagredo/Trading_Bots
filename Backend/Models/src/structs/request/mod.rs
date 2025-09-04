@@ -21,3 +21,6 @@ pub use ledgers_request::*;
 
 pub mod record_types_request;
 pub use record_types_request::*;
+
+pub mod tasks_request;
+pub use tasks_request::*;

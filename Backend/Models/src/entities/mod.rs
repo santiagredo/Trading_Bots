@@ -11,3 +11,4 @@ pub mod pairs;
 pub mod record_types;
 pub mod status;
 pub mod strategies;
+pub mod tasks;

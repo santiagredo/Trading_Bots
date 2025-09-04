@@ -20,7 +20,7 @@ impl UserCommands {
     pub async fn start_everything() -> Result<(), Response> {
         let start = Instant::now();
 
-        Tasks::start_async_tasks().await;
+        Tasks::start_async_tasks().await?;
 
         OrderStatus::start_active_status().await?;
 

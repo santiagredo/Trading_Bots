@@ -11,13 +11,16 @@ use tokio::{sync::RwLock, task::AbortHandle};
 
 use crate::{
     handler::{
-        Assets, Ledgers, Metrics, Senders, Strategies, StrategiesOverview, SubscribedIndicators,
-        Tickers,
+        Assets, Binance, Ledgers, Metrics, Senders, Strategies, StrategiesOverview,
+        SubscribedIndicators, Tickers,
     },
     utils::{Cache, Response},
 };
 
 static ACTIVE_STRATEGIES: Lazy<Arc<RwLock<Option<HashMap<i32, strategies::Model>>>>> =
+    Lazy::new(|| Arc::new(RwLock::new(None)));
+
+static POSTING_STRATEGIES: Lazy<Arc<RwLock<Option<HashMap<i32, bool>>>>> =
     Lazy::new(|| Arc::new(RwLock::new(None)));
 
 static STRATEGIES_EVALUATION_LOOP_ABORT_HANDLE: Lazy<Arc<RwLock<Option<AbortHandle>>>> =
@@ -77,6 +80,61 @@ impl Strategies<Cache> {
         strategies_map.get(key).cloned()
     }
 
+    pub async fn set_posting_strategies_cache(strategies: Option<Vec<i32>>) -> Option<Vec<i32>> {
+        let mut posting_strategies = POSTING_STRATEGIES.write().await;
+
+        let Some(strategies) = strategies else {
+            *posting_strategies = None;
+            return None;
+        };
+
+        let mut posting_strategies_map: HashMap<i32, bool> = HashMap::new();
+
+        for strategy in strategies.iter() {
+            posting_strategies_map.insert(*strategy, false);
+        }
+
+        *posting_strategies = Some(posting_strategies_map);
+
+        Some(strategies)
+    }
+
+    pub async fn set_posting_strategy_cache(
+        strategy: i32,
+        is_posting: bool,
+        is_remove: bool,
+    ) -> i32 {
+        let mut posting_strategies = POSTING_STRATEGIES.write().await;
+
+        let Some(strategies_map) = posting_strategies.as_mut() else {
+            return strategy;
+        };
+
+        if is_remove {
+            strategies_map.remove(&strategy);
+        } else {
+            strategies_map.insert(strategy, is_posting);
+        }
+
+        strategy
+    }
+
+    pub async fn get_posting_strategies_cache() -> Option<HashMap<i32, bool>> {
+        let posting_strategies = POSTING_STRATEGIES.read().await;
+
+        posting_strategies.clone()
+    }
+
+    pub async fn get_posting_strategy_cache(key: &i32) -> Option<bool> {
+        let posting_strategies = POSTING_STRATEGIES.read().await;
+
+        let Some(strategies_map) = posting_strategies.as_ref() else {
+            return None;
+        };
+
+        strategies_map.get(key).cloned()
+    }
+
     pub async fn start_active_strategies_cache() -> Result<(), Response> {
         if Strategies::get_active_strategies_cache()
             .await
@@ -84,8 +142,15 @@ impl Strategies<Cache> {
         {
             let mut strategies_request = Strategies::default();
             strategies_request.model.is_active = Some(true);
+
             let active_strategies = strategies_request.next_phase().select_strategies().await?;
+            let strategies_ids: Vec<i32> = active_strategies
+                .iter()
+                .map(|strat| strat.id.clone())
+                .collect();
+
             Strategies::set_active_strategies_cache(Some(active_strategies)).await;
+            Strategies::set_posting_strategies_cache(Some(strategies_ids)).await;
         }
 
         Ok(())
@@ -93,6 +158,7 @@ impl Strategies<Cache> {
 
     pub async fn stop_active_strategies_cache() {
         Strategies::set_active_strategies_cache(None).await;
+        Strategies::set_posting_strategies_cache(None).await;
     }
 
     pub async fn start_strategies_evaluation_loop_cache() {
@@ -134,8 +200,12 @@ impl Strategies<Cache> {
                             )
                             .await
                         {
+                            Strategies::set_posting_strategy_cache(strategy_id, true, false).await;
+
                             Strategies::<Cache>::evalute_active_strategies_cache(strategy_overview)
-                                .await
+                                .await;
+
+                            Strategies::set_posting_strategy_cache(strategy_id, false, false).await;
                         }
                     }
 
@@ -162,11 +232,21 @@ impl Strategies<Cache> {
     pub async fn evalute_active_strategies_cache(strategy_overview: StrategyOverview) {
         let start = Instant::now();
 
-        let Ok(order) = StrategiesOverview::evaluate_strategy_overview(&strategy_overview) else {
+        let Ok(mut order) = StrategiesOverview::evaluate_strategy_overview(&strategy_overview)
+        else {
             return;
         };
 
-        if strategy_overview.strategy.can_trade {}
+        if strategy_overview.strategy.can_trade {
+            if Binance::default()
+                .post_new_order(strategy_overview.ticker.symbol.clone(), &mut order.model)
+                .await
+                .is_err()
+            {
+                Strategies::update_strategy_last_dates(&strategy_overview.strategy, true).await;
+                return;
+            }
+        }
 
         let order = match order.insert_order().await {
             Err(err) => {
@@ -229,12 +309,6 @@ impl Strategies<Cache> {
         // update speed metrics
         let now = Local::now().naive_local();
         Metrics::set_active_metric(MetricType::Completed, start.elapsed(), now).await;
-
-        // dbg!(format!(
-        //     "Successful evaluation completed at {} -- duration of {:?}",
-        //     now,
-        //     start.elapsed()
-        // ));
     }
 
     async fn update_strategy_last_dates(strategy: &Model, is_error: bool) {

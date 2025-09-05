@@ -1,8 +1,7 @@
 use std::marker::PhantomData;
 
-use models::{
-    entities::orders,
-    structs::{AccountInformation, AssetRequest, ExchangeInformation, LedgerRequest},
+use models::structs::{
+    AccountInformation, AssetRequest, ExchangeInformation, LedgerRequest, OrderRequest,
 };
 use sea_orm::prelude::Decimal;
 use std::str::FromStr;
@@ -270,7 +269,11 @@ impl Binance<Types> {
         self.next_phase().get_exchange_information_core().await
     }
 
-    pub async fn post_new_order(self, symbol: String, order: &mut orders::Model) -> Result<(), ()> {
+    pub async fn post_new_order(
+        self,
+        symbol: String,
+        order: &mut OrderRequest,
+    ) -> Result<(), String> {
         self.next_phase().post_new_order_core(symbol, order).await
     }
 }

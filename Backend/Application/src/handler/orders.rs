@@ -43,6 +43,24 @@ impl Orders {
         }
     }
 
+    pub fn from_request(order_request: OrderRequest) -> Model {
+        Model {
+            id: order_request.id.unwrap_or_default(),
+            status_id: order_request.status_id.unwrap_or_default(),
+            creation_date: order_request.creation_date.unwrap_or_default(),
+            update_date: order_request.update_date.unwrap_or_default(),
+            is_sell: order_request.is_sell.unwrap_or(false),
+            strategy_id: order_request.strategy_id.unwrap_or_default(),
+            base_asset_id: order_request.base_asset_id.unwrap_or_default(),
+            base_asset_amount: order_request.base_asset_amount.unwrap_or_default(),
+            quote_asset_id: order_request.quote_asset_id.unwrap_or_default(),
+            quote_asset_amount: order_request.quote_asset_amount.unwrap_or_default(),
+            price_entry: order_request.price_entry.unwrap_or_default(),
+            price_target: order_request.price_target.unwrap_or_default(),
+            price_abort: order_request.price_abort.unwrap_or_default(),
+        }
+    }
+
     pub fn from_model(mut self, order: &orders::Model) -> Self {
         let model = OrderRequest {
             id: Some(order.id),

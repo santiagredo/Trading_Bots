@@ -1,3 +1,5 @@
+use std::str::FromStr;
+
 use models::{
     entities::{actions, assets, pairs},
     structs::Ticker,
@@ -57,7 +59,7 @@ impl Actions<Logic> {
     ) -> Result<actions::Model, String> {
         // Decimal == coefficient / 10 ^ scale
 
-        let action_value = if action.is_sell {
+        let mut action_value = if action.is_sell {
             match (action.is_quote_asset, action.is_percentage) {
                 (true, true) | (false, true) => {
                     base_asset.free * (action.value / Decimal::ONE_HUNDRED)
@@ -103,12 +105,21 @@ impl Actions<Logic> {
         }
 
         // validate step size (applies only to amounts in base asset)
-        if !action.is_quote_asset && action_value < pair.lot_size_step_size {
+        if action_value < pair.lot_size_step_size {
             return Err(format!(
                 "Order size {} is less than minimum step size {}",
                 action_value, pair.lot_size_step_size
             ));
         }
+
+        // build a valid lot size in base currency
+        let mut lot_size_step_size = pair.lot_size_step_size;
+        if lot_size_step_size == Decimal::ZERO {
+            lot_size_step_size = Decimal::from_str("0.0001").unwrap_or(Decimal::ONE);
+        }
+
+        let floored = (action_value / lot_size_step_size).floor();
+        action_value = floored * lot_size_step_size;
 
         // validate min notional (in quote currency)
         let notional_value = action_value * ticker.last_price;

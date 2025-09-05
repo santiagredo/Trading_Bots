@@ -12,7 +12,14 @@ impl StrategiesOverview<Cache> {
         strategy_id: &i32,
         symbol: String,
     ) -> Option<StrategyOverview> {
-        let Some(strategy) = Strategies::get_active_strategy_cache(&strategy_id).await else {
+        if Strategies::get_posting_strategy(strategy_id)
+            .await
+            .is_none_or(|is_posting| is_posting)
+        {
+            return None;
+        }
+
+        let Some(strategy) = Strategies::get_active_strategy(&strategy_id).await else {
             return None;
         };
 

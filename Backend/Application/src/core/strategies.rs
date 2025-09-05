@@ -14,6 +14,18 @@ impl<Core> Strategies<Core> {
         Strategies::<Cache>::get_active_strategies_cache().await
     }
 
+    pub async fn get_active_strategy_core(key: &i32) -> Option<Model> {
+        Strategies::<Cache>::get_active_strategy_cache(key).await
+    }
+
+    pub async fn get_posting_strategies_core() -> Option<HashMap<i32, bool>> {
+        Strategies::<Cache>::get_posting_strategies_cache().await
+    }
+
+    pub async fn get_posting_strategy_core(key: &i32) -> Option<bool> {
+        Strategies::<Cache>::get_posting_strategy_cache(key).await
+    }
+
     pub async fn start_active_strategies_core() -> Result<(), Response> {
         Strategies::<Cache>::start_active_strategies_cache().await
     }
@@ -38,6 +50,9 @@ impl<Core> Strategies<Core> {
             .next_phase::<Data>()
             .insert_strategy_data(&get_config().await.db)
             .await?;
+
+        Strategies::<Cache>::set_posting_strategy_cache(strategy.id, false, strategy.is_active)
+            .await;
 
         Ok(Strategies::<Cache>::set_active_strategy_cache(strategy).await)
     }
@@ -71,12 +86,17 @@ impl<Core> Strategies<Core> {
             .update_strategy_data(&get_config().await.db)
             .await?;
 
+        Strategies::<Cache>::set_posting_strategy_cache(strategy.id, false, strategy.is_active)
+            .await;
+
         Ok(Strategies::<Cache>::set_active_strategy_cache(strategy).await)
     }
 
     pub async fn delete_strategy_core(self) -> Result<u64, Response> {
         let mut strategy = Strategies::into_model(self.model.clone());
         strategy.is_active = false;
+
+        Strategies::<Cache>::set_posting_strategy_cache(strategy.id, false, true).await;
 
         Strategies::<Cache>::set_active_strategy_cache(strategy).await;
 

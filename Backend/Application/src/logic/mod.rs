@@ -1,5 +1,6 @@
 pub mod actions;
 pub mod assets;
+pub mod binance;
 pub mod indicators;
 pub mod ledgers;
 pub mod orders;

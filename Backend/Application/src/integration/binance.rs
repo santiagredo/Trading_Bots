@@ -3,25 +3,23 @@ use std::collections::BTreeMap;
 use chrono::Utc;
 use hmac::{Hmac, Mac};
 use models::{
-    entities::orders,
-    enums::{AccountInformationResponse, BinanceResponse, NewOrderResponseType, OrderType, Side},
+    enums::AccountInformationResponse,
     structs::{AccountInformation, BinanceOrderRequest, ExchangeInformation},
 };
 use reqwest::{
     header::{HeaderMap, HeaderValue},
     Client,
 };
-use sea_orm::prelude::Decimal;
 use sha2::Sha256;
 
 use crate::{
     config::get_config,
     environments::Environments,
+    handler::Binance,
     static_strings::{
         ACCOUNT_INFORMATION_ENDPOINT, EXCHANGE_INFORMATION_ENDPOINT, ORDERS_ENDPOINT,
         ORDERS_TEST_ENDPOINT, X_MBX_APIKEY,
     },
-    handler::Binance,
     utils::Integration,
 };
 
@@ -95,45 +93,12 @@ impl Binance<Integration> {
     pub async fn post_new_order_integration(
         self,
         environment: Environments,
-        symbol: String,
-        order: &mut orders::Model,
-    ) -> Result<(), String> {
+        mut order_request: BinanceOrderRequest,
+    ) -> Result<String, String> {
         let endpoint = match environment {
             crate::environments::Environments::PRO => ORDERS_ENDPOINT,
             _ => ORDERS_TEST_ENDPOINT,
         };
-
-        let side = Side::Buy;
-        let order_type = OrderType::Market;
-        let new_client_order_id = Some(order.id.to_string());
-        let strategy_id = Some(order.strategy_id as i64);
-        let new_order_resp_type = Some(NewOrderResponseType::Full);
-        let timestamp = Utc::now().timestamp_millis();
-        // let compute_commission_rates = Some(true);
-
-        let mut order_request = BinanceOrderRequest {
-            symbol,
-            side,
-            order_type,
-            new_client_order_id,
-            strategy_id,
-            new_order_resp_type,
-            timestamp,
-            // compute_commission_rates,
-            ..Default::default()
-        };
-
-        if order.is_sell {
-            order_request.side = Side::Sell;
-            order_request.quantity = Some(order.base_asset_amount.round_dp(8));
-        } else {
-            // dbg!(order.quote_asset_amount.round_dp(8));
-
-            order_request.quote_order_qty = Some(order.quote_asset_amount.round_dp(8));
-        }
-
-        // dbg!(order_request.quantity);
-        // dbg!(order_request.quote_order_qty);
 
         let query_string =
             serde_urlencoded::to_string(&order_request).map_err(|err| err.to_string())?;
@@ -166,46 +131,6 @@ impl Binance<Integration> {
             .await
             .map_err(|err| err.to_string())?;
 
-        let full_response = response
-            .json::<BinanceResponse>()
-            .await
-            .map_err(|err| err.to_string())?;
-
-        // match response.text().await {
-        //     Ok(val) => println!("{val}"),
-        //     Err(err) => {
-        //         println!("{err:?}");
-        //         return Err(err.to_string());
-        //     }
-        // };
-
-        match full_response {
-            BinanceResponse::Error(err) => {
-                return Err(format!("code: {} - message: {}", err.code, err.msg))
-            }
-            BinanceResponse::Full(full) => {
-                let weighted_average_price = full
-                    .fills
-                    .iter()
-                    .fold(Decimal::ZERO, |acc, e| acc + (e.price * e.qty))
-                    / full.fills.iter().fold(Decimal::ZERO, |acc, e| acc + e.qty);
-
-                let commission = full
-                    .fills
-                    .iter()
-                    .fold(Decimal::ZERO, |acc, e| acc + e.commission);
-
-                let cummulative_quote_asset_amount = full.cummulative_quote_qty + commission;
-
-                order.base_asset_amount = full.executed_qty;
-                order.quote_asset_amount = cummulative_quote_asset_amount;
-                order.price_entry = weighted_average_price;
-
-                Ok(())
-            }
-            _ => Ok(()),
-        }
-
-        // Err("Testing".to_string())
+        response.text().await.map_err(|err| err.to_string())
     }
 }

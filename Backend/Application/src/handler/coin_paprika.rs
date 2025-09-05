@@ -3,6 +3,7 @@ use std::marker::PhantomData;
 use chrono::DateTime;
 use models::structs::{CoinPaprikaTicker, Quote};
 use sea_orm::prelude::Decimal;
+use tracing::error_span;
 
 use crate::{handler::Pairs, utils::Types};
 
@@ -57,6 +58,10 @@ impl CoinPaprika {
                 .iter()
                 .find(|(full_symbol, _)| full_symbol == &pair.symbol)
             {
+                // let span =
+                //     warn_span!("CoinPaprika - Pair - Update", symbol = ?pair, quote = ?quote);
+
+                // async move {
                 // Update ATH-related fields.
                 pair.all_time_high_price =
                     Decimal::from_f64_retain(quote.ath_price).unwrap_or_default();
@@ -96,10 +101,17 @@ impl CoinPaprika {
                 pair.year_price_percent_change =
                     Decimal::from_f64_retain(quote.percent_change_1_y).unwrap_or_default();
 
-                let _ = Pairs::default()
+                if let Err(err) = Pairs::default()
                     .from_model(pair.clone())
                     .update_pair()
-                    .await;
+                    .await
+                {
+                    error_span!("CoinPaprika - Pair - Update - Error", pair = ?pair, quote = ?quote, error = ?err);
+                    dbg!(eprint!("{err:?} \n"));
+                }
+                // }
+                // .instrument(span)
+                // .await
             }
         }
 

@@ -20,9 +20,6 @@ use crate::{
 static ACTIVE_STRATEGIES: Lazy<Arc<RwLock<Option<HashMap<i32, strategies::Model>>>>> =
     Lazy::new(|| Arc::new(RwLock::new(None)));
 
-static POSTING_STRATEGIES: Lazy<Arc<RwLock<Option<HashMap<i32, bool>>>>> =
-    Lazy::new(|| Arc::new(RwLock::new(None)));
-
 static STRATEGIES_EVALUATION_LOOP_ABORT_HANDLE: Lazy<Arc<RwLock<Option<AbortHandle>>>> =
     Lazy::new(|| Arc::new(RwLock::new(None)));
 
@@ -80,61 +77,6 @@ impl Strategies<Cache> {
         strategies_map.get(key).cloned()
     }
 
-    pub async fn set_posting_strategies_cache(strategies: Option<Vec<i32>>) -> Option<Vec<i32>> {
-        let mut posting_strategies = POSTING_STRATEGIES.write().await;
-
-        let Some(strategies) = strategies else {
-            *posting_strategies = None;
-            return None;
-        };
-
-        let mut posting_strategies_map: HashMap<i32, bool> = HashMap::new();
-
-        for strategy in strategies.iter() {
-            posting_strategies_map.insert(*strategy, false);
-        }
-
-        *posting_strategies = Some(posting_strategies_map);
-
-        Some(strategies)
-    }
-
-    pub async fn set_posting_strategy_cache(
-        strategy: i32,
-        is_posting: bool,
-        is_remove: bool,
-    ) -> i32 {
-        let mut posting_strategies = POSTING_STRATEGIES.write().await;
-
-        let Some(strategies_map) = posting_strategies.as_mut() else {
-            return strategy;
-        };
-
-        if is_remove {
-            strategies_map.remove(&strategy);
-        } else {
-            strategies_map.insert(strategy, is_posting);
-        }
-
-        strategy
-    }
-
-    pub async fn get_posting_strategies_cache() -> Option<HashMap<i32, bool>> {
-        let posting_strategies = POSTING_STRATEGIES.read().await;
-
-        posting_strategies.clone()
-    }
-
-    pub async fn get_posting_strategy_cache(key: &i32) -> Option<bool> {
-        let posting_strategies = POSTING_STRATEGIES.read().await;
-
-        let Some(strategies_map) = posting_strategies.as_ref() else {
-            return None;
-        };
-
-        strategies_map.get(key).cloned()
-    }
-
     pub async fn start_active_strategies_cache() -> Result<(), Response> {
         if Strategies::get_active_strategies_cache()
             .await
@@ -144,13 +86,7 @@ impl Strategies<Cache> {
             strategies_request.model.is_active = Some(true);
 
             let active_strategies = strategies_request.next_phase().select_strategies().await?;
-            let strategies_ids: Vec<i32> = active_strategies
-                .iter()
-                .map(|strat| strat.id.clone())
-                .collect();
-
             Strategies::set_active_strategies_cache(Some(active_strategies)).await;
-            Strategies::set_posting_strategies_cache(Some(strategies_ids)).await;
         }
 
         Ok(())
@@ -158,7 +94,6 @@ impl Strategies<Cache> {
 
     pub async fn stop_active_strategies_cache() {
         Strategies::set_active_strategies_cache(None).await;
-        Strategies::set_posting_strategies_cache(None).await;
     }
 
     pub async fn start_strategies_evaluation_loop_cache() {
@@ -200,12 +135,17 @@ impl Strategies<Cache> {
                             )
                             .await
                         {
-                            Strategies::set_posting_strategy_cache(strategy_id, true, false).await;
+                            let base_id = strategy_overview.base_asset.id;
+                            let quote_id = strategy_overview.quote_asset.id;
+
+                            Assets::set_posting_asset(base_id, true, false).await;
+                            Assets::set_posting_asset(quote_id, true, false).await;
 
                             Strategies::<Cache>::evalute_active_strategies_cache(strategy_overview)
                                 .await;
 
-                            Strategies::set_posting_strategy_cache(strategy_id, false, false).await;
+                            Assets::set_posting_asset(base_id, false, false).await;
+                            Assets::set_posting_asset(quote_id, false, false).await;
                         }
                     }
 

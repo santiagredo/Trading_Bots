@@ -76,14 +76,6 @@ impl Strategies {
         Strategies::<Core>::get_active_strategy_core(key).await
     }
 
-    pub async fn get_posting_strategies() -> Option<HashMap<i32, bool>> {
-        Strategies::<Core>::get_posting_strategies_core().await
-    }
-
-    pub async fn get_posting_strategy(key: &i32) -> Option<bool> {
-        Strategies::<Core>::get_posting_strategy_core(key).await
-    }
-
     pub async fn start_active_strategies() -> Result<(), Response> {
         Strategies::<Core>::start_active_strategies_core().await
     }

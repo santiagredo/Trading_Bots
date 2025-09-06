@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use models::entities::assets::Model;
 use sea_orm::prelude::Decimal;
 
@@ -8,6 +10,18 @@ use crate::{
 };
 
 impl Assets<Core> {
+    pub async fn get_posting_assets_core() -> Option<HashMap<i32, bool>> {
+        Assets::<Cache>::get_posting_assets_cache().await
+    }
+
+    pub async fn get_posting_asset_core(key: &i32) -> Option<bool> {
+        Assets::<Cache>::get_posting_asset_cache(key).await
+    }
+
+    pub async fn set_posting_asset_core(asset: i32, is_posting: bool, is_remove: bool) -> i32 {
+        Assets::<Cache>::set_posting_asset_cache(asset, is_posting, is_remove).await
+    }
+
     pub async fn insert_asset_core(self) -> Result<Model, Response> {
         let asset = self
             .next_phase::<Logic>()
@@ -16,6 +30,8 @@ impl Assets<Core> {
             .next_phase::<Data>()
             .insert_asset_data(&get_config().await.db)
             .await?;
+
+        Self::set_posting_asset_core(asset.id, false, false).await;
 
         Ok(Assets::<Cache>::set_active_asset(asset, false).await)
     }
@@ -88,6 +104,8 @@ impl Assets<Core> {
 
     pub async fn delete_asset_core(self) -> Result<u64, Response> {
         let asset = Assets::into_model(self.model.clone());
+        Self::set_posting_asset_core(asset.id, false, true).await;
+
         Assets::<Cache>::set_active_asset(asset, true).await;
 
         self.next_phase::<Logic>()

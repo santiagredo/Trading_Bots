@@ -12,13 +12,6 @@ impl StrategiesOverview<Cache> {
         strategy_id: &i32,
         symbol: String,
     ) -> Option<StrategyOverview> {
-        if Strategies::get_posting_strategy(strategy_id)
-            .await
-            .is_none_or(|is_posting| is_posting)
-        {
-            return None;
-        }
-
         let Some(strategy) = Strategies::get_active_strategy(&strategy_id).await else {
             return None;
         };
@@ -39,9 +32,23 @@ impl StrategiesOverview<Cache> {
             return None;
         };
 
+        if Assets::get_posting_asset(&base_asset.id)
+            .await
+            .is_none_or(|is_posting| is_posting)
+        {
+            return None;
+        }
+
         let Some(quote_asset) = Assets::get_active_asset(&pair.quote_asset_id).await else {
             return None;
         };
+
+        if Assets::get_posting_asset(&quote_asset.id)
+            .await
+            .is_none_or(|is_posting| is_posting)
+        {
+            return None;
+        }
 
         let Some(ticker) = Tickers::get_ticker(symbol).await else {
             return None;

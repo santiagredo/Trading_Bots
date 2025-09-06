@@ -1,9 +1,9 @@
-use std::marker::PhantomData;
+use std::{collections::HashMap, marker::PhantomData};
 
 use models::{entities::assets::Model, structs::AssetRequest};
 use sea_orm::prelude::Decimal;
 
-use crate::utils::{Response, Types};
+use crate::utils::{Core, Response, Types};
 
 #[derive(Debug, Default)]
 pub struct Assets<Phase = Types> {
@@ -58,6 +58,18 @@ impl Assets {
             free: asset.free.unwrap_or_default(),
             locked: asset.locked.unwrap_or_default(),
         }
+    }
+
+    pub async fn get_posting_assets() -> Option<HashMap<i32, bool>> {
+        Assets::<Core>::get_posting_assets_core().await
+    }
+
+    pub async fn get_posting_asset(key: &i32) -> Option<bool> {
+        Assets::<Core>::get_posting_asset_core(key).await
+    }
+
+    pub async fn set_posting_asset(asset: i32, is_posting: bool, is_remove: bool) -> i32 {
+        Assets::<Core>::set_posting_asset_core(asset, is_posting, is_remove).await
     }
 
     pub async fn insert_asset(self) -> Result<Model, Response> {

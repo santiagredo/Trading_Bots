@@ -135,17 +135,8 @@ impl Strategies<Cache> {
                             )
                             .await
                         {
-                            let base_id = strategy_overview.base_asset.id;
-                            let quote_id = strategy_overview.quote_asset.id;
-
-                            Assets::set_posting_asset(base_id, true, false).await;
-                            Assets::set_posting_asset(quote_id, true, false).await;
-
                             Strategies::<Cache>::evalute_active_strategies_cache(strategy_overview)
                                 .await;
-
-                            Assets::set_posting_asset(base_id, false, false).await;
-                            Assets::set_posting_asset(quote_id, false, false).await;
                         }
                     }
 
@@ -176,6 +167,25 @@ impl Strategies<Cache> {
         else {
             return;
         };
+
+        // check assets aren't locked trading
+        if Assets::get_posting_asset(&strategy_overview.base_asset.id)
+            .await
+            .is_some_and(|val| val)
+        {
+            return;
+        }
+
+        if Assets::get_posting_asset(&strategy_overview.quote_asset.id)
+            .await
+            .is_some_and(|val| val)
+        {
+            return;
+        };
+
+        // lock assets for trades
+        Assets::set_posting_asset(strategy_overview.base_asset.id, true, false).await;
+        Assets::set_posting_asset(strategy_overview.quote_asset.id, true, false).await;
 
         if strategy_overview.strategy.can_trade {
             if Binance::default()
@@ -245,6 +255,10 @@ impl Strategies<Cache> {
 
         // update strategy last execution datetime
         Strategies::update_strategy_last_dates(&strategy_overview.strategy, false).await;
+
+        // unlock assets for new trades
+        Assets::set_posting_asset(strategy_overview.base_asset.id, false, false).await;
+        Assets::set_posting_asset(strategy_overview.quote_asset.id, false, false).await;
 
         // update speed metrics
         let now = Local::now().naive_local();

@@ -17,3 +17,4 @@ pub mod metrics;
 pub mod senders;
 pub mod tasks;
 pub mod ticker;
+pub mod integration_log;

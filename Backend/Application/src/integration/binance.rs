@@ -8,18 +8,14 @@ use models::{
 };
 use reqwest::{
     header::{HeaderMap, HeaderValue},
-    Client,
+    Client, Response,
 };
 use sha2::Sha256;
 
 use crate::{
     config::get_config,
-    environments::Environments,
     handler::Binance,
-    static_strings::{
-        ACCOUNT_INFORMATION_ENDPOINT, EXCHANGE_INFORMATION_ENDPOINT, ORDERS_ENDPOINT,
-        ORDERS_TEST_ENDPOINT, X_MBX_APIKEY,
-    },
+    static_strings::{ACCOUNT_INFORMATION_ENDPOINT, EXCHANGE_INFORMATION_ENDPOINT, X_MBX_APIKEY},
     utils::Integration,
 };
 
@@ -92,14 +88,9 @@ impl Binance<Integration> {
 
     pub async fn post_new_order_integration(
         self,
-        environment: Environments,
-        mut order_request: BinanceOrderRequest,
-    ) -> Result<String, String> {
-        let endpoint = match environment {
-            crate::environments::Environments::PRO => ORDERS_ENDPOINT,
-            _ => ORDERS_TEST_ENDPOINT,
-        };
-
+        endpoint: &str,
+        order_request: &mut BinanceOrderRequest,
+    ) -> Result<Response, String> {
         let query_string =
             serde_urlencoded::to_string(&order_request).map_err(|err| err.to_string())?;
 
@@ -124,13 +115,11 @@ impl Binance<Integration> {
             .build()
             .map_err(|err| err.to_string())?;
 
-        let response = client
+        client
             .post(endpoint)
             .form(&order_request)
             .send()
             .await
-            .map_err(|err| err.to_string())?;
-
-        response.text().await.map_err(|err| err.to_string())
+            .map_err(|err| err.to_string())
     }
 }

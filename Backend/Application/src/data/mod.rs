@@ -9,3 +9,4 @@ pub mod strategies;
 pub mod strategies_overview;
 pub mod status;
 pub mod tasks;
+pub mod integration_log;

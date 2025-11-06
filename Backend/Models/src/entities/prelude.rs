@@ -3,6 +3,7 @@
 pub use super::actions::Entity as Actions;
 pub use super::assets::Entity as Assets;
 pub use super::indicators::Entity as Indicators;
+pub use super::integration_log::Entity as IntegrationLog;
 pub use super::ledgers::Entity as Ledgers;
 pub use super::orders::Entity as Orders;
 pub use super::pairs::Entity as Pairs;

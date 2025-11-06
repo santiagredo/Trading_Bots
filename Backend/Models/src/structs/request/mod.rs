@@ -24,3 +24,6 @@ pub use record_types_request::*;
 
 pub mod tasks_request;
 pub use tasks_request::*;
+
+pub mod integration_log_request;
+pub use integration_log_request::*;

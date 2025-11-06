@@ -5,6 +5,7 @@ pub mod prelude;
 pub mod actions;
 pub mod assets;
 pub mod indicators;
+pub mod integration_log;
 pub mod ledgers;
 pub mod orders;
 pub mod pairs;

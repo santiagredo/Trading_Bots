@@ -54,3 +54,6 @@ pub use metrics::*;
 
 pub mod status;
 pub use status::*;
+
+pub mod integration_log;
+pub use integration_log::*;

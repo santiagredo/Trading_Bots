@@ -1,7 +1,9 @@
+use std::str::FromStr;
+
 use chrono::Utc;
 use models::{
     entities::orders,
-    enums::{BinanceResponse, NewOrderResponseType, OrderType, Side},
+    enums::{BinanceRestResponse, NewOrderResponseType, OrderType, Side},
     structs::{BinanceOrderRequest, OrderRequest},
 };
 use sea_orm::prelude::Decimal;
@@ -48,34 +50,48 @@ impl Binance<Logic> {
             return Ok(());
         }
 
-        let binance_response =
-            serde_json::from_str(&binance_response).map_err(|err| err.to_string())?;
+        let inner =
+            serde_json::from_str::<String>(&binance_response).unwrap_or(binance_response.clone());
+
+        let binance_response: BinanceRestResponse =
+            serde_json::from_str(&inner).map_err(|e| e.to_string())?;
 
         match binance_response {
-            BinanceResponse::Error(err) => {
-                return Err(format!("code: {} - message: {}", err.code, err.msg))
+            BinanceRestResponse::Error(err) => {
+                Err(format!("code: {} - message: {}", err.code, err.msg))
             }
-            BinanceResponse::Full(full) => {
-                let weighted_average_price = full
-                    .fills
-                    .iter()
-                    .fold(Decimal::ZERO, |acc, e| acc + (e.price * e.qty))
-                    / full.fills.iter().fold(Decimal::ZERO, |acc, e| acc + e.qty);
 
-                let commission = full
-                    .fills
-                    .iter()
-                    .fold(Decimal::ZERO, |acc, e| acc + e.commission);
+            BinanceRestResponse::Full(full) => {
+                let fills = full.fills.unwrap_or_default();
 
-                let cummulative_quote_asset_amount = full.cummulative_quote_qty + commission;
+                let weighted_average_price = {
+                    let total_qty = fills.iter().fold(Decimal::ZERO, |acc, f| {
+                        acc + Decimal::from_str(&f.qty).unwrap_or_default()
+                    });
+                    if total_qty.is_zero() {
+                        Decimal::ZERO
+                    } else {
+                        fills.iter().fold(Decimal::ZERO, |acc, f| {
+                            acc + (Decimal::from_str(&f.price).unwrap_or_default()
+                                * Decimal::from_str(&f.qty).unwrap_or_default())
+                        }) / total_qty
+                    }
+                };
 
-                order.base_asset_amount = Some(full.executed_qty);
+                let commission = fills.iter().fold(Decimal::ZERO, |acc, f| {
+                    acc + Decimal::from_str(&f.commission).unwrap_or_default()
+                });
+
+                let cummulative_quote_asset_amount =
+                    Decimal::from_str(&full.cummulative_quote_qty).unwrap_or_default() + commission;
+
+                order.base_asset_amount =
+                    Some(Decimal::from_str(&full.executed_qty).unwrap_or_default());
                 order.quote_asset_amount = Some(cummulative_quote_asset_amount);
                 order.price_entry = Some(weighted_average_price);
 
                 Ok(())
             }
-            _ => Err(format!("Invalid binance response received")),
         }
     }
 }

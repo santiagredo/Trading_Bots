@@ -1,7 +1,4 @@
-use sea_orm::prelude::Decimal;
 use serde::{Deserialize, Serialize};
-
-use crate::enums::{OrderStatus, OrderType, Side, TimeInForce};
 
 use super::Fill;
 
@@ -13,17 +10,30 @@ pub struct Full {
     pub order_list_id: i64,
     pub client_order_id: String,
     pub transact_time: i64,
-    pub price: Decimal,
-    pub orig_qty: Decimal,
-    pub executed_qty: Decimal,
-    pub orig_quote_order_qty: Decimal,
-    pub cummulative_quote_qty: Decimal,
-    pub status: OrderStatus,
-    pub time_in_force: TimeInForce,
+    pub price: String,
+    pub orig_qty: String,
+    pub executed_qty: String,
+    pub orig_quote_order_qty: String,
+    pub cummulative_quote_qty: String,
+    pub status: String,
+
+    #[serde(default)]
+    pub time_in_force: Option<String>,
+
     #[serde(rename = "type")]
-    pub full_type: OrderType,
-    pub side: Side,
-    pub working_time: i64,
-    pub self_trade_prevention_mode: String,
-    pub fills: Vec<Fill>,
+    pub full_type: String,
+
+    pub side: String,
+
+    #[serde(default)]
+    pub working_time: Option<i64>,
+
+    #[serde(default)]
+    pub fills: Option<Vec<Fill>>,
+
+    #[serde(default)]
+    pub strategy_id: Option<i64>,
+
+    #[serde(default)]
+    pub self_trade_prevention_mode: Option<String>,
 }

@@ -51,7 +51,7 @@ impl Binance<Core> {
                     err
                 })?;
 
-            warn_span!("Binance - Order - Response", ?binance_response);
+            warn_span!("Binance - Order - Response", %binance_response);
 
             match Binance::post_new_order_logic(
                 get_config().await.environment,

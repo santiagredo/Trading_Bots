@@ -39,3 +39,6 @@ pub use metric_type::*;
 
 pub mod status;
 pub use status::*;
+
+pub mod binance_rest_response;
+pub use binance_rest_response::*;

@@ -1,16 +1,21 @@
 use chrono::Local;
-use models::entities::ledgers::{ActiveModel, Column, Entity, Model};
+use function_name::named;
+use models::{
+    entities::ledgers::{ActiveModel, Column, Entity, Model},
+    structs::ErrorLogRequest,
+};
 use sea_orm::{
     ActiveValue, ColumnTrait, Condition, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder,
 };
-use tracing::error_span;
 
 use crate::{
-    handler::Ledgers,
-    utils::{handle_db_error, Data, Response},
+    handler::{ErrorLogs, Ledgers},
+    log_db_error,
+    utils::{Data, Response},
 };
 
 impl Ledgers<Data> {
+    #[named]
     pub async fn insert_ledger_data(self, db: &DatabaseConnection) -> Result<Model, Response> {
         let active_model_ledger = ActiveModel {
             id: ActiveValue::NotSet,
@@ -34,15 +39,12 @@ impl Ledgers<Data> {
             .exec_with_returning(db)
             .await
         {
-            Err(err) => {
-                error_span!("error - database", error = ?err);
-
-                return Err(handle_db_error(&err));
-            }
+            Err(err) => log_db_error!(self, err),
             Ok(val) => Ok(val),
         }
     }
 
+    #[named]
     pub async fn select_ledger_data(
         self,
         db: &DatabaseConnection,
@@ -75,15 +77,12 @@ impl Ledgers<Data> {
             .one(db)
             .await
         {
-            Err(err) => {
-                error_span!("error - database", error = ?err);
-
-                return Err(handle_db_error(&err));
-            }
+            Err(err) => log_db_error!(self, err),
             Ok(val) => Ok(val),
         }
     }
 
+    #[named]
     pub async fn select_ledgers_data(
         self,
         db: &DatabaseConnection,
@@ -116,11 +115,7 @@ impl Ledgers<Data> {
             .all(db)
             .await
         {
-            Err(err) => {
-                error_span!("error - database", error = ?err);
-
-                return Err(handle_db_error(&err));
-            }
+            Err(err) => log_db_error!(self, err),
             Ok(val) => Ok(val),
         }
     }

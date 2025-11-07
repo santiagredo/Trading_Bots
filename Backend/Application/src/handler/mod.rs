@@ -57,3 +57,6 @@ pub use status::*;
 
 pub mod integration_log;
 pub use integration_log::*;
+
+pub mod error_log;
+pub use error_log::*;

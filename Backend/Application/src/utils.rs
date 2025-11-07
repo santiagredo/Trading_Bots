@@ -93,3 +93,24 @@ pub fn handle_user_err(err: String) -> Response {
         message: err,
     }
 }
+
+#[macro_export]
+macro_rules! log_db_error {
+    ($self:expr, $err:expr) => {{
+        let error_log_request = ErrorLogRequest {
+            file_path: Some(file!().to_string()),
+            line_number: Some(line!().to_string()),
+            function_name: Some(function_name!().to_string()),
+            request: Some(serde_json::to_string(&$self.model).unwrap_or_default()),
+            error_type: Some(format!("{:?}", $err)),
+            error_details: Some($err.to_string()),
+            ..Default::default()
+        };
+
+        tokio::spawn(async move {
+            let _ = ErrorLogs::new(error_log_request).insert_log().await;
+        });
+
+        Err(crate::utils::handle_db_error(&$err))
+    }};
+}

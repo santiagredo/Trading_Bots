@@ -1,16 +1,21 @@
-use models::entities::actions::{ActiveModel, Column, Entity, Model};
+use function_name::named;
+use models::{
+    entities::actions::{ActiveModel, Column, Entity, Model},
+    structs::ErrorLogRequest,
+};
 use sea_orm::{
     ActiveModelTrait, ActiveValue, ColumnTrait, Condition, DatabaseConnection, EntityTrait,
     QueryFilter,
 };
-use tracing::error_span;
 
 use crate::{
-    handler::Actions,
-    utils::{handle_db_error, Data, Response},
+    handler::{Actions, ErrorLogs},
+    log_db_error,
+    utils::{Data, Response},
 };
 
 impl Actions<Data> {
+    #[named]
     pub async fn insert_action_data(self, db: &DatabaseConnection) -> Result<Model, Response> {
         let active_model_action = ActiveModel {
             id: ActiveValue::NotSet,
@@ -27,15 +32,12 @@ impl Actions<Data> {
             .exec_with_returning(db)
             .await
         {
-            Err(err) => {
-                error_span!("error - database", error = ?err);
-
-                return Err(handle_db_error(&err));
-            }
+            Err(err) => log_db_error!(self, err),
             Ok(val) => Ok(val),
         }
     }
 
+    #[named]
     pub async fn select_action_data(
         self,
         db: &DatabaseConnection,
@@ -56,15 +58,12 @@ impl Actions<Data> {
         }
 
         match Entity::find().filter(condition).one(db).await {
-            Err(err) => {
-                error_span!("error - database", error = ?err);
-
-                return Err(handle_db_error(&err));
-            }
+            Err(err) => log_db_error!(self, err),
             Ok(val) => Ok(val),
         }
     }
 
+    #[named]
     pub async fn select_actions_data(
         self,
         db: &DatabaseConnection,
@@ -89,15 +88,12 @@ impl Actions<Data> {
         }
 
         match Entity::find().filter(condition).all(db).await {
-            Err(err) => {
-                error_span!("error - database", error = ?err);
-
-                return Err(handle_db_error(&err));
-            }
+            Err(err) => log_db_error!(self, err),
             Ok(val) => Ok(val),
         }
     }
 
+    #[named]
     pub async fn update_action_data(self, db: &DatabaseConnection) -> Result<Model, Response> {
         let mut active_model_action = ActiveModel {
             id: ActiveValue::Unchanged(self.model.id.unwrap_or_default()),
@@ -133,24 +129,18 @@ impl Actions<Data> {
         }
 
         match active_model_action.update(db).await {
-            Err(err) => {
-                error_span!("error - database", error = ?err);
-                Err(handle_db_error(&err))
-            }
+            Err(err) => log_db_error!(self, err),
             Ok(val) => Ok(val),
         }
     }
 
+    #[named]
     pub async fn delete_action_data(self, db: &DatabaseConnection) -> Result<u64, Response> {
         match Entity::delete_by_id(self.model.id.unwrap_or_default())
             .exec(db)
             .await
         {
-            Err(err) => {
-                error_span!("error - database", error = ?err);
-
-                return Err(handle_db_error(&err));
-            }
+            Err(err) => log_db_error!(self, err),
             Ok(val) => Ok(val.rows_affected),
         }
     }

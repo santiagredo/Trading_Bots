@@ -1,17 +1,22 @@
 use chrono::Local;
-use models::entities::orders::{ActiveModel, Column, Entity, Model};
+use function_name::named;
+use models::{
+    entities::orders::{ActiveModel, Column, Entity, Model},
+    structs::ErrorLogRequest,
+};
 use sea_orm::{
     ActiveModelTrait, ActiveValue, ColumnTrait, Condition, DatabaseConnection, EntityTrait,
     QueryFilter,
 };
-use tracing::error_span;
 
 use crate::{
-    handler::Orders,
-    utils::{handle_db_error, Data, Response},
+    handler::{ErrorLogs, Orders},
+    log_db_error,
+    utils::{Data, Response},
 };
 
 impl Orders<Data> {
+    #[named]
     pub async fn insert_order_data(self, db: &DatabaseConnection) -> Result<Model, Response> {
         let now = Local::now().naive_local();
 
@@ -35,26 +40,19 @@ impl Orders<Data> {
             .exec_with_returning(db)
             .await
         {
-            Err(err) => {
-                error_span!("error - database", error = ?err);
-
-                return Err(handle_db_error(&err));
-            }
+            Err(err) => log_db_error!(self, err),
             Ok(val) => Ok(val),
         }
     }
 
+    #[named]
     pub async fn select_order_data(self, db: &DatabaseConnection) -> Result<Model, Response> {
         match Entity::find()
             .filter(Condition::all().add(Column::Id.eq(self.model.id.unwrap_or_default())))
             .one(db)
             .await
         {
-            Err(err) => {
-                error_span!("error - database", error = ?err);
-
-                return Err(handle_db_error(&err));
-            }
+            Err(err) => log_db_error!(self, err),
             Ok(val) => Ok(val.unwrap_or_default()),
         }
     }
@@ -91,6 +89,7 @@ impl Orders<Data> {
     //         .map_err(|err| OutcomeError::Error(err.to_string()))?
     // }
 
+    #[named]
     pub async fn update_order_data(self, db: &DatabaseConnection) -> Result<Model, Response> {
         let active_model_order = ActiveModel {
             id: ActiveValue::Unchanged(self.model.id.unwrap_or_default()),
@@ -102,11 +101,7 @@ impl Orders<Data> {
         };
 
         match active_model_order.update(db).await {
-            Err(err) => {
-                error_span!("error - database", error = ?err);
-
-                return Err(handle_db_error(&err));
-            }
+            Err(err) => log_db_error!(self, err),
             Ok(val) => Ok(val),
         }
     }

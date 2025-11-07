@@ -1,13 +1,18 @@
-use models::entities::record_types::{Column, Entity, Model};
+use function_name::named;
+use models::{
+    entities::record_types::{Column, Entity, Model},
+    structs::ErrorLogRequest,
+};
 use sea_orm::{ColumnTrait, Condition, DatabaseConnection, EntityTrait, QueryFilter};
-use tracing::error_span;
 
 use crate::{
-    handler::RecordTypes,
-    utils::{handle_db_error, Data, Response},
+    handler::{ErrorLogs, RecordTypes},
+    log_db_error,
+    utils::{Data, Response},
 };
 
 impl RecordTypes<Data> {
+    #[named]
     pub async fn select_record_types_data(
         self,
         db: &DatabaseConnection,
@@ -18,16 +23,12 @@ impl RecordTypes<Data> {
             condition = condition.add(Column::Id.eq(id))
         }
 
-        if let Some(name) = self.model.name {
-            condition = condition.add(Column::Name.eq(name))
+        if let Some(name) = self.model.name.as_ref() {
+            condition = condition.add(Column::Name.eq(name.clone()))
         }
 
         match Entity::find().filter(condition).all(db).await {
-            Err(err) => {
-                error_span!("error - database", error = ?err);
-
-                return Err(handle_db_error(&err));
-            }
+            Err(err) => log_db_error!(self, err),
             Ok(val) => Ok(val),
         }
     }

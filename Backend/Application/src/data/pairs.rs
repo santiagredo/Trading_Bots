@@ -1,20 +1,25 @@
 use chrono::Local;
-use models::entities::pairs::{ActiveModel, Column, Entity, Model};
+use function_name::named;
+use models::{
+    entities::pairs::{ActiveModel, Column, Entity, Model},
+    structs::ErrorLogRequest,
+};
 use sea_orm::{ActiveValue, ColumnTrait, Condition, DatabaseConnection, EntityTrait, QueryFilter};
-use tracing::error_span;
 
 use crate::{
-    handler::Pairs,
-    utils::{handle_db_error, Data, Response},
+    handler::{ErrorLogs, Pairs},
+    log_db_error,
+    utils::{Data, Response},
 };
 
 impl Pairs<Data> {
+    #[named]
     pub async fn insert_pair_data(self, db: &DatabaseConnection) -> Result<Model, Response> {
         let active_model_pair = ActiveModel {
             id: ActiveValue::NotSet,
             base_asset_id: ActiveValue::Set(self.model.base_asset_id.unwrap_or_default()),
             quote_asset_id: ActiveValue::Set(self.model.quote_asset_id.unwrap_or_default()),
-            symbol: ActiveValue::Set(self.model.symbol.unwrap_or_default()),
+            symbol: ActiveValue::Set(self.model.symbol.clone().unwrap_or_default()),
             ..Default::default()
         };
 
@@ -22,15 +27,12 @@ impl Pairs<Data> {
             .exec_with_returning(db)
             .await
         {
-            Err(err) => {
-                error_span!("error - database", error = ?err);
-
-                return Err(handle_db_error(&err));
-            }
+            Err(err) => log_db_error!(self, err),
             Ok(val) => Ok(val),
         }
     }
 
+    #[named]
     pub async fn select_pair_data(
         self,
         db: &DatabaseConnection,
@@ -57,19 +59,16 @@ impl Pairs<Data> {
             .as_ref()
             .is_some_and(|symbol| !symbol.is_empty())
         {
-            condition = condition.add(Column::Symbol.eq(self.model.symbol.unwrap_or_default()));
+            condition = condition.add(Column::Symbol.eq(self.model.symbol.clone().unwrap_or_default()));
         }
 
         match Entity::find().filter(condition).one(db).await {
-            Err(err) => {
-                error_span!("error - database", error = ?err);
-
-                return Err(handle_db_error(&err));
-            }
+            Err(err) => log_db_error!(self, err),
             Ok(val) => Ok(val),
         }
     }
 
+    #[named]
     pub async fn select_pairs_data(self, db: &DatabaseConnection) -> Result<Vec<Model>, Response> {
         let mut condition = Condition::all();
 
@@ -93,15 +92,11 @@ impl Pairs<Data> {
             .as_ref()
             .is_some_and(|symbol| !symbol.is_empty())
         {
-            condition = condition.add(Column::Symbol.eq(self.model.symbol.unwrap_or_default()));
+            condition = condition.add(Column::Symbol.eq(self.model.symbol.clone().unwrap_or_default()));
         }
 
         match Entity::find().filter(condition).all(db).await {
-            Err(err) => {
-                error_span!("error - database", error = ?err);
-
-                return Err(handle_db_error(&err));
-            }
+            Err(err) => log_db_error!(self, err),
             Ok(val) => Ok(val),
         }
     }
@@ -126,6 +121,7 @@ impl Pairs<Data> {
     //         .map_err(|err| OutcomeError::Error(err.to_string()))?
     // }
 
+    #[named]
     pub async fn update_pair_data(self, db: &DatabaseConnection) -> Result<Model, Response> {
         let now = Local::now().naive_local();
 
@@ -300,10 +296,7 @@ impl Pairs<Data> {
         }
 
         match Entity::update(active_model_pair).exec(db).await {
-            Err(err) => {
-                error_span!("error - database", error = ?err);
-                Err(handle_db_error(&err))
-            }
+            Err(err) => log_db_error!(self, err),
             Ok(val) => Ok(val),
         }
     }

@@ -27,3 +27,6 @@ pub use tasks_request::*;
 
 pub mod integration_log_request;
 pub use integration_log_request::*;
+
+pub mod error_log_request;
+pub use error_log_request::*;

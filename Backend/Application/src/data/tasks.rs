@@ -1,13 +1,18 @@
-use models::entities::tasks::{Column, Entity, Model};
-use sea_orm::{Condition, DatabaseConnection, EntityTrait, QueryFilter, ColumnTrait};
-use tracing::error_span;
+use function_name::named;
+use models::{
+    entities::tasks::{Column, Entity, Model},
+    structs::ErrorLogRequest,
+};
+use sea_orm::{ColumnTrait, Condition, DatabaseConnection, EntityTrait, QueryFilter};
 
 use crate::{
-    handler::Tasks,
-    utils::{handle_db_error, Data, Response},
+    handler::{ErrorLogs, Tasks},
+    log_db_error,
+    utils::{Data, Response},
 };
 
 impl Tasks<Data> {
+    #[named]
     pub async fn select_tasks_data(self, db: &DatabaseConnection) -> Result<Vec<Model>, Response> {
         let mut condition = Condition::all();
 
@@ -15,12 +20,12 @@ impl Tasks<Data> {
             condition = condition.add(Column::Id.eq(id))
         }
 
-        if let Some(nick) = self.model.nick {
-            condition = condition.add(Column::Nick.eq(nick))
+        if let Some(nick) = self.model.nick.as_ref() {
+            condition = condition.add(Column::Nick.eq(nick.clone()))
         }
 
-        if let Some(description) = self.model.description {
-            condition = condition.add(Column::Description.eq(description))
+        if let Some(description) = self.model.description.as_ref() {
+            condition = condition.add(Column::Description.eq(description.clone()))
         }
 
         if let Some(is_active) = self.model.is_active {
@@ -36,11 +41,7 @@ impl Tasks<Data> {
         }
 
         match Entity::find().filter(condition).all(db).await {
-            Err(err) => {
-                error_span!("error - database", error = ?err);
-
-                return Err(handle_db_error(&err));
-            }
+            Err(err) => log_db_error!(self, err),
             Ok(val) => Ok(val),
         }
     }

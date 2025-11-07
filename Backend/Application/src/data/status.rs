@@ -1,20 +1,21 @@
-use models::entities::status::{Entity, Model};
+use function_name::named;
+use models::{
+    entities::status::{Entity, Model},
+    structs::ErrorLogRequest,
+};
 use sea_orm::{DatabaseConnection, EntityTrait};
-use tracing::error_span;
 
 use crate::{
-    handler::OrderStatus,
-    utils::{handle_db_error, Data, Response},
+    handler::{ErrorLogs, OrderStatus},
+    log_db_error,
+    utils::{Data, Response},
 };
 
 impl OrderStatus<Data> {
+    #[named]
     pub async fn select_status_data(self, db: &DatabaseConnection) -> Result<Vec<Model>, Response> {
         match Entity::find().all(db).await {
-            Err(err) => {
-                error_span!("error - database", error = ?err);
-
-                return Err(handle_db_error(&err));
-            }
+            Err(err) => log_db_error!(self, err),
             Ok(val) => Ok(val),
         }
     }

@@ -2,7 +2,7 @@ use sea_orm::prelude::Decimal;
 use serde::{Deserialize, Serialize};
 
 #[allow(non_snake_case)]
-#[derive(Debug, Deserialize, Default, Clone, Serialize)]
+#[derive(Debug, Deserialize, Default, Clone, Serialize, PartialEq, Eq)]
 pub struct Ticker {
     #[serde(rename = "e")]
     pub event_type: String, // Event type

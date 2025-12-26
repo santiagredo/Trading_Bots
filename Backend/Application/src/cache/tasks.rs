@@ -199,3 +199,156 @@ impl Tasks<Cache> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use models::{entities::tasks::Model, structs::Environments};
+
+    use crate::{handler::Tasks, utils::Cache};
+
+    // Helpers
+
+    fn mock_task(id: i32, nick: &str, is_active: bool) -> Model {
+        Model {
+            id,
+            nick: nick.to_string(),
+            delay: 10000,
+            cooldown: 10000,
+            is_active,
+            ..Default::default()
+        }
+    }
+
+    async fn reset_env(env: Environments) {
+        Tasks::<Cache>::stop_active_tasks_cache(&env).await;
+    }
+
+    // Scenarios
+
+    // Initial state
+    async fn scenario_initial_state(env: Environments) {
+        reset_env(env).await;
+
+        let tasks = Tasks::<Cache>::get_active_tasks_cache(&env).await;
+        let status = Tasks::<Cache>::get_active_tasks_status_cache(&env).await;
+
+        assert!(tasks.is_none());
+        assert!(!status);
+    }
+
+    // Bulk set
+    async fn scenario_set_active_tasks_cache(env: Environments) {
+        reset_env(env).await;
+
+        let tasks = vec![mock_task(1, "BNUAB", true), mock_task(2, "BNUEI", true)];
+
+        Tasks::<Cache>::set_active_tasks_cache(&env, tasks.clone()).await;
+
+        let cached = Tasks::<Cache>::get_active_tasks_cache(&env)
+            .await
+            .expect("tasks should exist");
+
+        let status = Tasks::<Cache>::get_active_tasks_status_cache(&env).await;
+
+        assert_eq!(cached.len(), 2);
+        assert!(status);
+
+        reset_env(env).await;
+    }
+
+    // Single insert
+    async fn scenario_set_active_task_cache_insert(env: Environments) {
+        reset_env(env).await;
+
+        let task = mock_task(10, "CPUPS", true);
+
+        Tasks::<Cache>::set_active_task_cache(&env, task.clone(), false).await;
+
+        let cached = Tasks::<Cache>::get_active_task_cache(&env, &10).await;
+
+        assert_eq!(cached, Some(task));
+
+        reset_env(env).await;
+    }
+
+    // Single remove
+    async fn scenario_set_active_task_cache_remove(env: Environments) {
+        reset_env(env).await;
+
+        let task = mock_task(20, "BNUAB", true);
+
+        Tasks::<Cache>::set_active_task_cache(&env, task.clone(), false).await;
+        Tasks::<Cache>::set_active_task_cache(&env, task.clone(), true).await;
+
+        let cached = Tasks::<Cache>::get_active_task_cache(&env, &20).await;
+
+        assert!(cached.is_none());
+
+        reset_env(env).await;
+    }
+
+    // Inactive task should not be inserted
+    async fn scenario_inactive_task_is_not_inserted(env: Environments) {
+        reset_env(env).await;
+
+        let task = mock_task(30, "BNUEI", false);
+
+        Tasks::<Cache>::set_active_task_cache(&env, task, false).await;
+
+        let cached = Tasks::<Cache>::get_active_tasks_cache(&env).await;
+
+        assert!(cached.is_some_and(|val| val.is_empty()));
+
+        reset_env(env).await;
+    }
+
+    // Get all tasks
+    async fn scenario_get_active_tasks_cache(env: Environments) {
+        reset_env(env).await;
+
+        let tasks = vec![
+            mock_task(1, "BNUAB", true),
+            mock_task(2, "BNUEI", true),
+            mock_task(3, "CPUPS", true),
+        ];
+
+        Tasks::<Cache>::set_active_tasks_cache(&env, tasks.clone()).await;
+
+        let cached = Tasks::<Cache>::get_active_tasks_cache(&env).await.unwrap();
+
+        assert_eq!(cached.len(), 3);
+
+        reset_env(env).await;
+    }
+
+    // Stop clears tasks
+    async fn scenario_stop_active_tasks_cache(env: Environments) {
+        reset_env(env).await;
+
+        let tasks = vec![mock_task(1, "BNUAB", true)];
+
+        Tasks::<Cache>::set_active_tasks_cache(&env, tasks).await;
+        Tasks::<Cache>::stop_active_tasks_cache(&env).await;
+
+        let cached = Tasks::<Cache>::get_active_tasks_cache(&env).await;
+        let status = Tasks::<Cache>::get_active_tasks_status_cache(&env).await;
+
+        assert!(cached.unwrap_or_default().is_empty());
+        assert!(!status);
+    }
+
+    #[tokio::test]
+    async fn cache_tasks_unit_responsibilities() {
+        let env = Environments::DEV;
+
+        scenario_initial_state(env).await;
+        scenario_set_active_tasks_cache(env).await;
+        scenario_set_active_task_cache_insert(env).await;
+        scenario_set_active_task_cache_remove(env).await;
+        scenario_inactive_task_is_not_inserted(env).await;
+        scenario_get_active_tasks_cache(env).await;
+        scenario_stop_active_tasks_cache(env).await;
+
+        reset_env(env).await;
+    }
+}

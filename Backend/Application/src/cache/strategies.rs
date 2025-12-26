@@ -200,3 +200,169 @@ impl Strategies<Cache> {
         env_map.join_handle = Some(join_handle);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use models::{entities::strategies::Model, structs::Environments};
+
+    use crate::{handler::Strategies, utils::Cache};
+
+    // Helpers
+    fn mock_strategy(id: i32) -> Model {
+        Model {
+            id,
+            is_active: true,
+
+            ..Default::default()
+        }
+    }
+
+    async fn reset_env(env: Environments) {
+        Strategies::<Cache>::stop_active_strategies_cache(&env).await;
+    }
+
+    // Scenarios (unit responsibilities)
+    async fn scenario_reset_env_clears_state(env: Environments) {
+        let strategies = vec![mock_strategy(1), mock_strategy(2)];
+
+        Strategies::<Cache>::set_active_strategies_cache(&env, strategies).await;
+        reset_env(env).await;
+
+        let cache = Strategies::<Cache>::get_active_strategies_cache(&env)
+            .await
+            .expect("environment entry should exist");
+
+        let status = Strategies::<Cache>::get_active_strategies_status_cache(&env).await;
+
+        assert!(cache.is_empty());
+        assert!(!status);
+    }
+
+    async fn scenario_set_active_strategies_cache(env: Environments) {
+        reset_env(env).await;
+
+        let strategies = vec![mock_strategy(1), mock_strategy(2)];
+
+        Strategies::<Cache>::set_active_strategies_cache(&env, strategies).await;
+
+        let cache = Strategies::<Cache>::get_active_strategies_cache(&env)
+            .await
+            .expect("cache should exist");
+
+        let status = Strategies::<Cache>::get_active_strategies_status_cache(&env).await;
+
+        assert_eq!(cache.len(), 2);
+        assert!(cache.contains_key(&1));
+        assert!(cache.contains_key(&2));
+        assert!(status);
+
+        reset_env(env).await;
+    }
+
+    async fn scenario_set_active_strategy_cache_insert(env: Environments) {
+        reset_env(env).await;
+
+        let strategy = mock_strategy(10);
+
+        Strategies::<Cache>::set_active_strategy_cache(&env, strategy.clone(), false, None).await;
+
+        let cached = Strategies::<Cache>::get_active_strategy_cache(&env, &10)
+            .await
+            .unwrap();
+
+        assert_eq!(cached.model, strategy);
+        assert!(cached.last_error_date.is_none());
+        assert!(cached.last_error_message.is_none());
+
+        reset_env(env).await;
+    }
+
+    async fn scenario_set_active_strategy_cache_remove(env: Environments) {
+        reset_env(env).await;
+
+        let strategy = mock_strategy(20);
+
+        Strategies::<Cache>::set_active_strategy_cache(&env, strategy.clone(), false, None).await;
+
+        Strategies::<Cache>::set_active_strategy_cache(&env, strategy, true, None).await;
+
+        let cached = Strategies::<Cache>::get_active_strategy_cache(&env, &20).await;
+
+        assert!(cached.is_none());
+
+        reset_env(env).await;
+    }
+
+    async fn scenario_set_active_strategy_cache_with_error(env: Environments) {
+        reset_env(env).await;
+
+        let strategy = mock_strategy(30);
+
+        Strategies::<Cache>::set_active_strategy_cache(
+            &env,
+            strategy.clone(),
+            false,
+            Some("error".to_string()),
+        )
+        .await;
+
+        let cached = Strategies::<Cache>::get_active_strategy_cache(&env, &30)
+            .await
+            .unwrap();
+
+        assert_eq!(cached.model, strategy);
+        assert!(cached.last_error_date.is_some());
+        assert_eq!(cached.last_error_message, Some("error".to_string()));
+
+        reset_env(env).await;
+    }
+
+    async fn scenario_set_active_strategy_posting_cache(env: Environments) {
+        reset_env(env).await;
+
+        let strategy = mock_strategy(40);
+
+        Strategies::<Cache>::set_active_strategies_cache(&env, vec![strategy]).await;
+
+        // First posting should succeed
+        let result = Strategies::<Cache>::set_active_strategy_posting_cache(env, 40, true).await;
+        assert!(result.is_ok());
+
+        // Second posting while already posting should fail
+        let result = Strategies::<Cache>::set_active_strategy_posting_cache(env, 40, true).await;
+        assert!(result.is_err());
+
+        // Turning posting off should succeed
+        let result = Strategies::<Cache>::set_active_strategy_posting_cache(env, 40, false).await;
+        assert!(result.is_ok());
+
+        reset_env(env).await;
+    }
+
+    async fn scenario_get_active_strategies_status_cache(env: Environments) {
+        reset_env(env).await;
+
+        assert!(!Strategies::<Cache>::get_active_strategies_status_cache(&env).await);
+
+        Strategies::<Cache>::set_active_strategies_cache(&env, vec![mock_strategy(1)]).await;
+
+        assert!(Strategies::<Cache>::get_active_strategies_status_cache(&env).await);
+
+        reset_env(env).await;
+    }
+
+    #[tokio::test]
+    async fn cache_strategies_unit_responsibilities() {
+        let env = Environments::DEV;
+
+        scenario_reset_env_clears_state(env).await;
+        scenario_set_active_strategies_cache(env).await;
+        scenario_set_active_strategy_cache_insert(env).await;
+        scenario_set_active_strategy_cache_remove(env).await;
+        scenario_set_active_strategy_cache_with_error(env).await;
+        scenario_set_active_strategy_posting_cache(env).await;
+        scenario_get_active_strategies_status_cache(env).await;
+
+        reset_env(env).await;
+    }
+}

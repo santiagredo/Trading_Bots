@@ -49,6 +49,39 @@ impl MigrationTrait for Migration {
             )
             .await?;
 
+        let insert_actions = Query::insert()
+            .into_table(Actions::Table)
+            .columns([
+                Actions::StrategyId,
+                Actions::IsActive,
+                Actions::IsSell,
+                Actions::IsQuoteAsset,
+                Actions::IsPercentage,
+                Actions::Value,
+                Actions::PairId,
+            ])
+            .values_panic([
+                1.into(),
+                true.into(),
+                false.into(),
+                true.into(),
+                false.into(),
+                10.into(),
+                1.into(),
+            ])
+            .values_panic([
+                2.into(),
+                true.into(),
+                true.into(),
+                true.into(),
+                false.into(),
+                10.into(),
+                1.into(),
+            ])
+            .to_owned();
+
+        manager.exec_stmt(insert_actions).await?;
+
         Ok(())
     }
 

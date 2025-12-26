@@ -1,7 +1,7 @@
 use std::marker::PhantomData;
 
 use chrono::DateTime;
-use models::structs::{CoinPaprikaTicker, Quote};
+use models::structs::{CoinPaprikaTicker, Environments, Quote};
 use sea_orm::prelude::Decimal;
 use tracing::error_span;
 
@@ -9,25 +9,35 @@ use crate::{handler::Pairs, utils::Types};
 
 pub struct CoinPaprika<Phase = Types> {
     phase: PhantomData<Phase>,
+    pub environment: Environments,
 }
 
 impl CoinPaprika {
     pub fn default() -> Self {
         Self {
             phase: PhantomData::<Types>,
+            environment: Environments::DEV,
         }
     }
 
-    pub async fn update_pairs_statistics() {
-        // let start = Instant::now();
+    pub fn with_env(self, environment: Environments) -> Self {
+        Self {
+            phase: PhantomData::<Types>,
+            environment,
+        }
+    }
 
-        let mut stored_pairs = match Pairs::default().select_pairs().await {
+    pub async fn update_pairs_statistics(self) {
+        // let start = Instant::now();
+        let environment = self.environment;
+
+        let mut stored_pairs = match Pairs::default().with_env(environment).select_pairs().await {
             Ok(pairs) if !pairs.is_empty() => pairs,
             _ => return,
         };
 
         let coinpaprika_tickers = match Self::default().get_tickers().await {
-            Some(tickers) if !tickers.is_empty() => tickers,
+            Ok(tickers) if !tickers.is_empty() => tickers,
             _ => return,
         };
 
@@ -101,24 +111,27 @@ impl CoinPaprika {
                 pair.year_price_percent_change =
                     Decimal::from_f64_retain(quote.percent_change_1_y).unwrap_or_default();
 
-                if let Err(err) = Pairs::default()
+                let model = match Pairs::default()
+                    .with_env(environment)
                     .from_model(pair.clone())
                     .update_pair()
                     .await
                 {
-                    error_span!("CoinPaprika - Pair - Update - Error", pair = ?pair, quote = ?quote, error = ?err);
-                    dbg!(eprint!("{err:?} \n"));
-                }
-                // }
-                // .instrument(span)
-                // .await
+                    Err(err) => {
+                        error_span!("CoinPaprika - Pair - Update - Error", pair = ?pair, quote = ?quote, error = ?err);
+                        dbg!(eprint!("{err:?} \n"));
+                        continue;
+                    }
+                    Ok(val) => val,
+                };
+
+                Pairs::default()
+                    .with_env(environment)
+                    .from_model(model)
+                    .set_active_pair(false)
+                    .await;
             }
         }
-
-        // dbg!(format!(
-        //     "Update pair assets statistics duration: {:?}",
-        //     start.elapsed()
-        // ));
     }
 }
 
@@ -126,12 +139,13 @@ impl<Phase> CoinPaprika<Phase> {
     pub fn next_phase<Next>(self) -> CoinPaprika<Next> {
         CoinPaprika {
             phase: PhantomData::<Next>,
+            environment: self.environment,
         }
     }
 }
 
 impl CoinPaprika<Types> {
-    pub async fn get_tickers(self) -> Option<Vec<CoinPaprikaTicker>> {
+    pub async fn get_tickers(self) -> Result<Vec<CoinPaprikaTicker>, String> {
         self.next_phase().get_tickers_core().await
     }
 }

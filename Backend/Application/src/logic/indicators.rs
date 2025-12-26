@@ -346,10 +346,12 @@ mod fn_delete_indicator_logic {
 
     #[test]
     fn valid_delete_indicator_logic() {
-        let indicator = Indicators::new(IndicatorRequest {
+        let req = IndicatorRequest {
             id: Some(1),
             ..Default::default()
-        });
+        };
+
+        let indicator = Indicators::new(req);
 
         let result = indicator
             .next_phase::<Core>()
@@ -361,10 +363,12 @@ mod fn_delete_indicator_logic {
 
     #[test]
     fn invalid_delete_indicator_logic() {
-        let indicator = Indicators::new(IndicatorRequest {
+        let req = IndicatorRequest {
             id: Some(0),
             ..Default::default()
-        });
+        };
+
+        let indicator = Indicators::new(req);
 
         let result = indicator
             .next_phase::<Core>()

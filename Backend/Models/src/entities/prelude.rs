@@ -2,6 +2,7 @@
 
 pub use super::actions::Entity as Actions;
 pub use super::assets::Entity as Assets;
+pub use super::critical_metrics::Entity as CriticalMetrics;
 pub use super::error_log::Entity as ErrorLog;
 pub use super::indicators::Entity as Indicators;
 pub use super::integration_log::Entity as IntegrationLog;

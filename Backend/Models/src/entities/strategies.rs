@@ -23,8 +23,8 @@ pub struct Model {
     pub description: Option<String>,
     pub last_execution: Option<DateTime>,
     pub cooldown: Option<i32>,
-    pub error_cooldown: Option<i32>,
     pub error_last_date: Option<DateTime>,
+    pub error_cooldown: Option<i32>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveColumn)]
@@ -36,8 +36,8 @@ pub enum Column {
     Description,
     LastExecution,
     Cooldown,
-    ErrorCooldown,
     ErrorLastDate,
+    ErrorCooldown,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DerivePrimaryKey)]
@@ -70,8 +70,8 @@ impl ColumnTrait for Column {
             Self::Description => ColumnType::String(StringLen::None).def().null(),
             Self::LastExecution => ColumnType::DateTime.def().null(),
             Self::Cooldown => ColumnType::Integer.def().null(),
-            Self::ErrorCooldown => ColumnType::Integer.def().null(),
             Self::ErrorLastDate => ColumnType::DateTime.def().null(),
+            Self::ErrorCooldown => ColumnType::Integer.def().null(),
         }
     }
 }

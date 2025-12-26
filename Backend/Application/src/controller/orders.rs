@@ -1,27 +1,48 @@
 use actix_web::{get, patch, post, web, HttpResponse, Responder};
-use models::structs::request::OrderRequest;
+use models::structs::{Environments, OrderRequest};
 
 use crate::{handler::Orders, utils::error_response};
 
-#[post("")]
-pub async fn insert_order(web::Json(order): web::Json<OrderRequest>) -> impl Responder {
-    match Orders::new(order).insert_order().await {
+#[post("/{env}")]
+pub async fn insert_order(
+    env: web::Path<Environments>,
+    web::Json(order): web::Json<OrderRequest>,
+) -> impl Responder {
+    match Orders::new(order)
+        .with_env(env.into_inner())
+        .insert_order()
+        .await
+    {
         Ok(val) => HttpResponse::Ok().json(val),
         Err(err) => error_response(err),
     }
 }
 
-#[get("")]
-pub async fn select_order(order: web::Query<OrderRequest>) -> impl Responder {
-    match Orders::new(order.into_inner()).select_order().await {
+#[get("/{env}")]
+pub async fn select_order(
+    env: web::Path<Environments>,
+    query: web::Query<OrderRequest>,
+) -> impl Responder {
+    match Orders::new(query.into_inner())
+        .with_env(env.into_inner())
+        .select_order()
+        .await
+    {
         Ok(val) => HttpResponse::Ok().json(val),
         Err(err) => error_response(err),
     }
 }
 
-#[patch("")]
-pub async fn update_order(web::Json(order): web::Json<OrderRequest>) -> impl Responder {
-    match Orders::new(order).update_order().await {
+#[patch("/{env}")]
+pub async fn update_order(
+    env: web::Path<Environments>,
+    web::Json(order): web::Json<OrderRequest>,
+) -> impl Responder {
+    match Orders::new(order)
+        .with_env(env.into_inner())
+        .update_order()
+        .await
+    {
         Ok(val) => HttpResponse::Ok().json(val),
         Err(err) => error_response(err),
     }

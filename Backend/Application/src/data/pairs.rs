@@ -59,7 +59,8 @@ impl Pairs<Data> {
             .as_ref()
             .is_some_and(|symbol| !symbol.is_empty())
         {
-            condition = condition.add(Column::Symbol.eq(self.model.symbol.clone().unwrap_or_default()));
+            condition =
+                condition.add(Column::Symbol.eq(self.model.symbol.clone().unwrap_or_default()));
         }
 
         match Entity::find().filter(condition).one(db).await {
@@ -92,7 +93,8 @@ impl Pairs<Data> {
             .as_ref()
             .is_some_and(|symbol| !symbol.is_empty())
         {
-            condition = condition.add(Column::Symbol.eq(self.model.symbol.clone().unwrap_or_default()));
+            condition =
+                condition.add(Column::Symbol.eq(self.model.symbol.clone().unwrap_or_default()));
         }
 
         match Entity::find().filter(condition).all(db).await {

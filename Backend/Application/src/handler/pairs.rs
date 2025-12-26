@@ -1,12 +1,16 @@
-use std::marker::PhantomData;
+use std::{collections::HashMap, marker::PhantomData};
 
-use models::{entities::pairs::Model, structs::PairRequest};
+use models::{
+    entities::pairs::Model,
+    structs::{Environments, PairRequest},
+};
 
 use crate::utils::{Core, Response, Types};
 
 #[derive(Debug, Default)]
 pub struct Pairs<Phase = Types> {
     pub phase: PhantomData<Phase>,
+    pub environment: Environments,
     pub model: PairRequest,
 }
 
@@ -14,6 +18,7 @@ impl<Phase> Pairs<Phase> {
     pub fn next_phase<Next>(self) -> Pairs<Next> {
         Pairs {
             phase: PhantomData::<Next>,
+            environment: self.environment,
             model: self.model,
         }
     }
@@ -23,6 +28,7 @@ impl Pairs {
     pub fn new(model: PairRequest) -> Self {
         Self {
             phase: PhantomData::<Types>,
+            environment: Environments::DEV,
             model,
         }
     }
@@ -30,9 +36,18 @@ impl Pairs {
     pub fn default() -> Self {
         Self {
             phase: PhantomData::<Types>,
+            environment: Environments::DEV,
             model: PairRequest {
                 ..Default::default()
             },
+        }
+    }
+
+    pub fn with_env(self, environment: Environments) -> Self {
+        Self {
+            phase: self.phase,
+            environment,
+            model: self.model,
         }
     }
 
@@ -103,6 +118,88 @@ impl Pairs {
         self
     }
 
+    pub fn into_model(req: PairRequest) -> Model {
+        Model {
+            id: req.id.unwrap_or_default(),
+            base_asset_id: req.base_asset_id.unwrap_or_default(),
+            quote_asset_id: req.quote_asset_id.unwrap_or_default(),
+            symbol: req.symbol.unwrap_or_default(),
+            update_date: req.update_date.unwrap_or_default(),
+            all_time_high_price: req.all_time_high_price.unwrap_or_default(),
+            all_time_high_date: req.all_time_high_date.unwrap_or_default(),
+            percent_from_all_time_high: req.percent_from_all_time_high.unwrap_or_default(),
+
+            fifteen_minutes_price_percent_change: req
+                .fifteen_minutes_price_percent_change
+                .unwrap_or_default(),
+            thirty_minutes_price_percent_change: req
+                .thirty_minutes_price_percent_change
+                .unwrap_or_default(),
+            hour_price_percent_change: req.hour_price_percent_change.unwrap_or_default(),
+            six_hours_price_percent_change: req.six_hours_price_percent_change.unwrap_or_default(),
+            twelve_hours_price_percent_change: req
+                .twelve_hours_price_percent_change
+                .unwrap_or_default(),
+            day_price_percent_change: req.day_price_percent_change.unwrap_or_default(),
+            week_price_percent_change: req.week_price_percent_change.unwrap_or_default(),
+            month_price_percent_change: req.month_price_percent_change.unwrap_or_default(),
+            year_price_percent_change: req.year_price_percent_change.unwrap_or_default(),
+
+            price_filter_min_price: req.price_filter_min_price.unwrap_or_default(),
+            price_filter_max_price: req.price_filter_max_price.unwrap_or_default(),
+            price_filter_tick_size: req.price_filter_tick_size.unwrap_or_default(),
+
+            lot_size_min_qty: req.lot_size_min_qty.unwrap_or_default(),
+            lot_size_max_qty: req.lot_size_max_qty.unwrap_or_default(),
+            lot_size_step_size: req.lot_size_step_size.unwrap_or_default(),
+
+            iceberg_parts_limit: req.iceberg_parts_limit.unwrap_or_default(),
+
+            market_lot_size_min_qty: req.market_lot_size_min_qty.unwrap_or_default(),
+            market_lot_size_max_qty: req.market_lot_size_max_qty.unwrap_or_default(),
+            market_lot_size_step_size: req.market_lot_size_step_size.unwrap_or_default(),
+
+            trailing_delta_min_trailing_above_delta: req
+                .trailing_delta_min_trailing_above_delta
+                .unwrap_or_default(),
+            trailing_delta_max_trailing_above_delta: req
+                .trailing_delta_max_trailing_above_delta
+                .unwrap_or_default(),
+            trailing_delta_min_trailing_below_delta: req
+                .trailing_delta_min_trailing_below_delta
+                .unwrap_or_default(),
+            trailing_delta_max_trailing_below_delta: req
+                .trailing_delta_max_trailing_below_delta
+                .unwrap_or_default(),
+
+            percent_price_by_side_bid_multiplier_up: req
+                .percent_price_by_side_bid_multiplier_up
+                .unwrap_or_default(),
+            percent_price_by_side_bid_multiplier_down: req
+                .percent_price_by_side_bid_multiplier_down
+                .unwrap_or_default(),
+            percent_price_by_side_ask_multiplier_up: req
+                .percent_price_by_side_ask_multiplier_up
+                .unwrap_or_default(),
+            percent_price_by_side_ask_multiplier_down: req
+                .percent_price_by_side_ask_multiplier_down
+                .unwrap_or_default(),
+            percent_price_by_side_avg_price_mins: req
+                .percent_price_by_side_avg_price_mins
+                .unwrap_or_default(),
+
+            notional_min_notional: req.notional_min_notional.unwrap_or_default(),
+            notional_apply_min_to_market: req.notional_apply_min_to_market.unwrap_or_default(),
+            notional_max_notional: req.notional_max_notional.unwrap_or_default(),
+            notional_apply_max_to_market: req.notional_apply_max_to_market.unwrap_or_default(),
+            notional_avg_price_mins: req.notional_avg_price_mins.unwrap_or_default(),
+
+            max_num_orders: req.max_num_orders.unwrap_or_default(),
+            max_num_algo_orders: req.max_num_algo_orders.unwrap_or_default(),
+        }
+    }
+
+    // db
     pub async fn insert_pair(self) -> Result<Model, Response> {
         self.next_phase::<Core>().insert_pair_core().await
     }
@@ -117,5 +214,26 @@ impl Pairs {
 
     pub async fn update_pair(self) -> Result<Model, Response> {
         self.next_phase::<Core>().update_pair_core().await
+    }
+
+    // cache
+    pub async fn get_active_pairs(self) -> Option<HashMap<i32, Model>> {
+        self.next_phase().get_active_pairs_core().await
+    }
+
+    pub async fn get_active_pair(self) -> Option<Model> {
+        self.next_phase().get_active_pair_core().await
+    }
+
+    pub async fn set_active_pair(self, is_remove: bool) -> Model {
+        self.next_phase().set_active_pair_core(is_remove).await
+    }
+
+    pub async fn start_active_pairs(self) -> Result<(), Response> {
+        self.next_phase().start_active_pairs_core().await
+    }
+
+    pub async fn stop_active_pairs(self) {
+        self.next_phase().stop_active_pairs_core().await
     }
 }

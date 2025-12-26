@@ -10,9 +10,9 @@ mod m20250130_013341_create_pairs_table;
 mod m20250625_024136_create_indicators_table;
 mod m20250625_030535_create_actions_table;
 mod m20250904_011953_create_tasks_table;
-mod m20250904_213821_update_strategies_table_add_error;
 mod m20251106_014805_create_integration_log_table;
 mod m20251106_185615_create_error_log_table;
+mod m20251222_234655_create_metrics_table;
 
 pub struct Migrator;
 
@@ -30,9 +30,9 @@ impl MigratorTrait for Migrator {
             Box::new(m20250625_024136_create_indicators_table::Migration),
             Box::new(m20250625_030535_create_actions_table::Migration),
             Box::new(m20250904_011953_create_tasks_table::Migration),
-            Box::new(m20250904_213821_update_strategies_table_add_error::Migration),
             Box::new(m20251106_014805_create_integration_log_table::Migration),
             Box::new(m20251106_185615_create_error_log_table::Migration),
+            Box::new(m20251222_234655_create_metrics_table::Migration),
         ]
     }
 }

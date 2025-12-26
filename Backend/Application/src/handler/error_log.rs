@@ -1,12 +1,16 @@
 use std::marker::PhantomData;
 
-use models::{entities::error_log::Model, structs::ErrorLogRequest};
+use models::{
+    entities::error_log::Model,
+    structs::{Environments, ErrorLogRequest},
+};
 
 use crate::utils::{Response, Types};
 
 #[derive(Debug, Clone)]
 pub struct ErrorLogs<Phase = Types> {
     phase: PhantomData<Phase>,
+    pub environment: Environments,
     pub model: ErrorLogRequest,
 }
 
@@ -15,15 +19,17 @@ impl<Phase> ErrorLogs<Phase> {
         ErrorLogs {
             phase: PhantomData::<Next>,
             model: self.model,
+            environment: self.environment,
         }
     }
 }
 
 impl ErrorLogs {
-    pub fn new(model: ErrorLogRequest) -> Self {
+    pub fn new(environment: &Environments, model: ErrorLogRequest) -> Self {
         Self {
             phase: PhantomData::<Types>,
             model,
+            environment: *environment,
         }
     }
 
@@ -33,6 +39,7 @@ impl ErrorLogs {
             model: ErrorLogRequest {
                 ..Default::default()
             },
+            environment: Environments::DEV,
         }
     }
 

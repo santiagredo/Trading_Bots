@@ -106,8 +106,8 @@ mod fn_insert_ledger_logic {
             ),
         ];
 
-        for (name, input, expected) in test_cases {
-            let ledger = Ledgers::new(input).next_phase::<Logic>();
+        for (name, req, expected) in test_cases {
+            let ledger = Ledgers::new(req).next_phase::<Logic>();
             let result = ledger.insert_ledger_logic().is_ok();
             assert_eq!(result, expected, "{}", name);
         }

@@ -1,56 +1,82 @@
 use std::{collections::HashMap, sync::Arc};
 
-use models::{entities::status::Model, enums::Status};
+use models::{entities::status::Model, enums::Status, structs::Environments};
 use once_cell::sync::Lazy;
 use tokio::sync::RwLock;
 
-use crate::{
-    handler::OrderStatus,
-    utils::{Cache, Response},
-};
+use crate::{handler::OrderStatus, utils::Cache};
 
-static ACTIVE_STATUS: Lazy<Arc<RwLock<Option<HashMap<Status, i32>>>>> =
-    Lazy::new(|| Arc::new(RwLock::new(None)));
+#[derive(Default)]
+struct CacheEnvironments {
+    pub environments: HashMap<Environments, CacheStatus>,
+}
+
+#[derive(Default)]
+struct CacheStatus {
+    pub is_initialized: bool,
+    pub models: HashMap<Status, i32>,
+}
+
+static ACTIVE_STATUS: Lazy<Arc<RwLock<CacheEnvironments>>> =
+    Lazy::new(|| Arc::new(RwLock::new(CacheEnvironments::default())));
 
 impl OrderStatus<Cache> {
-    pub async fn set_active_status_cache(status: Option<Vec<Model>>) -> Option<Vec<Model>> {
-        let mut active_status = ACTIVE_STATUS.write().await;
+    pub async fn set_active_status_cache(
+        environment: &Environments,
+        status: Vec<Model>,
+    ) -> Vec<Model> {
+        let mut cache_status = ACTIVE_STATUS.write().await;
 
-        let Some(status) = status else {
-            *active_status = None;
-            return None;
-        };
+        let env_map = cache_status
+            .environments
+            .entry(*environment)
+            .or_insert_with(CacheStatus::default);
 
-        let mut active_status_map: HashMap<Status, i32> = HashMap::new();
+        env_map.models.clear();
 
         for sta in status.iter() {
-            active_status_map.insert(Status::from_model(&sta), sta.id);
+            env_map.models.insert(Status::from_model(sta), sta.id);
         }
 
-        *active_status = Some(active_status_map);
+        env_map.is_initialized = true;
 
-        Some(status)
+        status
     }
 
-    pub async fn get_active_status_cache() -> Option<HashMap<Status, i32>> {
-        let active_status = ACTIVE_STATUS.read().await;
+    pub async fn get_active_status_cache(
+        environment: &Environments,
+    ) -> Option<HashMap<Status, i32>> {
+        let cache_status = ACTIVE_STATUS.read().await;
 
-        active_status.clone()
+        let env_map = cache_status.environments.get(environment)?;
+
+        Some(env_map.models.clone())
     }
 
-    pub async fn start_active_status_cache() -> Result<(), Response> {
-        if OrderStatus::<Cache>::get_active_status_cache()
-            .await
-            .is_none_or(|status| status.is_empty())
-        {
-            let status = OrderStatus::default().select_status().await?;
-            OrderStatus::<Cache>::set_active_status_cache(Some(status)).await;
+    pub async fn get_active_status(environment: &Environments, status: &Status) -> Option<i32> {
+        let cache_status = ACTIVE_STATUS.read().await;
+
+        let env_map = cache_status.environments.get(environment)?;
+
+        env_map.models.get(status).copied()
+    }
+
+    pub async fn get_active_status_status_cache(environment: &Environments) -> bool {
+        let cache_status = ACTIVE_STATUS.read().await;
+
+        cache_status
+            .environments
+            .get(&environment)
+            .map(|val| val.is_initialized)
+            .unwrap_or(false)
+    }
+
+    pub async fn stop_active_status_cache(environment: &Environments) {
+        let mut cache_status = ACTIVE_STATUS.write().await;
+
+        if let Some(env_map) = cache_status.environments.get_mut(environment) {
+            env_map.models.clear();
+            env_map.is_initialized = false;
         }
-
-        Ok(())
-    }
-
-    pub async fn stop_active_status_cache() {
-        OrderStatus::<Cache>::set_active_status_cache(None).await;
     }
 }

@@ -1,157 +1,182 @@
 use std::{collections::HashMap, sync::Arc};
 
-use models::entities::assets::Model;
+use models::{
+    entities::assets::Model,
+    structs::{CacheAsset, Environments},
+};
 use once_cell::sync::Lazy;
 use sea_orm::prelude::Decimal;
-use tokio::sync::RwLock;
+use tokio::{sync::RwLock, task::JoinHandle};
 
-use crate::{
-    handler::Assets,
-    utils::{Cache, Response},
-};
+use crate::{handler::Assets, utils::Cache};
 
-static ACTIVE_ASSETS: Lazy<Arc<RwLock<Option<HashMap<i32, Model>>>>> =
-    Lazy::new(|| Arc::new(RwLock::new(None)));
+#[derive(Default)]
+struct CacheEnvironments {
+    pub environments: HashMap<Environments, CacheAssets>,
+}
 
-static POSTING_ASSETS: Lazy<Arc<RwLock<Option<HashMap<i32, bool>>>>> =
-    Lazy::new(|| Arc::new(RwLock::new(None)));
+#[derive(Default)]
+struct CacheAssets {
+    pub is_initialized: bool,
+    pub models: HashMap<i32, CacheAsset>,
+    pub join_handle: Option<JoinHandle<()>>,
+}
+
+static ACTIVE_ASSETS: Lazy<Arc<RwLock<CacheEnvironments>>> =
+    Lazy::new(|| Arc::new(RwLock::new(CacheEnvironments::default())));
 
 impl Assets<Cache> {
-    async fn set_active_assets(assets: Option<Vec<Model>>) -> Option<Vec<Model>> {
-        let mut active_assets = ACTIVE_ASSETS.write().await;
+    pub async fn set_active_assets_cache(
+        environment: &Environments,
+        assets: Vec<Model>,
+    ) -> Vec<Model> {
+        let mut cache_assets = ACTIVE_ASSETS.write().await;
 
-        let Some(assets) = assets else {
-            *active_assets = None;
-            return None;
-        };
-
-        let mut assets_map: HashMap<i32, Model> = HashMap::new();
+        let env_map = cache_assets
+            .environments
+            .entry(*environment)
+            .or_insert_with(CacheAssets::default);
 
         for asset in assets.iter() {
-            assets_map.insert(asset.id, asset.clone());
+            let cache_asset = CacheAsset {
+                model: asset.clone(),
+            };
+
+            env_map.models.insert(asset.id, cache_asset);
         }
 
-        *active_assets = Some(assets_map);
+        env_map.is_initialized = true;
 
-        Some(assets)
+        assets
     }
 
-    pub async fn set_active_asset(asset: Model, is_remove: bool) -> Model {
+    pub async fn set_active_asset_cache(
+        environment: &Environments,
+        asset: Model,
+        is_remove: bool,
+    ) -> Model {
         let mut active_assets = ACTIVE_ASSETS.write().await;
 
-        let Some(assets_map) = active_assets.as_mut() else {
-            return asset;
-        };
+        let env_map = active_assets
+            .environments
+            .entry(*environment)
+            .or_insert_with(CacheAssets::default);
 
         if is_remove {
-            assets_map.remove(&asset.id);
+            env_map
+                .models
+                .remove(&asset.id)
+                .map(|val| val.model)
+                .unwrap_or(asset)
         } else {
-            assets_map.insert(asset.id, asset.clone());
-        }
+            let inner_asset = CacheAsset {
+                model: asset.clone(),
+            };
 
-        asset
+            env_map.models.insert(asset.id, inner_asset);
+
+            asset
+        }
     }
 
-    pub async fn set_active_asset_value(
+    pub async fn set_active_asset_value_cache(
+        environment: &Environments,
         key: &i32,
         value: Decimal,
         is_locked: bool,
         is_sell: bool,
-    ) -> Option<Model> {
-        let mut assets_guard = ACTIVE_ASSETS.write().await;
-        let assets = assets_guard.as_mut()?;
+    ) -> Option<(Model, Decimal)> {
+        let mut active_assets = ACTIVE_ASSETS.write().await;
 
-        let asset = assets.get_mut(key)?;
-
-        match (is_locked, is_sell) {
-            (true, true) => asset.locked -= value,
-            (true, false) => asset.locked += value,
-            (false, true) => asset.free -= value,
-            (false, false) => asset.free += value,
-        }
-
-        Some(asset.clone())
-    }
-
-    pub async fn get_active_assets() -> Option<HashMap<i32, Model>> {
-        let assets = ACTIVE_ASSETS.read().await;
-        assets.clone()
-    }
-
-    pub async fn get_active_asset(key: &i32) -> Option<Model> {
-        let assets_guard = ACTIVE_ASSETS.read().await;
-        let assets = assets_guard.as_ref()?;
-        assets.get(key).cloned()
-    }
-
-    pub async fn set_posting_assets_cache(assets: Option<Vec<i32>>) -> Option<Vec<i32>> {
-        let mut posting_assets = POSTING_ASSETS.write().await;
-
-        let Some(assets) = assets else {
-            *posting_assets = None;
+        let Some(env_map) = active_assets.environments.get_mut(environment) else {
             return None;
         };
 
-        let mut posting_assets_map: HashMap<i32, bool> = HashMap::new();
+        if let Some(inner_asset) = env_map.models.get_mut(key) {
+            let previous_balance = match is_locked {
+                false => inner_asset.model.free.clone(),
+                true => inner_asset.model.locked.clone(),
+            };
 
-        for asset in assets.iter() {
-            posting_assets_map.insert(*asset, false);
-        }
+            match (is_locked, is_sell) {
+                (true, true) => inner_asset.model.locked -= value,
+                (true, false) => inner_asset.model.locked += value,
+                (false, true) => inner_asset.model.free -= value,
+                (false, false) => inner_asset.model.free += value,
+            }
 
-        *posting_assets = Some(posting_assets_map);
-
-        Some(assets)
-    }
-
-    pub async fn set_posting_asset_cache(asset: i32, is_posting: bool, is_remove: bool) -> i32 {
-        let mut posting_assets = POSTING_ASSETS.write().await;
-
-        let Some(assets_map) = posting_assets.as_mut() else {
-            return asset;
-        };
-
-        if is_remove {
-            assets_map.remove(&asset);
+            Some((inner_asset.model.clone(), previous_balance))
         } else {
-            assets_map.insert(asset, is_posting);
+            None
+        }
+    }
+
+    pub async fn set_active_assets_join_handle_cache(
+        environment: &Environments,
+        join_handle: JoinHandle<()>,
+    ) {
+        let mut cache_assets = ACTIVE_ASSETS.write().await;
+
+        let env_map = cache_assets
+            .environments
+            .entry(*environment)
+            .or_insert_with(CacheAssets::default);
+
+        if let Some(handle) = &env_map.join_handle {
+            handle.abort();
         }
 
-        asset
+        env_map.join_handle = Some(join_handle);
     }
 
-    pub async fn get_posting_assets_cache() -> Option<HashMap<i32, bool>> {
-        let posting_assets = POSTING_ASSETS.read().await;
+    pub async fn get_active_assets_cache(
+        environment: &Environments,
+    ) -> Option<HashMap<i32, CacheAsset>> {
+        let assets = ACTIVE_ASSETS.read().await;
 
-        posting_assets.clone()
+        let env_map = assets.environments.get(&environment)?;
+
+        Some(env_map.models.clone())
     }
 
-    pub async fn get_posting_asset_cache(key: &i32) -> Option<bool> {
-        let posting_assets = POSTING_ASSETS.read().await;
+    pub async fn get_active_asset_cache(
+        environment: &Environments,
+        key: &i32,
+    ) -> Option<CacheAsset> {
+        let assets = ACTIVE_ASSETS.read().await;
 
-        let Some(assets_map) = posting_assets.as_ref() else {
-            return None;
+        let env_map = assets.environments.get(&environment)?;
+
+        let cache_asset = env_map.models.get(key)?;
+
+        Some(cache_asset.clone())
+    }
+
+    pub async fn get_active_assets_status_cache(environment: &Environments) -> bool {
+        let cache_assets = ACTIVE_ASSETS.read().await;
+
+        cache_assets
+            .environments
+            .get(&environment)
+            .map(|val| val.is_initialized)
+            .unwrap_or(false)
+    }
+
+    pub async fn stop_active_assets_cache(environment: &Environments) -> Result<(), String> {
+        let mut active_assets = ACTIVE_ASSETS.write().await;
+
+        let Some(env_map) = active_assets.environments.get_mut(&environment) else {
+            return Ok(());
         };
 
-        assets_map.get(key).cloned()
-    }
-
-    pub async fn start_active_assets() -> Result<(), Response> {
-        if Self::get_active_assets()
-            .await
-            .is_none_or(|assets| assets.is_empty())
-        {
-            let assets = Assets::default().select_assets().await?;
-            let assets_ids: Vec<i32> = assets.iter().map(|asset| asset.id.clone()).collect();
-
-            Self::set_posting_assets_cache(Some(assets_ids)).await;
-            Self::set_active_assets(Some(assets)).await;
+        if let Some(handle) = &env_map.join_handle {
+            handle.abort();
         }
+
+        env_map.models = HashMap::new();
+
+        env_map.is_initialized = false;
 
         Ok(())
-    }
-
-    pub async fn stop_active_assets() {
-        Self::set_posting_assets_cache(None).await;
-        Self::set_active_assets(None).await;
     }
 }

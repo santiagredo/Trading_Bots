@@ -1,112 +1,109 @@
 use std::{collections::HashMap, sync::Arc};
 
-use models::{
-    entities::{
-        actions::{self, Model},
-        assets, pairs,
-    },
-    structs::Ticker,
-};
+use models::{entities::actions::Model, structs::Environments};
 use once_cell::sync::Lazy;
 use tokio::sync::RwLock;
 
-use crate::{
-    handler::{Actions, Strategies},
-    utils::{Cache, Response},
-};
+use crate::{handler::Actions, utils::Cache};
 
-static ACTIVE_ACTIONS: Lazy<Arc<RwLock<Option<HashMap<i32, Model>>>>> =
-    Lazy::new(|| Arc::new(RwLock::new(None)));
+#[derive(Default)]
+struct CacheEnvironments {
+    pub environments: HashMap<Environments, CacheActions>,
+}
+
+#[derive(Default)]
+struct CacheActions {
+    pub is_initialized: bool,
+    pub models: HashMap<i32, Model>,
+}
+
+static ACTIVE_ACTIONS: Lazy<Arc<RwLock<CacheEnvironments>>> =
+    Lazy::new(|| Arc::new(RwLock::new(CacheEnvironments::default())));
 
 impl Actions<Cache> {
-    pub async fn set_active_actions(actions: Option<Vec<Model>>) -> Option<Vec<Model>> {
-        let mut active_actions = ACTIVE_ACTIONS.write().await;
+    pub async fn set_active_actions_cache(
+        environment: &Environments,
+        actions: Vec<Model>,
+    ) -> Vec<Model> {
+        let mut cache_actions = ACTIVE_ACTIONS.write().await;
 
-        let Some(actions) = actions else {
-            *active_actions = None;
-            return None;
-        };
-
-        let mut active_actions_map: HashMap<i32, Model> = HashMap::new();
+        let env_map = cache_actions
+            .environments
+            .entry(*environment)
+            .or_insert_with(CacheActions::default);
 
         for action in actions.iter() {
-            active_actions_map.insert(action.strategy_id, action.clone());
+            env_map.models.insert(action.strategy_id, action.clone());
         }
 
-        *active_actions = Some(active_actions_map);
+        env_map.is_initialized = true;
 
-        Some(actions)
+        actions
     }
 
-    pub async fn set_active_action(action: Model) -> Model {
-        let mut active_actions = ACTIVE_ACTIONS.write().await;
+    pub async fn set_active_action_cache(
+        environment: &Environments,
+        action: Model,
+        is_remove: bool,
+    ) -> Model {
+        let mut cache_actions = ACTIVE_ACTIONS.write().await;
 
-        // early return if active actions is none
-        let Some(actions_map) = active_actions.as_mut() else {
+        let Some(env_map) = cache_actions.environments.get_mut(environment) else {
             return action;
         };
 
-        if !action.is_active {
-            actions_map.remove(&action.id);
+        if is_remove {
+            env_map
+                .models
+                .remove(&action.id)
+                .map(|val| val)
+                .unwrap_or(action)
         } else {
-            actions_map.insert(action.id, action.clone());
+            env_map.models.insert(action.id, action.clone());
+
+            action
         }
-
-        action
     }
 
-    pub async fn get_active_actions() -> Option<HashMap<i32, Model>> {
-        let active_actions = ACTIVE_ACTIONS.read().await;
+    pub async fn get_active_actions_cache(
+        environment: &Environments,
+    ) -> Option<HashMap<i32, Model>> {
+        let cache_actions = ACTIVE_ACTIONS.read().await;
 
-        active_actions.clone()
+        let env_map = cache_actions.environments.get(&environment)?;
+
+        Some(env_map.models.clone())
     }
 
-    pub async fn get_active_action(key: &i32) -> Option<Model> {
-        let active_actions = ACTIVE_ACTIONS.read().await;
+    pub async fn get_active_action_cache(environment: &Environments, key: &i32) -> Option<Model> {
+        let cache_actions = ACTIVE_ACTIONS.read().await;
 
-        let Some(actions_map) = active_actions.as_ref() else {
-            return None;
+        let env_map = cache_actions.environments.get(&environment)?;
+
+        let cache_action = env_map.models.get(key)?;
+
+        Some(cache_action.clone())
+    }
+
+    pub async fn get_active_actions_status_cache(environment: &Environments) -> bool {
+        let cache_actions = ACTIVE_ACTIONS.read().await;
+
+        cache_actions
+            .environments
+            .get(&environment)
+            .map(|val| val.is_initialized)
+            .unwrap_or(false)
+    }
+
+    pub async fn stop_active_actions_cache(environment: &Environments) {
+        let mut cache_actions = ACTIVE_ACTIONS.write().await;
+
+        let Some(env_map) = cache_actions.environments.get_mut(environment) else {
+            return;
         };
 
-        actions_map.get(key).cloned()
-    }
+        env_map.models = HashMap::new();
 
-    pub async fn start_active_actions() -> Result<(), Response> {
-        let active_strategies = Strategies::get_active_strategies()
-            .await
-            .unwrap_or_default();
-
-        if Self::get_active_actions()
-            .await
-            .is_none_or(|active_actions| active_actions.is_empty())
-        {
-            let mut actions_request = Actions::default();
-            actions_request.model.is_active = Some(true);
-
-            let active_actions = actions_request
-                .select_actions()
-                .await?
-                .into_iter()
-                .filter(|act_act| active_strategies.contains_key(&act_act.strategy_id))
-                .collect::<Vec<_>>();
-
-            Self::set_active_actions(Some(active_actions)).await;
-        }
-
-        Ok(())
-    }
-
-    pub async fn stop_active_actions() {
-        Self::set_active_actions(None).await;
-    }
-
-    pub fn evaluate_active_actions(
-        action: actions::Model,
-        pair: &pairs::Model,
-        base_asset: &assets::Model,
-        quote_asset: &assets::Model,
-        ticker: &Ticker,
-    ) -> Result<Model, String> {
-        Actions::default().evaluate_action(action, &pair, &ticker, &base_asset, &quote_asset)
+        env_map.is_initialized = false;
     }
 }

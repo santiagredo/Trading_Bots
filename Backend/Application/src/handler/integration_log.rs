@@ -1,6 +1,9 @@
 use std::marker::PhantomData;
 
-use models::{entities::integration_log::Model, structs::IntegrationLogRequest};
+use models::{
+    entities::integration_log::Model,
+    structs::{Environments, IntegrationLogRequest},
+};
 
 use crate::utils::{Response, Types};
 
@@ -8,6 +11,7 @@ use crate::utils::{Response, Types};
 pub struct IntegrationLogs<Phase = Types> {
     phase: PhantomData<Phase>,
     pub model: IntegrationLogRequest,
+    pub environment: Environments,
 }
 
 impl<Phase> IntegrationLogs<Phase> {
@@ -15,15 +19,17 @@ impl<Phase> IntegrationLogs<Phase> {
         IntegrationLogs {
             phase: PhantomData::<Next>,
             model: self.model,
+            environment: self.environment,
         }
     }
 }
 
 impl IntegrationLogs {
-    pub fn new(model: IntegrationLogRequest) -> Self {
+    pub fn new(environment: &Environments, model: IntegrationLogRequest) -> Self {
         Self {
             phase: PhantomData::<Types>,
             model,
+            environment: *environment,
         }
     }
 
@@ -33,6 +39,7 @@ impl IntegrationLogs {
             model: IntegrationLogRequest {
                 ..Default::default()
             },
+            environment: Environments::DEV,
         }
     }
 

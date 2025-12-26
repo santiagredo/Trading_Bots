@@ -1,6 +1,10 @@
 use std::marker::PhantomData;
 
-use models::{enums::WebsocketCommand, structs::Ticker};
+use models::{
+    entities::orders,
+    enums::WebsocketCommand,
+    structs::{Environments, Ticker},
+};
 use tokio::sync::broadcast::{self, Receiver, Sender};
 
 use crate::utils::{Core, Types};
@@ -10,6 +14,7 @@ pub struct Senders<Phase = Types> {
     pub phase: PhantomData<Phase>,
     pub command_sender: broadcast::Sender<WebsocketCommand>,
     pub event_sender: broadcast::Sender<Ticker>,
+    pub order_sender: broadcast::Sender<(Environments, orders::Model)>,
 }
 
 impl Senders {
@@ -21,9 +26,12 @@ impl Senders {
         broadcast::channel::<Ticker>(64)
     }
 
-    // async fn set_active_senders() -> Senders {
-    //     Senders::<Core>::set_active_senders_core().await
-    // }
+    pub fn set_orders_broadcast() -> (
+        Sender<(Environments, orders::Model)>,
+        Receiver<(Environments, orders::Model)>,
+    ) {
+        broadcast::channel::<(Environments, orders::Model)>(64)
+    }
 
     pub async fn get_active_senders() -> Senders {
         Senders::<Core>::get_active_senders_core().await

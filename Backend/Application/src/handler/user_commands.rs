@@ -1,7 +1,7 @@
 use std::{marker::PhantomData, time::Instant};
 
 use chrono::Local;
-use models::enums::WebsocketCommand;
+use models::{enums::WebsocketCommand, structs::Environments};
 
 use crate::{
     handler::{
@@ -17,32 +17,49 @@ pub struct UserCommands<Phase = Types> {
 }
 
 impl UserCommands {
-    pub async fn start_everything() -> Result<(), Response> {
+    pub async fn start_everything(environment: Environments) -> Result<(), Response> {
         let start = Instant::now();
 
-        Tasks::start_async_tasks().await?;
+        Assets::default()
+            .with_env(environment)
+            .start_active_assets()
+            .await?;
 
-        OrderStatus::start_active_status().await?;
+        Pairs::default()
+            .with_env(environment)
+            .start_active_pairs()
+            .await?;
 
-        Assets::start_active_assets().await?;
+        Tasks::default()
+            .with_env(environment)
+            .start_active_tasks()
+            .await?;
 
-        Metrics::start_active_metrics().await;
+        OrderStatus::default()
+            .with_env(&environment)
+            .start_active_status()
+            .await?;
 
-        Pairs::start_active_pairs().await?;
+        Strategies::default()
+            .with_env(environment)
+            .start_active_strategies()
+            .await?;
 
-        Strategies::start_active_strategies().await?;
+        Indicators::default()
+            .with_env(environment)
+            .start_active_indicators()
+            .await?;
 
-        Indicators::start_active_indicators().await?;
-
-        SubscribedIndicators::default()
-            .start_subscribed_indicators()
+        SubscribedIndicators::new(environment)
+            .start_active_subscribed_indicators()
             .await;
 
-        Actions::start_active_actions().await?;
+        Actions::default()
+            .with_env(environment)
+            .start_active_actions()
+            .await?;
 
-        Self::start_socket_loop().await;
-
-        Strategies::start_strategies_evaluation_loop().await;
+        Self::start_socket_loop(environment).await;
 
         let now = Local::now().naive_local();
 
@@ -55,32 +72,54 @@ impl UserCommands {
         Ok(())
     }
 
-    pub async fn stop_everything() {
+    pub async fn stop_everything(environment: Environments) -> Result<(), Response> {
         let start = Instant::now();
 
-        Tasks::stop_async_tasks().await;
+        Assets::default()
+            .with_env(environment)
+            .stop_active_assets()
+            .await?;
 
-        OrderStatus::stop_active_status().await;
-
-        Assets::stop_active_assets().await;
-
-        Metrics::stop_active_metrics().await;
-
-        Pairs::stop_active_pairs().await;
-
-        Strategies::stop_active_strategies().await;
-
-        Indicators::stop_active_indicators().await;
-
-        SubscribedIndicators::default()
-            .stop_subscribed_indicators()
+        Pairs::default()
+            .with_env(environment)
+            .stop_active_pairs()
             .await;
 
-        Actions::stop_active_actions().await;
+        Tasks::default()
+            .with_env(environment)
+            .stop_active_tasks()
+            .await;
+
+        OrderStatus::default()
+            .with_env(&environment)
+            .stop_active_status()
+            .await;
+
+        Strategies::default()
+            .with_env(environment)
+            .stop_active_strategies()
+            .await;
+
+        Indicators::default()
+            .with_env(environment)
+            .stop_active_indicators()
+            .await;
+
+        SubscribedIndicators::new(environment)
+            .stop_active_subscribed_indicators()
+            .await;
+
+        Actions::default()
+            .with_env(environment)
+            .stop_active_actions()
+            .await;
 
         let _ = Self::stop_socket_loop().await;
 
-        Strategies::stop_strategies_evaluation_loop().await;
+        Metrics::default()
+            .with_env(environment)
+            .stop_active_metrics()
+            .await;
 
         let now = Local::now().naive_local();
 
@@ -89,32 +128,24 @@ impl UserCommands {
             now,
             start.elapsed()
         ));
-    }
-
-    pub async fn refresh_everything() -> Result<(), Response> {
-        Self::stop_everything().await;
-        Self::start_everything().await?;
-
-        // StrategiesOverview::run_active_strategies().await;
 
         Ok(())
     }
 
-    pub async fn start_socket_loop() {
+    pub async fn restart_everything(environment: Environments) -> Result<(), Response> {
+        Self::stop_everything(environment).await?;
+        Self::start_everything(environment).await?;
+
+        Ok(())
+    }
+
+    pub async fn start_socket_loop(environment: Environments) {
         let active_senders = Senders::get_active_senders().await;
 
-        WebsocketStreams::new()
+        WebsocketStreams::new(environment)
             .start_socket_loop(active_senders)
             .await;
     }
-
-    // pub async fn reload_socket_loop() -> Result<usize, String> {
-    //     let ws_senders = Senders::get_ws_senders().await;
-    //     ws_senders
-    //         .command_sender
-    //         .send(WebsocketCommand::Reload)
-    //         .map_err(|_| format!("Failed to send reload command"))
-    // }
 
     pub async fn stop_socket_loop() -> Result<usize, String> {
         let active_senders = Senders::get_active_senders().await;

@@ -1,15 +1,16 @@
-use std::marker::PhantomData;
+use std::{collections::HashMap, marker::PhantomData};
 
 use models::{
     entities::{actions::Model, assets, pairs},
-    structs::{ActionRequest, Ticker},
+    structs::{ActionRequest, Environments, Ticker},
 };
 
 use crate::utils::{Core, Response, Types};
 
 #[derive(Debug, Default)]
 pub struct Actions<Phase = Types> {
-    pub phase: PhantomData<Phase>,
+    phase: PhantomData<Phase>,
+    pub environment: Environments,
     pub model: ActionRequest,
 }
 
@@ -17,6 +18,7 @@ impl<Phase> Actions<Phase> {
     pub fn next_phase<Next>(self) -> Actions<Next> {
         Actions {
             phase: PhantomData::<Next>,
+            environment: self.environment,
             model: self.model,
         }
     }
@@ -26,6 +28,7 @@ impl Actions {
     pub fn new(model: ActionRequest) -> Self {
         Self {
             phase: PhantomData::<Types>,
+            environment: Environments::DEV,
             model,
         }
     }
@@ -33,9 +36,18 @@ impl Actions {
     pub fn default() -> Self {
         Self {
             phase: PhantomData::<Types>,
+            environment: Environments::DEV,
             model: ActionRequest {
                 ..Default::default()
             },
+        }
+    }
+
+    pub fn with_env(self, environment: Environments) -> Self {
+        Self {
+            phase: self.phase,
+            environment,
+            model: self.model,
         }
     }
 
@@ -52,6 +64,7 @@ impl Actions {
         }
     }
 
+    // db
     pub async fn insert_action(self) -> Result<Model, Response> {
         self.next_phase().insert_action_core().await
     }
@@ -72,6 +85,24 @@ impl Actions {
         self.next_phase().delete_action_core().await
     }
 
+    // cache
+    pub async fn get_active_actions(self) -> Option<HashMap<i32, Model>> {
+        self.next_phase().get_active_actions_core().await
+    }
+
+    pub async fn get_active_action(self) -> Option<Model> {
+        self.next_phase().get_active_action_core().await
+    }
+
+    pub async fn start_active_actions(self) -> Result<(), Response> {
+        self.next_phase().start_active_actions_core().await
+    }
+
+    pub async fn stop_active_actions(self) {
+        self.next_phase().stop_active_actions_core().await
+    }
+
+    // misc
     pub fn evaluate_action(
         self,
         action: Model,

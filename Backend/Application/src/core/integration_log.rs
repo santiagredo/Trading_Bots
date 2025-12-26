@@ -1,15 +1,16 @@
 use models::entities::integration_log::Model;
 
 use crate::{
-    config::get_config,
-    handler::IntegrationLogs,
+    handler::{IntegrationLogs, DBC},
     utils::{Core, Response},
 };
 
 impl IntegrationLogs<Core> {
     pub async fn insert_log_core(self) -> Result<Model, Response> {
+        let env = self.environment;
+
         self.next_phase()
-            .insert_log_data(&get_config().await.db)
+            .insert_log_data(&DBC::db(&env).await?)
             .await
     }
 }

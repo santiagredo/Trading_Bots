@@ -1,27 +1,48 @@
 use actix_web::{get, post, web, HttpResponse, Responder};
-use models::structs::LedgerRequest;
+use models::structs::{Environments, LedgerRequest};
 
 use crate::{handler::Ledgers, utils::error_response};
 
-#[post("")]
-pub async fn insert_ledger(web::Json(ledger): web::Json<LedgerRequest>) -> impl Responder {
-    match Ledgers::new(ledger).insert_ledger().await {
+#[post("/{env}")]
+pub async fn insert_ledger(
+    env: web::Path<Environments>,
+    web::Json(ledger): web::Json<LedgerRequest>,
+) -> impl Responder {
+    match Ledgers::new(ledger)
+        .with_env(env.into_inner())
+        .insert_ledger()
+        .await
+    {
         Ok(val) => HttpResponse::Ok().json(val),
         Err(err) => error_response(err),
     }
 }
 
-#[get("")]
-pub async fn select_ledger(query: web::Query<LedgerRequest>) -> impl Responder {
-    match Ledgers::new(query.into_inner()).select_ledger().await {
+#[get("/{env}")]
+pub async fn select_ledger(
+    env: web::Path<Environments>,
+    query: web::Query<LedgerRequest>,
+) -> impl Responder {
+    match Ledgers::new(query.into_inner())
+        .with_env(env.into_inner())
+        .select_ledger()
+        .await
+    {
         Ok(val) => HttpResponse::Ok().json(val),
         Err(err) => error_response(err),
     }
 }
 
-#[get("/all")]
-pub async fn select_ledgers(query: web::Query<LedgerRequest>) -> impl Responder {
-    match Ledgers::new(query.into_inner()).select_ledgers().await {
+#[get("/{env}/all")]
+pub async fn select_ledgers(
+    env: web::Path<Environments>,
+    query: web::Query<LedgerRequest>,
+) -> impl Responder {
+    match Ledgers::new(query.into_inner())
+        .with_env(env.into_inner())
+        .select_ledgers()
+        .await
+    {
         Ok(val) => HttpResponse::Ok().json(val),
         Err(err) => error_response(err),
     }

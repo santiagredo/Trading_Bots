@@ -1,9 +1,12 @@
 use function_name::named;
 use models::{
-    entities::tasks::{Column, Entity, Model},
+    entities::tasks::{self, Column, Entity, Model},
     structs::ErrorLogRequest,
 };
-use sea_orm::{ColumnTrait, Condition, DatabaseConnection, EntityTrait, QueryFilter};
+use sea_orm::{
+    ActiveModelTrait, ActiveValue, ColumnTrait, Condition, DatabaseConnection, EntityTrait,
+    QueryFilter,
+};
 
 use crate::{
     handler::{ErrorLogs, Tasks},
@@ -41,6 +44,31 @@ impl Tasks<Data> {
         }
 
         match Entity::find().filter(condition).all(db).await {
+            Err(err) => log_db_error!(self, err),
+            Ok(val) => Ok(val),
+        }
+    }
+
+    #[named]
+    pub async fn update_task_data(self, db: &DatabaseConnection) -> Result<Model, Response> {
+        let mut task = tasks::ActiveModel {
+            id: ActiveValue::Unchanged(self.model.id.unwrap_or_default()),
+            ..Default::default()
+        };
+
+        if let Some(is_active) = self.model.is_active {
+            task.is_active = ActiveValue::Set(is_active);
+        }
+
+        if let Some(cooldown) = self.model.cooldown {
+            task.cooldown = ActiveValue::Set(cooldown.into());
+        }
+
+        if let Some(delay) = self.model.delay {
+            task.delay = ActiveValue::Set(delay.into());
+        }
+
+        match task.update(db).await {
             Err(err) => log_db_error!(self, err),
             Ok(val) => Ok(val),
         }

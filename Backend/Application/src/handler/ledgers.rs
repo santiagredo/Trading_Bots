@@ -1,6 +1,9 @@
 use std::marker::PhantomData;
 
-use models::{entities::ledgers::Model, structs::LedgerRequest};
+use models::{
+    entities::ledgers::Model,
+    structs::{Environments, LedgerRequest},
+};
 
 use crate::utils::{Response, Types};
 
@@ -8,6 +11,7 @@ use crate::utils::{Response, Types};
 pub struct Ledgers<Phase = Types> {
     pub phase: PhantomData<Phase>,
     pub model: LedgerRequest,
+    pub environment: Environments,
 }
 
 impl<Phase> Ledgers<Phase> {
@@ -15,6 +19,7 @@ impl<Phase> Ledgers<Phase> {
         Ledgers {
             phase: PhantomData::<Next>,
             model: self.model,
+            environment: self.environment,
         }
     }
 }
@@ -23,6 +28,7 @@ impl Ledgers {
     pub fn new(model: LedgerRequest) -> Self {
         Self {
             phase: PhantomData::<Types>,
+            environment: Environments::DEV,
             model,
         }
     }
@@ -33,6 +39,15 @@ impl Ledgers {
             model: LedgerRequest {
                 ..Default::default()
             },
+            environment: Environments::DEV,
+        }
+    }
+
+    pub fn with_env(self, environment: Environments) -> Self {
+        Self {
+            phase: self.phase,
+            environment,
+            model: self.model,
         }
     }
 

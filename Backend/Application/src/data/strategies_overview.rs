@@ -14,7 +14,7 @@ use crate::{
 };
 
 impl StrategiesOverview<Data> {
-    pub async fn select_strategies_overview_data(
+    pub async fn select_strategy_overview_data(
         db: &DatabaseConnection,
         strategy: StrategyRequest,
     ) -> Result<

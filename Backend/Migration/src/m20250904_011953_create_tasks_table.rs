@@ -20,6 +20,50 @@ impl MigrationTrait for Migration {
                     .to_owned(),
             )
             .await
+            .unwrap();
+
+        let insert_tasks = Query::insert()
+            .into_table(Tasks::Table)
+            .columns([
+                Tasks::Nick,
+                Tasks::Description,
+                Tasks::IsActive,
+                Tasks::Cooldown,
+                Tasks::Delay,
+            ])
+            .values_panic([
+                "BNUAB".into(),
+                "Gets and saves Binance's account balances locally".into(),
+                true.into(),
+                3600.into(),
+                0.into(),
+            ])
+            .values_panic([
+                "BNUEI".into(),
+                "Gets and saves Binance's exchange information locally".into(),
+                true.into(),
+                86400.into(),
+                0.into(),
+            ])
+            .values_panic([
+                "CPUPS".into(),
+                "Gets and saves Coin Paprika's pairs statistics locally".into(),
+                true.into(),
+                3600.into(),
+                0.into(),
+            ])
+            .values_panic([
+                "CMPER".into(),
+                "Gets and saves internal metrics statistics locally".into(),
+                true.into(),
+                3600.into(),
+                0.into(),
+            ])
+            .to_owned();
+
+        manager.exec_stmt(insert_tasks).await?;
+
+        Ok(())
     }
 
     async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {

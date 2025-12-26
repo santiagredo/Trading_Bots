@@ -1,13 +1,17 @@
 use std::{collections::HashMap, marker::PhantomData};
 
-use models::{entities::assets::Model, structs::AssetRequest};
+use models::{
+    entities::assets::Model,
+    structs::{AssetRequest, CacheAsset, Environments},
+};
 use sea_orm::prelude::Decimal;
 
-use crate::utils::{Core, Response, Types};
+use crate::utils::{Response, Types};
 
 #[derive(Debug, Default)]
 pub struct Assets<Phase = Types> {
     phase: PhantomData<Phase>,
+    pub environment: Environments,
     pub model: AssetRequest,
 }
 
@@ -15,6 +19,7 @@ impl<Phase> Assets<Phase> {
     pub fn next_phase<Next>(self) -> Assets<Next> {
         Assets {
             phase: PhantomData::<Next>,
+            environment: self.environment,
             model: self.model,
         }
     }
@@ -24,16 +29,34 @@ impl Assets {
     pub fn new(model: AssetRequest) -> Self {
         Self {
             phase: PhantomData::<Types>,
+            environment: Environments::DEV,
             model,
+        }
+    }
+
+    pub fn from_request(request: AssetRequest) -> Self {
+        Self {
+            phase: PhantomData::<Types>,
+            model: request,
+            environment: Environments::DEV,
         }
     }
 
     pub fn default() -> Self {
         Self {
             phase: PhantomData::<Types>,
+            environment: Environments::DEV,
             model: AssetRequest {
                 ..Default::default()
             },
+        }
+    }
+
+    pub fn with_env(self, environment: Environments) -> Self {
+        Self {
+            phase: self.phase,
+            environment: environment,
+            model: self.model,
         }
     }
 
@@ -60,18 +83,7 @@ impl Assets {
         }
     }
 
-    pub async fn get_posting_assets() -> Option<HashMap<i32, bool>> {
-        Assets::<Core>::get_posting_assets_core().await
-    }
-
-    pub async fn get_posting_asset(key: &i32) -> Option<bool> {
-        Assets::<Core>::get_posting_asset_core(key).await
-    }
-
-    pub async fn set_posting_asset(asset: i32, is_posting: bool, is_remove: bool) -> i32 {
-        Assets::<Core>::set_posting_asset_core(asset, is_posting, is_remove).await
-    }
-
+    // db
     pub async fn insert_asset(self) -> Result<Model, Response> {
         self.next_phase().insert_asset_core().await
     }
@@ -88,18 +100,39 @@ impl Assets {
         self.next_phase().update_asset_core().await
     }
 
-    pub async fn update_asset_value(
+    pub async fn delete_asset(self) -> Result<u64, Response> {
+        self.next_phase().delete_asset_core().await
+    }
+
+    // cache
+    pub async fn get_active_assets(self) -> Option<HashMap<i32, CacheAsset>> {
+        self.next_phase().get_active_assets_core().await
+    }
+
+    pub async fn get_active_asset(self) -> Option<CacheAsset> {
+        self.next_phase().get_active_asset_core().await
+    }
+
+    pub async fn set_active_asset(self, is_remove: bool) -> Model {
+        self.next_phase().set_active_asset_core(is_remove).await
+    }
+
+    pub async fn set_active_asset_value(
         self,
         value: Decimal,
         is_locked: bool,
         is_sell: bool,
-    ) -> Result<Model, Response> {
+    ) -> Result<(Model, Decimal), Response> {
         self.next_phase()
-            .update_asset_value_core(value, is_locked, is_sell)
+            .set_active_asset_value_core(value, is_locked, is_sell)
             .await
     }
 
-    pub async fn delete_asset(self) -> Result<u64, Response> {
-        self.next_phase().delete_asset_core().await
+    pub async fn start_active_assets(self) -> Result<(), Response> {
+        self.next_phase().start_active_assets_core().await
+    }
+
+    pub async fn stop_active_assets(self) -> Result<(), Response> {
+        self.next_phase().stop_active_assets_core().await
     }
 }

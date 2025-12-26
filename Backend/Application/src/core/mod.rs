@@ -19,3 +19,5 @@ pub mod tasks;
 pub mod ticker;
 pub mod integration_log;
 pub mod error_log;
+pub mod configurations;
+pub mod database_connections;

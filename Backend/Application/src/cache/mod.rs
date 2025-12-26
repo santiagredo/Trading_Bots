@@ -11,3 +11,5 @@ pub mod strategies_overview;
 pub mod tasks;
 pub mod ticker;
 pub mod websocket_streams;
+pub mod configurations;
+pub mod database_connections;

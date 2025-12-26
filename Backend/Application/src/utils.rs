@@ -107,10 +107,20 @@ macro_rules! log_db_error {
             ..Default::default()
         };
 
+        let environment = $self.environment;
+
         tokio::spawn(async move {
-            let _ = ErrorLogs::new(error_log_request).insert_log().await;
+            let _ = ErrorLogs::new(&environment, error_log_request)
+                .insert_log()
+                .await;
         });
 
         Err(crate::utils::handle_db_error(&$err))
     }};
+}
+
+pub fn trim_option(value: &mut Option<String>) {
+    if let Some(v) = value {
+        *v = v.trim().to_owned();
+    }
 }

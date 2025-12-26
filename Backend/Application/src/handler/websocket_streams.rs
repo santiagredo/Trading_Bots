@@ -1,5 +1,6 @@
 use std::marker::PhantomData;
 
+use models::structs::Environments;
 use tokio::task::AbortHandle;
 
 use crate::{
@@ -10,20 +11,23 @@ use crate::{
 #[derive(Debug, Clone)]
 pub struct WebsocketStreams<Phase = Types> {
     phase: PhantomData<Phase>,
+    pub environment: Environments,
 }
 
 impl<Phase> WebsocketStreams<Phase> {
     pub fn next_phase<Next>(self) -> WebsocketStreams<Next> {
         WebsocketStreams {
             phase: PhantomData::<Next>,
+            environment: self.environment,
         }
     }
 }
 
 impl WebsocketStreams {
-    pub fn new() -> Self {
+    pub fn new(environment: Environments) -> Self {
         Self {
             phase: PhantomData::<Types>,
+            environment,
         }
     }
 

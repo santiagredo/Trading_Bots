@@ -1,87 +1,115 @@
 use std::{collections::HashMap, sync::Arc, time::Duration};
 
-use models::{enums::MetricType, structs::Metric};
+use models::structs::{CriticalMetric, Environments};
 use once_cell::sync::Lazy;
-use sea_orm::prelude::DateTime;
 use tokio::sync::RwLock;
 
 use crate::{handler::Metrics, utils::Cache};
 
-static ACTIVE_METRICS: Lazy<Arc<RwLock<Option<HashMap<MetricType, Metric>>>>> =
-    Lazy::new(|| Arc::new(RwLock::new(None)));
+#[derive(Default)]
+struct CacheEnvironments {
+    pub environments: HashMap<Environments, CacheMetrics>,
+}
+
+#[derive(Default)]
+struct CacheMetrics {
+    pub model: CriticalMetric,
+}
+
+static ACTIVE_METRICS: Lazy<Arc<RwLock<CacheEnvironments>>> =
+    Lazy::new(|| Arc::new(RwLock::new(CacheEnvironments::default())));
 
 impl Metrics<Cache> {
-    pub async fn set_active_metrics_cache(metrics: Option<Vec<Metric>>) -> Option<Vec<Metric>> {
-        let mut active_metrics = ACTIVE_METRICS.write().await;
+    pub async fn get_active_metrics_cache(self) -> Option<CriticalMetric> {
+        let environment = self.environment;
 
-        let Some(metrics) = metrics else {
-            *active_metrics = None;
-            return None;
-        };
+        let active_metrics = ACTIVE_METRICS.read().await;
 
-        let mut active_metrics_map: HashMap<MetricType, Metric> = HashMap::new();
+        let env_map = active_metrics.environments.get(&environment)?;
 
-        for metric in metrics.iter() {
-            active_metrics_map.insert(metric.metric_type, metric.clone());
-        }
-
-        *active_metrics = Some(active_metrics_map);
-
-        Some(metrics)
+        Some(env_map.model.clone())
     }
 
-    pub async fn set_active_metric_cache(
-        metric_type: MetricType,
+    pub async fn set_active_execution_metrics_cache(
+        environment: Environments,
         elapsed: Duration,
-        date_time: DateTime,
+        success: bool,
     ) {
         let mut active_metrics = ACTIVE_METRICS.write().await;
 
-        let Some(metrics_map) = active_metrics.as_mut() else {
-            return;
-        };
+        let env_map = active_metrics
+            .environments
+            .entry(environment)
+            .or_insert_with(CacheMetrics::default);
 
-        let Some(active_metric) = metrics_map.get_mut(&metric_type) else {
-            return;
-        };
+        let now = chrono::Local::now().naive_local();
 
-        active_metric.add(elapsed, date_time);
-    }
+        if success {
+            env_map.model.executions_ok += 1;
+            env_map.model.consecutive_errors = 0;
+            env_map.model.last_success = Some(now);
+        } else {
+            env_map.model.executions_err += 1;
+            env_map.model.consecutive_errors += 1;
+            env_map.model.last_error = Some(now);
+        }
 
-    pub async fn get_active_metrics_cache() -> Option<HashMap<MetricType, Metric>> {
-        let active_metrics = ACTIVE_METRICS.read().await;
+        env_map.model.total_execution_time += elapsed;
 
-        active_metrics.clone()
-    }
-
-    pub async fn get_active_metric_cache(key: &MetricType) -> Option<Metric> {
-        let active_metrics = ACTIVE_METRICS.read().await;
-
-        let Some(active_metrics) = active_metrics.as_ref() else {
-            return None;
-        };
-
-        active_metrics.get(key).cloned()
-    }
-
-    pub async fn start_active_metrics_cache() {
-        if Self::get_active_metrics_cache()
-            .await
-            .is_none_or(|map| map.is_empty())
-        {
-            let mut all_metrics = Metric::default();
-            all_metrics.metric_type = MetricType::All;
-
-            let mut completed_metrics = Metric::default();
-            completed_metrics.metric_type = MetricType::Completed;
-
-            let metrics_vec = vec![all_metrics, completed_metrics];
-
-            Self::set_active_metrics_cache(Some(metrics_vec)).await;
+        if elapsed > env_map.model.max_execution_time {
+            env_map.model.max_execution_time = elapsed;
         }
     }
 
-    pub async fn stop_active_metrics_cache() {
-        Self::set_active_metrics_cache(None).await;
+    pub async fn set_active_posting_metrics_cache(environment: Environments, increase: bool) {
+        let mut active_metrics = ACTIVE_METRICS.write().await;
+
+        let env_map = active_metrics
+            .environments
+            .entry(environment)
+            .or_insert_with(CacheMetrics::default);
+
+        if increase {
+            env_map.model.active_posting += 1;
+            env_map.model.max_active_posting = env_map
+                .model
+                .max_active_posting
+                .max(env_map.model.active_posting);
+
+            return;
+        }
+
+        if env_map.model.active_posting > 0 {
+            env_map.model.active_posting -= 1
+        }
+    }
+
+    pub async fn set_active_skipped_metrics_cache(environment: Environments) {
+        let mut active_metrics = ACTIVE_METRICS.write().await;
+
+        let env_map = active_metrics
+            .environments
+            .entry(environment)
+            .or_insert_with(CacheMetrics::default);
+
+        env_map.model.skipped_due_to_lock += 1;
+    }
+
+    pub async fn persist_metrics_cache(environment: Environments) -> Option<CriticalMetric> {
+        let mut active_metrics = ACTIVE_METRICS.write().await;
+
+        let env_map = active_metrics.environments.remove(&environment)?;
+
+        Some(env_map.model.clone())
+    }
+
+    pub async fn stop_active_metrics_cache(self) {
+        let environment = self.environment;
+
+        let mut active_metrics = ACTIVE_METRICS.write().await;
+
+        if let Some(env_map) = active_metrics.environments.get_mut(&environment) {
+            env_map.model = CriticalMetric::default()
+        };
     }
 }

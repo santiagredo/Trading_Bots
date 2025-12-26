@@ -1,5 +1,6 @@
 use std::time::Duration;
 
+use chrono::Local;
 use futures_util::{SinkExt, StreamExt};
 use models::{
     enums::{BinanceResponse, WebsocketCommand},
@@ -38,9 +39,10 @@ impl WebsocketStreams<Integration> {
                     }
                     Err(err) => {
                         attempt += 1;
+                        let now = Local::now().naive_local();
 
                         dbg!(eprintln!(
-                            "Connection failed: {err} -- Retrying in {} secs",
+                            "Connection failed at {now} : {err} -- Retrying in {} secs",
                             2u64.pow(attempt.min(5))
                         ));
 
@@ -53,8 +55,8 @@ impl WebsocketStreams<Integration> {
                 let (mut write, mut read) = ws_stream.split();
 
                 // gets the subscribed indicators symbols to resubscribe in case the websocket connection drops
-                let symbols: Vec<String> = SubscribedIndicators::default()
-                    .select_subscribed_indicators()
+                let symbols: Vec<String> = SubscribedIndicators::new(self.environment)
+                    .get_active_subscribed_indicators()
                     .await
                     .unwrap_or_default()
                     .keys()
@@ -125,7 +127,9 @@ impl WebsocketStreams<Integration> {
 
                         // breaks inner loop as no texts have beeen received
                         _ = timeout => {
-                            dbg!(println!("No messages received in {:?}, closing socket", timeout_duration));
+                            let now = Local::now().naive_local();
+
+                            dbg!(println!("No messages received in {:?}, closing socket at {:?}", timeout_duration, now));
                             break 'inner;
                         }
                     }

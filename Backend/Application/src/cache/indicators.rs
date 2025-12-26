@@ -1,97 +1,118 @@
 use std::{collections::HashMap, sync::Arc};
 
-use models::entities::indicators::Model;
+use models::{entities::indicators::Model, structs::Environments};
 use once_cell::sync::Lazy;
 use tokio::sync::RwLock;
 
-use crate::{
-    handler::{Indicators, Strategies},
-    utils::{Cache, Response},
-};
+use crate::{handler::Indicators, utils::Cache};
 
-static ACTIVE_INDICATORS: Lazy<Arc<RwLock<Option<HashMap<i32, Model>>>>> =
-    Lazy::new(|| Arc::new(RwLock::new(None)));
+#[derive(Default)]
+struct CacheEnvironments {
+    pub environments: HashMap<Environments, CacheIndicators>,
+}
+
+#[derive(Default)]
+struct CacheIndicators {
+    pub is_initialized: bool,
+    pub models: HashMap<i32, Model>,
+}
+
+static ACTIVE_INDICATORS: Lazy<Arc<RwLock<CacheEnvironments>>> =
+    Lazy::new(|| Arc::new(RwLock::new(CacheEnvironments::default())));
 
 impl Indicators<Cache> {
-    pub async fn set_active_indicators(indicators: Option<Vec<Model>>) -> Option<Vec<Model>> {
-        let mut active_indicators = ACTIVE_INDICATORS.write().await;
+    pub async fn set_active_indicators_cache(
+        environment: &Environments,
+        indicators: Vec<Model>,
+    ) -> Vec<Model> {
+        let mut cache_indicators = ACTIVE_INDICATORS.write().await;
 
-        let Some(indicators) = indicators else {
-            *active_indicators = None;
-            return None;
-        };
-
-        let mut active_indicators_map: HashMap<i32, Model> = HashMap::new();
+        let env_map = cache_indicators
+            .environments
+            .entry(*environment)
+            .or_insert_with(CacheIndicators::default);
 
         for indicator in indicators.iter() {
-            active_indicators_map.insert(indicator.strategy_id, indicator.clone());
+            env_map
+                .models
+                .insert(indicator.strategy_id, indicator.clone());
         }
 
         // dbg!(&active_indicators_map);
-        *active_indicators = Some(active_indicators_map);
+        env_map.is_initialized = true;
 
-        Some(indicators)
+        indicators
     }
 
-    pub async fn set_active_indicator(indicator: Model) -> Model {
+    pub async fn set_active_indicator_cache(
+        environment: &Environments,
+        indicator: Model,
+        is_remove: bool,
+    ) -> Model {
         let mut active_indicators = ACTIVE_INDICATORS.write().await;
 
-        // early return if active indicators is none
-        let Some(indicators_map) = active_indicators.as_mut() else {
-            return indicator;
-        };
+        let env_map = active_indicators
+            .environments
+            .entry(*environment)
+            .or_insert_with(CacheIndicators::default);
 
-        if !indicator.is_active {
-            indicators_map.remove(&indicator.strategy_id);
+        if is_remove {
+            env_map
+                .models
+                .remove(&indicator.strategy_id)
+                .map(|val| val)
+                .unwrap_or(indicator)
         } else {
-            indicators_map.insert(indicator.strategy_id, indicator.clone());
+            env_map
+                .models
+                .insert(indicator.strategy_id, indicator.clone());
+
+            indicator
         }
-
-        indicator
     }
 
-    pub async fn get_active_indicators() -> Option<HashMap<i32, Model>> {
+    pub async fn get_active_indicators_cache(
+        environment: &Environments,
+    ) -> Option<HashMap<i32, Model>> {
         let active_indicators = ACTIVE_INDICATORS.read().await;
 
-        active_indicators.clone()
+        let env_map = active_indicators.environments.get(&environment)?;
+
+        Some(env_map.models.clone())
     }
 
-    pub async fn get_active_indicator(key: &i32) -> Option<Model> {
+    pub async fn get_active_indicator_cache(
+        environment: &Environments,
+        key: &i32,
+    ) -> Option<Model> {
         let active_indicators = ACTIVE_INDICATORS.read().await;
 
-        let Some(indicators_map) = active_indicators.as_ref() else {
-            return None;
+        let env_map = active_indicators.environments.get(&environment)?;
+
+        let cache_indicator = env_map.models.get(key)?;
+
+        Some(cache_indicator.clone())
+    }
+
+    pub async fn get_active_indicators_status_cache(environment: &Environments) -> bool {
+        let cache_indicators = ACTIVE_INDICATORS.read().await;
+
+        cache_indicators
+            .environments
+            .get(&environment)
+            .map(|val| val.is_initialized)
+            .unwrap_or(false)
+    }
+
+    pub async fn stop_active_indicators_cache(environment: &Environments) {
+        let mut cache_indicators = ACTIVE_INDICATORS.write().await;
+
+        let Some(env_map) = cache_indicators.environments.get_mut(environment) else {
+            return;
         };
 
-        indicators_map.get(key).cloned()
-    }
+        env_map.models = HashMap::new();
 
-    pub async fn start_active_indicators() -> Result<(), Response> {
-        let active_strategies = Strategies::get_active_strategies_cache()
-            .await
-            .unwrap_or_default();
-
-        if Self::get_active_indicators()
-            .await
-            .is_none_or(|active_indicators| active_indicators.is_empty())
-        {
-            let mut indicators_request = Indicators::default();
-            indicators_request.model.is_active = Some(true);
-
-            let active_indicators = indicators_request
-                .select_indicators()
-                .await?
-                .into_iter()
-                .filter(|act_ind| active_strategies.contains_key(&act_ind.strategy_id))
-                .collect::<Vec<_>>();
-
-            Self::set_active_indicators(Some(active_indicators)).await;
-        }
-
-        Ok(())
-    }
-
-    pub async fn stop_active_indicators() {
-        Self::set_active_indicators(None).await;
+        env_map.is_initialized = false;
     }
 }

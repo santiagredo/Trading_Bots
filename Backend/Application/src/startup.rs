@@ -13,18 +13,12 @@ use actix_web::{
 use tracing_bunyan_formatter::{BunyanFormattingLayer, JsonStorageLayer};
 use tracing_subscriber::{layer::SubscriberExt, EnvFilter, Registry};
 
-use crate::environments::Environments;
+use crate::routes::routes_config;
 
-pub fn run(
-    listener: TcpListener,
-    routes_config: fn(&mut web::ServiceConfig),
-    environtment: Environments,
-    module_name: &str,
-) -> Result<Server, std::io::Error> {
-    let secure = match environtment {
-        Environments::PRO => true,
-        _ => false,
-    };
+pub fn run() -> Result<Server, std::io::Error> {
+    let secure = false;
+    let module_name = "Api";
+    let listener = get_available_listener();
 
     setup_logger(module_name).expect("Failed to set up logger");
     let socket_addr = listener.local_addr().expect("Failed to get local address");
@@ -71,4 +65,30 @@ fn setup_logger(module_name: &str) -> Result<(), Box<dyn std::error::Error>> {
     tracing::subscriber::set_global_default(subscriber)?;
 
     Ok(())
+}
+
+fn get_available_listener() -> TcpListener {
+    let ports = [8082, 8083, 8084];
+
+    for port in ports {
+        let addr = format!("127.0.0.1:{port}");
+
+        if let Ok(listener) = TcpListener::bind(&addr) {
+            dbg!(
+                "Binding successful on port {}",
+                listener.local_addr().unwrap().port()
+            );
+
+            return listener;
+        }
+    }
+
+    let listener = TcpListener::bind(format!("127.0.0.1:0")).expect("Failed to bind local address");
+
+    dbg!(
+        "Binding successful on port {}",
+        listener.local_addr().unwrap().port()
+    );
+
+    listener
 }

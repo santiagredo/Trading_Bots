@@ -4,6 +4,7 @@ pub mod prelude;
 
 pub mod actions;
 pub mod assets;
+pub mod critical_metrics;
 pub mod error_log;
 pub mod indicators;
 pub mod integration_log;

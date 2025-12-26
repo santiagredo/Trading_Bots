@@ -36,6 +36,42 @@ impl MigrationTrait for Migration {
             )
             .await?;
 
+        let minus_fifty = -50;
+        let minus_five = -5;
+
+        let insert_indicators = Query::insert()
+            .into_table(Indicators::Table)
+            .columns([
+                Indicators::StrategyId,
+                Indicators::IsActive,
+                Indicators::Symbol,
+                Indicators::Nick,
+                Indicators::Direction,
+                Indicators::IsPercentage,
+                Indicators::Value,
+            ])
+            .values_panic([
+                1.into(),
+                true.into(),
+                "BTCUSDT".into(),
+                "pfath".into(),
+                "lte".into(),
+                true.into(),
+                minus_fifty.into(),
+            ])
+            .values_panic([
+                2.into(),
+                true.into(),
+                "BTCUSDT".into(),
+                "pfath".into(),
+                "gte".into(),
+                true.into(),
+                minus_five.into(),
+            ])
+            .to_owned();
+
+        manager.exec_stmt(insert_indicators).await?;
+
         Ok(())
     }
 

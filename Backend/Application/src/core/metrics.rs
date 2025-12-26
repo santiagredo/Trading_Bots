@@ -1,39 +1,68 @@
-use std::{collections::HashMap, time::Duration};
+use std::time::Duration;
 
-use models::{enums::MetricType, structs::Metric};
-use sea_orm::prelude::DateTime;
+use models::{
+    entities::critical_metrics::Model,
+    structs::{CriticalMetric, Environments},
+};
 
 use crate::{
-    handler::Metrics,
-    utils::{Cache, Core},
+    handler::{Metrics, DBC},
+    utils::{Cache, Core, Response},
 };
 
 impl Metrics<Core> {
-    pub async fn set_active_metrics_core(metrics: Option<Vec<Metric>>) -> Option<Vec<Metric>> {
-        Metrics::<Cache>::set_active_metrics_cache(metrics).await
+    // db
+    pub async fn insert_metrics_core(self) -> Result<Model, Response> {
+        let env = self.environment;
+
+        self.next_phase()
+            .insert_metrics_data(&DBC::db(&env).await?)
+            .await
     }
 
-    pub async fn set_active_metric_core(
-        metric_type: MetricType,
+    pub async fn select_metrics_core(self) -> Result<Vec<Model>, Response> {
+        let env = self.environment;
+
+        self.next_phase()
+            .select_metrics_data(&DBC::db(&env).await?)
+            .await
+    }
+
+    // cache
+    pub async fn get_active_metric_core(self) -> Option<CriticalMetric> {
+        self.next_phase().get_active_metrics_cache().await
+    }
+
+    pub async fn set_active_execution_metrics_core(
+        environment: Environments,
         elapsed: Duration,
-        date_time: DateTime,
+        success: bool,
     ) {
-        Metrics::<Cache>::set_active_metric_cache(metric_type, elapsed, date_time).await
+        Metrics::<Cache>::set_active_execution_metrics_cache(environment, elapsed, success).await
     }
 
-    pub async fn get_active_metrics_core() -> Option<HashMap<MetricType, Metric>> {
-        Metrics::<Cache>::get_active_metrics_cache().await
+    pub async fn set_active_posting_metrics_core(environment: Environments, increase: bool) {
+        Metrics::<Cache>::set_active_posting_metrics_cache(environment, increase).await
     }
 
-    pub async fn get_active_metric_core(key: &MetricType) -> Option<Metric> {
-        Metrics::<Cache>::get_active_metric_cache(key).await
+    pub async fn set_active_skipped_metrics_core(environment: Environments) {
+        Metrics::<Cache>::set_active_skipped_metrics_cache(environment).await
     }
 
-    pub async fn start_active_metrics_core() {
-        Metrics::<Cache>::start_active_metrics_cache().await
+    pub async fn stop_active_metrics_core(self) {
+        self.next_phase().stop_active_metrics_cache().await
     }
 
-    pub async fn stop_active_metrics_core() {
-        Metrics::<Cache>::stop_active_metrics_cache().await
+    // misc
+    pub async fn persist_metrics_core(mut self) -> Result<Model, Response> {
+        let env = self.environment;
+
+        let critical_metric = Metrics::<Cache>::persist_metrics_cache(env)
+            .await
+            .unwrap_or_default();
+
+        self.model = critical_metric;
+
+        Self::insert_metrics_core(self).await
     }
 }

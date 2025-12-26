@@ -1,10 +1,12 @@
 use std::marker::PhantomData;
 
 use models::structs::{
-    AccountInformation, AssetRequest, ExchangeInformation, LedgerRequest, OrderRequest,
+    AccountInformation, AssetRequest, Environments, ExchangeInformation, LedgerRequest,
+    OrderRequest,
 };
 use sea_orm::prelude::Decimal;
 use std::str::FromStr;
+use tracing::error_span;
 
 use crate::{
     handler::{Assets, Ledgers, Pairs},
@@ -13,19 +15,25 @@ use crate::{
 
 pub struct Binance<Phase = Types> {
     phase: PhantomData<Phase>,
+    pub environment: Environments,
 }
 
 impl Binance {
     pub fn default() -> Self {
         Self {
             phase: PhantomData::<Types>,
+            environment: Environments::DEV,
         }
     }
 
-    pub async fn update_account_balances() {
+    pub async fn update_account_balances(environment: Environments) {
         let account = Self::default().get_account().await.unwrap_or_default();
 
-        let assets = Assets::default().select_assets().await.unwrap_or_default();
+        let assets = Assets::default()
+            .with_env(environment)
+            .select_assets()
+            .await
+            .unwrap_or_default();
 
         for balance in account.balances {
             let Some(asset) = assets
@@ -43,10 +51,20 @@ impl Binance {
                 id: Some(asset.id),
                 free: Some(balance.free),
                 locked: Some(balance.locked),
-                ..Default::default()
+                name: Some(asset.name.clone()),
+                ticker: Some(asset.ticker.clone()),
             };
 
-            let stored_model = match Assets::new(asset_request).update_asset().await {
+            Assets::from_request(asset_request.clone())
+                .with_env(environment)
+                .set_active_asset(false)
+                .await;
+
+            let stored_model = match Assets::from_request(asset_request)
+                .with_env(environment)
+                .update_asset()
+                .await
+            {
                 Err(err) => {
                     eprint!("{}", err.message);
                     continue;
@@ -68,16 +86,20 @@ impl Binance {
                 locked_new_balance: Some(balance.locked),
             };
 
-            if let Err(err) = Ledgers::new(ledger_request).insert_ledger().await {
-                eprint!("{}", err.message);
+            if let Err(err) = Ledgers::new(ledger_request)
+                .with_env(environment)
+                .insert_ledger()
+                .await
+            {
+                dbg!(eprint!("{}", err.message));
             };
         }
     }
 
-    pub async fn update_exchange_information() {
+    pub async fn update_exchange_information(environment: Environments) {
         // let start = Instant::now();
 
-        let mut stored_pairs = match Pairs::default().select_pairs().await {
+        let mut stored_pairs = match Pairs::default().with_env(environment).select_pairs().await {
             Ok(pairs) if !pairs.is_empty() => pairs,
             _ => return,
         };
@@ -88,6 +110,7 @@ impl Binance {
         };
 
         for pair in stored_pairs.iter_mut() {
+
             if let Some(exchange_pair) = updates
                 .symbols
                 .iter_mut()
@@ -239,16 +262,39 @@ impl Binance {
                 }
             }
 
-            let _ = Pairs::default()
-                .from_model(pair.clone())
-                .update_pair()
+            let mut pair_request = Pairs::default()
+                .with_env(environment)
+                .from_model(pair.clone());
+
+            // Prevent update from overwritting existing values
+            pair_request.model.all_time_high_date = None;
+            pair_request.model.all_time_high_price = None;
+            pair_request.model.percent_from_all_time_high = None;
+            pair_request.model.fifteen_minutes_price_percent_change = None;
+            pair_request.model.thirty_minutes_price_percent_change = None;
+            pair_request.model.hour_price_percent_change = None;
+            pair_request.model.six_hours_price_percent_change = None;
+            pair_request.model.twelve_hours_price_percent_change = None;
+            pair_request.model.day_price_percent_change = None;
+            pair_request.model.week_price_percent_change = None;
+            pair_request.model.month_price_percent_change = None;
+            pair_request.model.year_price_percent_change = None;
+
+            let model = match pair_request.update_pair().await {
+                Err(err) => {
+                    error_span!("Binance - Pair - Update - Error", pair = ?pair, error = ?err);
+                    dbg!(eprint!("{err:?} \n"));
+                    continue;
+                }
+                Ok(val) => val,
+            };
+
+            Pairs::default()
+                .with_env(environment)
+                .from_model(model)
+                .set_active_pair(false)
                 .await;
         }
-
-        // dbg!(format!(
-        //     "Update exchange information duration: {:?}",
-        //     start.elapsed()
-        // ));
     }
 }
 
@@ -256,6 +302,7 @@ impl<Phase> Binance<Phase> {
     pub fn next_phase<Next>(self) -> Binance<Next> {
         Binance {
             phase: PhantomData::<Next>,
+            environment: self.environment,
         }
     }
 }

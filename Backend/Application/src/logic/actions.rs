@@ -360,7 +360,7 @@ mod fn_delete_action_logic {
 mod fn_evaluate_action_logic {
     use super::*;
     use models::entities::{actions, assets, pairs};
-    use models::structs::Ticker;
+    use models::structs::{ActionRequest, Ticker};
     use sea_orm::prelude::Decimal;
 
     fn mock_pair() -> pairs::Model {
@@ -485,10 +485,9 @@ mod fn_evaluate_action_logic {
         ];
 
         for (name, action, base, quote, should_pass) in cases {
-            let logic = Actions::new(Default::default())
-                .next_phase::<Logic>()
-                .next_phase();
-            let result = logic.evaluate_action_logic(action, &pair, &ticker, &base, &quote);
+            let req = ActionRequest::default();
+
+            let result = Actions::new(req).evaluate_action(action, &pair, &ticker, &base, &quote);
 
             assert_eq!(
                 result.is_ok(),

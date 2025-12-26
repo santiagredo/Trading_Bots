@@ -1,10 +1,14 @@
-use actix_web::{get, HttpResponse, Responder};
+use actix_web::{get, web, HttpResponse, Responder};
+use models::structs::Environments;
 
 use crate::handler::Metrics;
 
-#[get("")]
-pub async fn select_metrics() -> impl Responder {
-    let metrics = Metrics::get_active_metrics().await;
+#[get("/{env}")]
+pub async fn select_metrics(env: web::Path<Environments>) -> impl Responder {
+    let metrics = Metrics::default()
+        .with_env(env.into_inner())
+        .get_active_metric()
+        .await;
 
     HttpResponse::Ok().json(metrics)
 }

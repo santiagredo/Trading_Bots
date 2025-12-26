@@ -1,8 +1,5 @@
 use function_name::named;
-use models::{
-    entities::actions::{ActiveModel, Column, Entity, Model},
-    structs::ErrorLogRequest,
-};
+use models::{entities::actions::{ActiveModel, Column, Entity, Model}, structs::ErrorLogRequest};
 use sea_orm::{
     ActiveModelTrait, ActiveValue, ColumnTrait, Condition, DatabaseConnection, EntityTrait,
     QueryFilter,

@@ -17,11 +17,13 @@ impl Senders<Cache> {
 
         let (command_sender, _) = Senders::set_commands_brodcast();
         let (event_sender, _) = Senders::set_events_broadcast();
+        let (order_sender, _) = Senders::set_orders_broadcast();
 
         let senders = Senders {
             phase: PhantomData::<Types>,
             command_sender: command_sender.clone(),
             event_sender: event_sender.clone(),
+            order_sender: order_sender.clone(),
         };
 
         *senders_lock = Some(senders.clone());

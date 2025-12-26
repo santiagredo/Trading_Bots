@@ -1,13 +1,17 @@
 use std::{collections::HashMap, marker::PhantomData};
 
 use chrono::NaiveDateTime;
-use models::{entities::strategies::Model, structs::StrategyRequest};
+use models::{
+    entities::strategies::Model,
+    structs::{CacheStrategy, Environments, StrategyRequest},
+};
 
-use crate::utils::{Core, Response, Types};
+use crate::utils::{Response, Types};
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct Strategies<Phase = Types> {
     phase: PhantomData<Phase>,
+    pub environment: Environments,
     pub model: StrategyRequest,
 }
 
@@ -15,6 +19,7 @@ impl<Phase> Strategies<Phase> {
     pub fn next_phase<Next>(self) -> Strategies<Next> {
         Strategies {
             phase: PhantomData::<Next>,
+            environment: self.environment,
             model: self.model,
         }
     }
@@ -24,6 +29,7 @@ impl Strategies {
     pub fn new(model: StrategyRequest) -> Self {
         Self {
             phase: PhantomData::<Types>,
+            environment: Environments::DEV,
             model,
         }
     }
@@ -31,9 +37,18 @@ impl Strategies {
     pub fn default() -> Self {
         Self {
             phase: PhantomData::<Types>,
+            environment: Environments::DEV,
             model: StrategyRequest {
                 ..Default::default()
             },
+        }
+    }
+
+    pub fn with_env(self, environment: Environments) -> Self {
+        Self {
+            phase: self.phase,
+            environment: environment,
+            model: self.model,
         }
     }
 
@@ -68,30 +83,6 @@ impl Strategies {
         self
     }
 
-    pub async fn get_active_strategies() -> Option<HashMap<i32, Model>> {
-        Strategies::<Core>::get_active_strategies_core().await
-    }
-
-    pub async fn get_active_strategy(key: &i32) -> Option<Model> {
-        Strategies::<Core>::get_active_strategy_core(key).await
-    }
-
-    pub async fn start_active_strategies() -> Result<(), Response> {
-        Strategies::<Core>::start_active_strategies_core().await
-    }
-
-    pub async fn stop_active_strategies() {
-        Strategies::<Core>::stop_active_strategies_core().await
-    }
-
-    pub async fn start_strategies_evaluation_loop() {
-        Strategies::<Core>::start_strategies_evaluation_loop_core().await
-    }
-
-    pub async fn stop_strategies_evaluation_loop() {
-        Strategies::<Core>::stop_strategies_evaluation_loop_core().await
-    }
-
     pub async fn insert_strategy(self) -> Result<Model, Response> {
         self.insert_strategy_core().await
     }
@@ -112,6 +103,32 @@ impl Strategies {
         self.delete_strategy_core().await
     }
 
+    // cache
+    pub async fn get_active_strategies(self) -> Option<HashMap<i32, CacheStrategy>> {
+        self.get_active_strategies_core().await
+    }
+
+    pub async fn get_active_strategy(self) -> Option<CacheStrategy> {
+        self.get_active_strategy_core().await
+    }
+
+    pub async fn set_active_strategy(self, is_remove: bool, error: Option<String>) -> Model {
+        self.set_active_strategy_core(is_remove, error).await
+    }
+
+    pub async fn set_active_strategy_posting(self, is_posting: bool) -> Result<(), String> {
+        self.set_active_strategy_posting_core(is_posting).await
+    }
+
+    pub async fn start_active_strategies(self) -> Result<(), Response> {
+        self.start_active_strategies_core().await
+    }
+
+    pub async fn stop_active_strategies(self) {
+        self.stop_active_strategies_core().await
+    }
+
+    // misc
     pub fn evaluate_cooldown(
         self,
         last_exec: Option<NaiveDateTime>,

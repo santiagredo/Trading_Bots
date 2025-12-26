@@ -1,9 +1,6 @@
 use std::marker::PhantomData;
 
-use models::{
-    entities::orders,
-    structs::{AssetRequest, LedgerRequest, StrategyOverview, StrategyRequest},
-};
+use models::structs::{Environments, StrategyOverview, StrategyRequest};
 
 use crate::{
     handler::Orders,
@@ -43,16 +40,23 @@ impl StrategiesOverview {
     }
 
     pub async fn get_active_strategy_overview(
+        environment: Environments,
         strategy_id: &i32,
         symbol: String,
     ) -> Option<StrategyOverview> {
-        StrategiesOverview::<Core>::get_active_strategy_overview_core(strategy_id, symbol).await
+        StrategiesOverview::<Core>::get_active_strategy_overview_core(
+            environment,
+            strategy_id,
+            symbol,
+        )
+        .await
     }
 
-    pub async fn select_strategies_overview(
+    pub async fn select_strategy_overview(
+        environment: Environments,
         strategy: StrategyRequest,
     ) -> Result<Vec<StrategyOverview>, Response> {
-        StrategiesOverview::<Core>::select_strategies_overview_core(strategy).await
+        StrategiesOverview::<Core>::select_strategy_overview_core(environment, strategy).await
     }
 
     pub fn evaluate_strategy_overview(
@@ -61,15 +65,15 @@ impl StrategiesOverview {
         StrategiesOverview::<Core>::evaluate_strategy_overview_core(strategy_overview)
     }
 
-    pub fn build_asset_ledger_request(
-        strategy_overview: &StrategyOverview,
-        order: &orders::Model,
-        is_base: bool,
-    ) -> (AssetRequest, LedgerRequest) {
-        StrategiesOverview::<Core>::build_asset_ledger_request_core(
-            strategy_overview,
-            order,
-            is_base,
-        )
-    }
+    // pub fn build_asset_ledger_request(
+    //     strategy_overview: &StrategyOverview,
+    //     order: &orders::Model,
+    //     is_base: bool,
+    // ) -> (AssetRequest, LedgerRequest) {
+    //     StrategiesOverview::<Core>::build_asset_ledger_request_core(
+    //         strategy_overview,
+    //         order,
+    //         is_base,
+    //     )
+    // }
 }

@@ -6,7 +6,7 @@ use models::{
         orders::{self, Model},
         pairs, strategies,
     },
-    structs::{request::OrderRequest, Ticker},
+    structs::{request::OrderRequest, Environments, Ticker},
 };
 
 use crate::utils::{Response, Types};
@@ -14,6 +14,7 @@ use crate::utils::{Response, Types};
 #[derive(Debug, Default)]
 pub struct Orders<Phase = Types> {
     pub phase: PhantomData<Phase>,
+    pub environment: Environments,
     pub model: OrderRequest,
 }
 
@@ -21,6 +22,7 @@ impl<Phase> Orders<Phase> {
     pub fn next_phase<Next>(self) -> Orders<Next> {
         Orders {
             phase: PhantomData::<Next>,
+            environment: self.environment,
             model: self.model,
         }
     }
@@ -30,6 +32,7 @@ impl Orders {
     pub fn new(model: OrderRequest) -> Self {
         Self {
             phase: PhantomData::<Types>,
+            environment: Environments::DEV,
             model,
         }
     }
@@ -40,6 +43,15 @@ impl Orders {
             model: OrderRequest {
                 ..Default::default()
             },
+            environment: Environments::DEV,
+        }
+    }
+
+    pub fn with_env(self, environment: Environments) -> Self {
+        Self {
+            phase: self.phase,
+            environment,
+            model: self.model,
         }
     }
 

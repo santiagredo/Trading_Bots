@@ -1,16 +1,60 @@
-use std::str::FromStr;
+use std::{collections::BTreeMap, str::FromStr};
 
 use chrono::Utc;
+use hmac::{Hmac, Mac};
 use models::{
     entities::orders,
     enums::{BinanceRestResponse, NewOrderResponseType, OrderType, Side},
-    structs::{BinanceOrderRequest, OrderRequest},
+    structs::{BinanceOrderRequest, Environments, OrderRequest},
+};
+use reqwest::{
+    header::{HeaderMap, HeaderValue},
+    Client, RequestBuilder,
 };
 use sea_orm::prelude::Decimal;
+use sha2::Sha256;
 
-use crate::{environments::Environments, handler::Binance, utils::Logic};
+use crate::{handler::Binance, utils::Logic};
 
 impl Binance<Logic> {
+    pub fn get_account_logic(
+        endpoint: &str,
+        secret_pass: &str,
+        api_key: &str,
+        x_mbx_apikey: &'static str,
+    ) -> Result<RequestBuilder, String> {
+        let mut account_request_parameters = BTreeMap::from([
+            ("timestamp", Utc::now().timestamp_millis().to_string()),
+            ("recvWindow", 5000.to_string()),
+            ("omitZeroBalances", true.to_string()),
+        ]);
+
+        let query_string = serde_urlencoded::to_string(&account_request_parameters)
+            .map_err(|err| err.to_string())?;
+
+        let mut mac =
+            Hmac::<Sha256>::new_from_slice(secret_pass.as_bytes()).map_err(|e| e.to_string())?;
+
+        mac.update(query_string.as_bytes());
+
+        let result = mac.finalize();
+        let signature = hex::encode(result.into_bytes());
+
+        account_request_parameters.insert("signature", signature);
+
+        let api_key = HeaderValue::from_str(api_key).map_err(|err| err.to_string())?;
+
+        let mut headers = HeaderMap::new();
+        headers.insert(x_mbx_apikey, api_key);
+
+        let client = Client::builder()
+            .default_headers(headers)
+            .build()
+            .map_err(|err| err.to_string())?;
+
+        Ok(client.get(endpoint).query(&account_request_parameters))
+    }
+
     pub fn build_binance_order_request_logic(
         symbol: String,
         order: orders::Model,
@@ -40,13 +84,46 @@ impl Binance<Logic> {
         }
     }
 
-    pub async fn post_new_order_logic(
+    pub fn post_new_order_logic(
+        endpoint: &str,
+        secret_pass: &str,
+        api_key: &str,
+        x_mbx_apikey: &'static str,
+        order_request: &mut BinanceOrderRequest,
+    ) -> Result<RequestBuilder, String> {
+        let query_string =
+            serde_urlencoded::to_string(&order_request).map_err(|err| err.to_string())?;
+
+        let mut mac =
+            Hmac::<Sha256>::new_from_slice(secret_pass.as_bytes()).map_err(|e| e.to_string())?;
+
+        mac.update(query_string.as_bytes());
+
+        let result = mac.finalize();
+        let signature = hex::encode(result.into_bytes());
+
+        order_request.signature = Some(signature);
+
+        let api_key = HeaderValue::from_str(api_key).map_err(|err| err.to_string())?;
+
+        let mut headers = HeaderMap::new();
+        headers.insert(x_mbx_apikey, api_key);
+
+        let client = Client::builder()
+            .default_headers(headers)
+            .build()
+            .map_err(|err| err.to_string())?;
+
+        Ok(client.post(endpoint).form(&order_request))
+    }
+
+    pub async fn map_new_order_logic(
         environment: Environments,
         binance_response: String,
         order: &mut OrderRequest,
     ) -> Result<(), String> {
         // in non production environtments: {} means a successful order
-        if environment != Environments::PRO && binance_response == "{}".to_string() {
+        if environment != Environments::PROD && binance_response == "{}".to_string() {
             return Ok(());
         }
 

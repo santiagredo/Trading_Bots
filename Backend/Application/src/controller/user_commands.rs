@@ -1,24 +1,27 @@
-use actix_web::{post, HttpResponse, Responder};
+use actix_web::{post, web, HttpResponse, Responder};
+use models::structs::Environments;
 
 use crate::{handler::UserCommands, utils::error_response};
 
-#[post("/start_everything")]
-pub async fn start_everything() -> impl Responder {
-    match UserCommands::start_everything().await {
+#[post("/{env}/start")]
+pub async fn start_everything(env: web::Path<Environments>) -> impl Responder {
+    match UserCommands::start_everything(env.into_inner()).await {
         Err(err) => error_response(err),
         Ok(_) => HttpResponse::Ok().finish(),
     }
 }
 
-#[post("/stop_everything")]
-pub async fn stop_everything() -> impl Responder {
-    UserCommands::stop_everything().await;
-    HttpResponse::Ok().finish()
+#[post("/{env}/stop")]
+pub async fn stop_everything(env: web::Path<Environments>) -> impl Responder {
+    match UserCommands::stop_everything(env.into_inner()).await {
+        Err(err) => error_response(err),
+        Ok(_) => HttpResponse::Ok().finish(),
+    }
 }
 
-#[post("/refresh_everything")]
-pub async fn refresh_everything() -> impl Responder {
-    match UserCommands::refresh_everything().await {
+#[post("/{env}/restart")]
+pub async fn restart_everything(env: web::Path<Environments>) -> impl Responder {
+    match UserCommands::restart_everything(env.into_inner()).await {
         Err(err) => error_response(err),
         Ok(_) => HttpResponse::Ok().finish(),
     }

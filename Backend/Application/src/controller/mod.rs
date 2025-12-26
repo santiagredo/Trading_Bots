@@ -39,3 +39,6 @@ pub use status::*;
 
 pub mod tasks;
 pub use tasks::*;
+
+pub mod configurations;
+pub use configurations::*;

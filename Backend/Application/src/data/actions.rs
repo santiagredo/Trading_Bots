@@ -1,5 +1,8 @@
 use function_name::named;
-use models::{entities::actions::{ActiveModel, Column, Entity, Model}, structs::ErrorLogRequest};
+use models::{
+    entities::actions::{ActiveModel, Column, Entity, Model},
+    structs::ErrorLogRequest,
+};
 use sea_orm::{
     ActiveModelTrait, ActiveValue, ColumnTrait, Condition, DatabaseConnection, EntityTrait,
     QueryFilter,
@@ -141,28 +144,4 @@ impl Actions<Data> {
             Ok(val) => Ok(val.rows_affected),
         }
     }
-
-    // pub async fn select_actions_by_strategy_id(
-    //     db: &DatabaseConnection,
-    //     id: i32,
-    // ) -> Outcome<Vec<Model>, String, String> {
-    //     Entity::find()
-    //         .filter(Column::StrategyId.eq(id))
-    //         .all(db)
-    //         .await
-    //         .map(|val| Outcome::Ok(val))
-    //         .map_err(|err| OutcomeError::Error(err.to_string()))?
-    // }
-
-    // pub async fn select_actions_by_strategies_id(
-    //     db: &DatabaseConnection,
-    //     strategies_ids: Vec<i32>,
-    // ) -> Outcome<Vec<Model>, String, String> {
-    //     Entity::find()
-    //         .filter(Column::StrategyId.is_in(strategies_ids))
-    //         .all(db)
-    //         .await
-    //         .map(|val| Outcome::Ok(val))
-    //         .map_err(|err| OutcomeError::Error(err.to_string()))?
-    // }
 }

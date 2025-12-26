@@ -148,31 +148,4 @@ impl Indicators<Data> {
             Ok(val) => Ok(val.rows_affected),
         }
     }
-
-    // pub async fn select_all_indicators_data(
-    //     _self: Self,
-    //     db: &DatabaseConnection,
-    // ) -> Result<Vec<Model>, Response> {
-    //     match Entity::find().all(db).await {
-    //         Err(err) => {
-    //             error_span!("error - database", error = ?err);
-    //             Err(handle_db_error(&err))
-    //         }
-    //         Ok(val) => Ok(val),
-    //     }
-    // }
-
-    // pub async fn select_indicators_by_ids_data(
-    //     _self: Self,
-    //     db: &DatabaseConnection,
-    //     ids: Vec<i32>,
-    // ) -> Result<Vec<Model>, Response> {
-    //     match Entity::find().filter(Column::Id.is_in(ids)).all(db).await {
-    //         Err(err) => {
-    //             error_span!("error - database", error = ?err);
-    //             Err(handle_db_error(&err))
-    //         }
-    //         Ok(val) => Ok(val),
-    //     }
-    // }
 }

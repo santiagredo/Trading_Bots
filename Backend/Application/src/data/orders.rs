@@ -57,38 +57,6 @@ impl Orders<Data> {
         }
     }
 
-    // pub async fn select_open_orders(
-    //     db: &DatabaseConnection,
-    // ) -> Outcome<Vec<Model>, String, String> {
-    //     Entity::find()
-    //         .filter(Condition::all().add(Column::StatusId.eq(1)))
-    //         .all(db)
-    //         .await
-    //         .map(|val| Outcome::Ok(val))
-    //         .map_err(|err| OutcomeError::Error(err.to_string()))?
-    // }
-
-    // pub async fn select_completed_orders(
-    //     db: &DatabaseConnection,
-    // ) -> Outcome<Vec<Model>, String, String> {
-    //     let previous_day = Local::now()
-    //         .naive_local()
-    //         .checked_sub_signed(Duration::days(1))
-    //         .unwrap();
-
-    //     Entity::find()
-    //         .filter(
-    //             Condition::all()
-    //                 .add(Column::StatusId.eq(2))
-    //                 .add(Column::CreationDate.gte(previous_day)),
-    //         )
-    //         .order_by_desc(Column::CreationDate)
-    //         .all(db)
-    //         .await
-    //         .map(|val| Outcome::Ok(val))
-    //         .map_err(|err| OutcomeError::Error(err.to_string()))?
-    // }
-
     #[named]
     pub async fn update_order_data(self, db: &DatabaseConnection) -> Result<Model, Response> {
         let active_model_order = ActiveModel {

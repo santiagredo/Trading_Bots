@@ -103,26 +103,6 @@ impl Pairs<Data> {
         }
     }
 
-    // pub async fn select_all_pairs(db: &DatabaseConnection) -> Outcome<Vec<Model>, String, String> {
-    //     Entity::find()
-    //         .all(db)
-    //         .await
-    //         .map(|val| Outcome::Ok(val))
-    //         .map_err(|err| OutcomeError::Error(err.to_string()))?
-    // }
-
-    // pub async fn select_pairs_by_ids(
-    //     db: &DatabaseConnection,
-    //     ids: Vec<i32>,
-    // ) -> Outcome<Vec<Model>, String, String> {
-    //     Entity::find()
-    //         .filter(Column::Id.is_in(ids))
-    //         .all(db)
-    //         .await
-    //         .map(|val| Outcome::Ok(val))
-    //         .map_err(|err| OutcomeError::Error(err.to_string()))?
-    // }
-
     #[named]
     pub async fn update_pair_data(self, db: &DatabaseConnection) -> Result<Model, Response> {
         let now = Local::now().naive_local();

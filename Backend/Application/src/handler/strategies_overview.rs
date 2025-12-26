@@ -64,16 +64,4 @@ impl StrategiesOverview {
     ) -> Result<Orders, String> {
         StrategiesOverview::<Core>::evaluate_strategy_overview_core(strategy_overview)
     }
-
-    // pub fn build_asset_ledger_request(
-    //     strategy_overview: &StrategyOverview,
-    //     order: &orders::Model,
-    //     is_base: bool,
-    // ) -> (AssetRequest, LedgerRequest) {
-    //     StrategiesOverview::<Core>::build_asset_ledger_request_core(
-    //         strategy_overview,
-    //         order,
-    //         is_base,
-    //     )
-    // }
 }

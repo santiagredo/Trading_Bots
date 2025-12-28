@@ -66,3 +66,6 @@ pub use configurations::*;
 
 pub mod database_connections;
 pub use database_connections::*;
+
+pub mod health_check;
+pub use health_check::*;

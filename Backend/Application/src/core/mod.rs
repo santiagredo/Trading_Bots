@@ -5,6 +5,7 @@ pub mod coin_paprika;
 pub mod configurations;
 pub mod database_connections;
 pub mod error_log;
+pub mod health_check;
 pub mod indicators;
 pub mod integration_log;
 pub mod ledgers;

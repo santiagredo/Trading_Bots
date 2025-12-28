@@ -42,3 +42,6 @@ pub use tasks::*;
 
 pub mod configurations;
 pub use configurations::*;
+
+pub mod health_check;
+pub use health_check::*;

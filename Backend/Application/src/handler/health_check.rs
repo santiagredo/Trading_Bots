@@ -7,7 +7,7 @@ pub struct HealthCheck<Phase = Types> {
 }
 
 impl HealthCheck {
-    pub async fn select_health_check() -> Result<BTreeMap<String, bool>, Response> {
+    pub async fn select_health_check() -> Result<BTreeMap<String, String>, Response> {
         HealthCheck::select_health_check_core().await
     }
 }

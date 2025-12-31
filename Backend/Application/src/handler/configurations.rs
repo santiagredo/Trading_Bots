@@ -43,4 +43,8 @@ impl Configurations {
     pub async fn select_configuration(self) -> Configuration {
         self.next_phase().select_configuration_core().await
     }
+
+    pub fn stop_engine(self) {
+        self.next_phase().stop_engine_core();
+    }
 }

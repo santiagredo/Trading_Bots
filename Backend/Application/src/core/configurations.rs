@@ -23,4 +23,8 @@ impl Configurations<Core> {
 
         Configurations::<Cache>::set_configuration_cache(configuration).await
     }
+
+    pub fn stop_engine_core(self) {
+        Configurations::<Cache>::stop_engine_cache()
+    }
 }

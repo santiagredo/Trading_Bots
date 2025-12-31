@@ -2,12 +2,14 @@ use std::sync::Arc;
 
 use models::structs::Configuration;
 use once_cell::sync::Lazy;
-use tokio::sync::RwLock;
+use tokio::sync::{Notify, RwLock};
 
 use crate::{handler::Configurations, utils::Cache};
 
 static ACTIVE_CONFIG: Lazy<Arc<RwLock<Option<Configuration>>>> =
     Lazy::new(|| Arc::new(RwLock::new(None)));
+
+pub static ACTIVE_SHUTDOWN: Lazy<Notify> = Lazy::new(Notify::new);
 
 impl Configurations<Cache> {
     pub async fn set_configuration_cache(config: Configuration) -> Configuration {
@@ -22,6 +24,10 @@ impl Configurations<Cache> {
         let active_config = ACTIVE_CONFIG.read().await;
 
         active_config.clone()
+    }
+
+    pub fn stop_engine_cache() {
+        ACTIVE_SHUTDOWN.notify_one();
     }
 }
 

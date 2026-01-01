@@ -9,12 +9,13 @@ use crate::controller::{
     insert_strategy, restart_everything, select_action, select_actions, select_active_tasks,
     select_asset, select_assets, select_configuration, select_health_check, select_indicator,
     select_indicators, select_ledger, select_ledgers, select_metrics, select_order, select_pair,
-    select_record_types, select_status, select_strategies, select_strategies_overview,
-    select_strategy, select_tasks, shutdown_engine, start_active_actions, start_active_assets,
-    start_active_indicators, start_active_pairs, start_active_strategies, start_active_tasks,
-    start_everything, stop_active_actions, stop_active_assets, stop_active_indicators,
-    stop_active_pairs, stop_active_strategies, stop_active_tasks, stop_everything, update_action,
-    update_asset, update_indicator, update_order, update_pair, update_strategy, update_task,
+    select_pairs, select_record_types, select_status, select_strategies,
+    select_strategies_overview, select_strategy, select_tasks, shutdown_engine,
+    start_active_actions, start_active_assets, start_active_indicators, start_active_pairs,
+    start_active_strategies, start_active_tasks, start_everything, stop_active_actions,
+    stop_active_assets, stop_active_indicators, stop_active_pairs, stop_active_strategies,
+    stop_active_tasks, stop_everything, update_action, update_asset, update_indicator,
+    update_order, update_pair, update_strategy, update_task,
 };
 
 pub fn routes_config(cfg: &mut web::ServiceConfig) {
@@ -63,7 +64,8 @@ pub fn routes_config(cfg: &mut web::ServiceConfig) {
             .service(get_active_pair)
             .service(get_active_pairs)
             .service(start_active_pairs)
-            .service(stop_active_pairs),
+            .service(stop_active_pairs)
+            .service(select_pairs),
     )
     .service(
         web::scope("/indicators")

@@ -34,6 +34,21 @@ pub async fn select_pair(
     }
 }
 
+#[get("/{env}/all")]
+pub async fn select_pairs(
+    env: web::Path<Environments>,
+    pair: web::Query<PairRequest>,
+) -> impl Responder {
+    match Pairs::new(pair.into_inner())
+        .with_env(env.into_inner())
+        .select_pairs()
+        .await
+    {
+        Ok(val) => HttpResponse::Ok().json(val),
+        Err(err) => error_response(err),
+    }
+}
+
 #[patch("/{env}")]
 pub async fn update_pair(
     env: web::Path<Environments>,

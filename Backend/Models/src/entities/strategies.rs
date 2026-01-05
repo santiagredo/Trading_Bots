@@ -25,6 +25,7 @@ pub struct Model {
     pub cooldown: Option<i32>,
     pub error_last_date: Option<DateTime>,
     pub error_cooldown: Option<i32>,
+    pub last_update: Option<DateTime>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveColumn)]
@@ -38,6 +39,7 @@ pub enum Column {
     Cooldown,
     ErrorLastDate,
     ErrorCooldown,
+    LastUpdate,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DerivePrimaryKey)]
@@ -72,6 +74,7 @@ impl ColumnTrait for Column {
             Self::Cooldown => ColumnType::Integer.def().null(),
             Self::ErrorLastDate => ColumnType::DateTime.def().null(),
             Self::ErrorCooldown => ColumnType::Integer.def().null(),
+            Self::LastUpdate => ColumnType::DateTime.def().null(),
         }
     }
 }

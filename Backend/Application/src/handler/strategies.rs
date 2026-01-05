@@ -63,6 +63,7 @@ impl Strategies {
             cooldown: Some(strategy.cooldown.unwrap_or_default()),
             error_cooldown: Some(strategy.error_cooldown.unwrap_or_default()),
             error_last_date: Some(strategy.error_last_date.unwrap_or_default()),
+            last_update: Some(strategy.last_update.unwrap_or_default()),
         }
     }
 
@@ -77,6 +78,7 @@ impl Strategies {
             cooldown: model.cooldown,
             error_cooldown: model.error_cooldown,
             error_last_date: model.error_last_date,
+            last_update: model.last_update,
         };
 
         self.model = strategy_request;

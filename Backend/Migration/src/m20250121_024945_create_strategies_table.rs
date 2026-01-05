@@ -20,6 +20,7 @@ impl MigrationTrait for Migration {
                     .col(ColumnDef::new(Strategies::Cooldown).integer().null())
                     .col(ColumnDef::new(Strategies::ErrorLastDate).date_time().null())
                     .col(ColumnDef::new(Strategies::ErrorCooldown).integer().null())
+                    .col(ColumnDef::new(Strategies::LastUpdate).date_time().null())
                     .to_owned(),
             )
             .await?;
@@ -38,7 +39,7 @@ impl MigrationTrait for Migration {
                 "Half value purchase".into(),
                 true.into(),
                 false.into(),
-                "Purchases a given amount if the asset if <=50% from ATH".into(),
+                "Purchases a given asset amount if value <=50% from ATH".into(),
                 86400.into(),
                 120.into(),
             ])
@@ -46,7 +47,7 @@ impl MigrationTrait for Migration {
                 "Near ATH DCA sell".into(),
                 true.into(),
                 false.into(),
-                "Sells a give amount if the asset if >= -5% from ATH".into(),
+                "Sells a given amount if value >= -5% from ATH".into(),
                 86400.into(),
                 120.into(),
             ])
@@ -76,4 +77,5 @@ pub enum Strategies {
     Cooldown,
     ErrorLastDate,
     ErrorCooldown,
+    LastUpdate,
 }

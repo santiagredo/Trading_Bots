@@ -1,3 +1,4 @@
+use chrono::Local;
 use function_name::named;
 use models::{
     entities::strategies::{self, ActiveModel, Column, Entity, Model},
@@ -17,6 +18,8 @@ use crate::{
 impl Strategies<Data> {
     #[named]
     pub async fn insert_strategy_data(self, db: &DatabaseConnection) -> Result<Model, Response> {
+        let now = Local::now();
+
         let active_model_strategy = ActiveModel {
             id: ActiveValue::NotSet,
             name: ActiveValue::Set(self.model.name.clone().unwrap_or_default()),
@@ -27,6 +30,7 @@ impl Strategies<Data> {
             cooldown: ActiveValue::Set(self.model.cooldown),
             error_cooldown: ActiveValue::Set(self.model.error_cooldown),
             error_last_date: ActiveValue::Set(self.model.error_last_date),
+            last_update: ActiveValue::Set(now.naive_local().into()),
         };
 
         match Entity::insert(active_model_strategy)
@@ -140,6 +144,10 @@ impl Strategies<Data> {
         if let Some(error_last_date) = self.model.error_last_date {
             strategy.error_last_date = ActiveValue::Set(Some(error_last_date))
         }
+
+        let now = Local::now();
+
+        strategy.last_update = ActiveValue::Set(now.naive_local().into());
 
         match strategy.update(db).await {
             Err(err) => log_db_error!(self, err),

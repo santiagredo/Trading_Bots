@@ -12,4 +12,5 @@ pub struct StrategyRequest {
     pub cooldown: Option<i32>,
     pub error_cooldown: Option<i32>,
     pub error_last_date: Option<DateTime>,
+    pub last_update: Option<DateTime>,
 }

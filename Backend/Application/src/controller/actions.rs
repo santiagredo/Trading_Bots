@@ -1,4 +1,4 @@
-use actix_web::{delete, get, post, put, web, HttpResponse, Responder};
+use actix_web::{delete, get, post, patch, web, HttpResponse, Responder};
 use models::structs::{ActionRequest, Environments};
 
 use crate::{handler::Actions, utils::error_response};
@@ -49,7 +49,7 @@ pub async fn select_actions(
     }
 }
 
-#[put("/{env}")]
+#[patch("/{env}")]
 pub async fn update_action(
     env: web::Path<Environments>,
     web::Json(action): web::Json<ActionRequest>,

@@ -14,14 +14,14 @@ use crate::{
         ACCOUNT_INFORMATION_ENDPOINT, EXCHANGE_INFORMATION_ENDPOINT, ORDERS_ENDPOINT,
         ORDERS_TEST_ENDPOINT, X_MBX_APIKEY,
     },
-    utils::Core,
+    utils::{handle_user_err, Core, Response},
 };
 
 const INTEGRATION_NAME: &'static str = "BINANCE";
 
 impl Binance<Core> {
     #[named]
-    pub async fn get_account_core(self) -> Option<AccountInformation> {
+    pub async fn get_account_core(self) -> Result<AccountInformation, Response> {
         let environment = self.environment;
         let start = Instant::now();
 
@@ -38,30 +38,47 @@ impl Binance<Core> {
             error_message: None,
         };
 
+        let secret_pass = &Configurations::default()
+            .select_configuration()
+            .await
+            .secret_pass;
+
+        if secret_pass.is_empty() {
+            return Err(handle_user_err(format!(
+                "Binance secret pass can't be empty"
+            )));
+        }
+
+        let api_key = &Configurations::default()
+            .select_configuration()
+            .await
+            .api_key;
+
+        if secret_pass.is_empty() {
+            return Err(handle_user_err(format!("Binance api key can't be empty")));
+        }
+
         let request = match Binance::get_account_logic(
             ACCOUNT_INFORMATION_ENDPOINT,
-            Configurations::default()
-                .select_configuration()
-                .await
-                .secret_pass
-                .as_ref(),
-            Configurations::default()
-                .select_configuration()
-                .await
-                .api_key
-                .as_ref(),
+            secret_pass,
+            api_key,
             X_MBX_APIKEY,
         ) {
             Err(err) => {
                 let execution_time_ms = start.elapsed().as_millis();
 
-                log.status_code = Some(500);
+                let code = 500;
+
+                log.status_code = Some(code);
                 log.execution_time_ms = Some(execution_time_ms.try_into().unwrap_or_default());
-                log.error_message = Some(err);
+                log.error_message = Some(err.clone());
 
                 let _ = IntegrationLogs::new(&environment, log).insert_log().await;
 
-                return None;
+                return Err(Response {
+                    code: code as u16,
+                    message: err,
+                });
             }
             Ok(val) => val,
         };
@@ -82,10 +99,15 @@ impl Binance<Core> {
         // HTTP -> String
         let outcome = match result {
             Err(err) => {
+                let code = err.status().map_or(500, |s| s.as_u16());
+
                 log.error_message = Some(err.to_string());
                 let _ = IntegrationLogs::new(&environment, log).insert_log().await;
-                dbg!(err.to_string());
-                return None;
+
+                let err = err.to_string();
+                dbg!(&err);
+
+                return Err(Response { code, message: err });
             }
             Ok(response) => {
                 let body = response.text().await.unwrap_or_default();
@@ -97,10 +119,15 @@ impl Binance<Core> {
         // String -> Result<AccountInformationResponse>
         let outcome = match serde_json::from_str::<AccountInformationResponse>(&outcome) {
             Err(err) => {
+                let code = 500;
+
                 log.error_message = Some(err.to_string());
                 let _ = IntegrationLogs::new(&environment, log).insert_log().await;
-                dbg!(err.to_string());
-                return None;
+
+                let err = err.to_string();
+                dbg!(&err);
+
+                return Err(Response { code, message: err });
             }
             Ok(val) => val,
         };
@@ -109,12 +136,15 @@ impl Binance<Core> {
             AccountInformationResponse::Error(err) => {
                 log.error_message = Some(format!("code: {} - message: {}", err.code, err.msg));
                 let _ = IntegrationLogs::new(&environment, log).insert_log().await;
-                dbg!(format!("code: {} - message: {}", err.code, err.msg));
-                return None;
+
+                let message = format!("code: {} - message: {}", err.code, err.msg);
+                dbg!(&message);
+
+                return Err(Response { code: 500, message });
             }
             AccountInformationResponse::AccountInformation(val) => {
                 let _ = IntegrationLogs::new(&environment, log).insert_log().await;
-                Some(val)
+                Ok(val)
             }
         }
     }

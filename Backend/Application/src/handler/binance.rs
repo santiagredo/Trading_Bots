@@ -10,7 +10,7 @@ use tracing::error_span;
 
 use crate::{
     handler::{Assets, Ledgers, Pairs},
-    utils::Types,
+    utils::{Response, Types},
 };
 
 pub struct Binance<Phase = Types> {
@@ -110,7 +110,6 @@ impl Binance {
         };
 
         for pair in stored_pairs.iter_mut() {
-
             if let Some(exchange_pair) = updates
                 .symbols
                 .iter_mut()
@@ -308,7 +307,7 @@ impl<Phase> Binance<Phase> {
 }
 
 impl Binance<Types> {
-    pub async fn get_account(self) -> Option<AccountInformation> {
+    pub async fn get_account(self) -> Result<AccountInformation, Response> {
         self.next_phase().get_account_core().await
     }
 

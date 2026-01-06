@@ -21,6 +21,7 @@ impl MigrationTrait for Migration {
                     .col(string(Indicators::Direction).not_null())
                     .col(boolean(Indicators::IsPercentage))
                     .col(decimal_len(Indicators::Value, 18, 8))
+                    .col(ColumnDef::new(Indicators::LastUpdate).date_time().null())
                     .to_owned(),
             )
             .await
@@ -93,4 +94,5 @@ pub enum Indicators {
     Direction,
     IsPercentage,
     Value,
+    LastUpdate,
 }

@@ -1,3 +1,4 @@
+use chrono::Local;
 use function_name::named;
 use models::{
     entities::indicators::{ActiveModel, Column, Entity, Model},
@@ -17,6 +18,8 @@ use crate::{
 impl Indicators<Data> {
     #[named]
     pub async fn insert_indicator_data(self, db: &DatabaseConnection) -> Result<Model, Response> {
+        let now = Local::now();
+
         let active_model_indicator = ActiveModel {
             id: ActiveValue::NotSet,
             strategy_id: ActiveValue::Set(self.model.strategy_id.unwrap_or_default()),
@@ -26,6 +29,7 @@ impl Indicators<Data> {
             direction: ActiveValue::Set(self.model.direction.clone().unwrap_or_default()),
             is_percentage: ActiveValue::Set(self.model.is_percentage.unwrap_or_default()),
             value: ActiveValue::Set(self.model.value.unwrap_or_default()),
+            last_update: ActiveValue::Set(now.naive_local().into()),
         };
 
         match Entity::insert(active_model_indicator)
@@ -105,6 +109,8 @@ impl Indicators<Data> {
 
     #[named]
     pub async fn update_indicator_data(self, db: &DatabaseConnection) -> Result<Model, Response> {
+        let now = Local::now();
+
         let mut active_model_indicator = ActiveModel {
             id: ActiveValue::Unchanged(self.model.id.unwrap_or_default()),
             ..Default::default()
@@ -131,6 +137,8 @@ impl Indicators<Data> {
         if let Some(value) = self.model.value {
             active_model_indicator.value = ActiveValue::Set(value);
         }
+
+        active_model_indicator.last_update = ActiveValue::Set(now.naive_local().into());
 
         match active_model_indicator.update(db).await {
             Err(err) => log_db_error!(self, err),

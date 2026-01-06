@@ -1,3 +1,4 @@
+use sea_orm::prelude::DateTime;
 use sea_orm::prelude::Decimal;
 use serde::{Deserialize, Serialize};
 
@@ -11,4 +12,5 @@ pub struct IndicatorRequest {
     pub direction: Option<String>,
     pub is_percentage: Option<bool>,
     pub value: Option<Decimal>,
+    pub last_update: Option<DateTime>,
 }

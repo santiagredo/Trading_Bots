@@ -24,6 +24,7 @@ pub struct Model {
     pub direction: String,
     pub is_percentage: bool,
     pub value: Decimal,
+    pub last_update: Option<DateTime>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveColumn)]
@@ -36,6 +37,7 @@ pub enum Column {
     Direction,
     IsPercentage,
     Value,
+    LastUpdate,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DerivePrimaryKey)]
@@ -67,6 +69,7 @@ impl ColumnTrait for Column {
             Self::Direction => ColumnType::String(StringLen::None).def(),
             Self::IsPercentage => ColumnType::Boolean.def(),
             Self::Value => ColumnType::Decimal(Some((18u32, 8u32))).def(),
+            Self::LastUpdate => ColumnType::DateTime.def().null(),
         }
     }
 }

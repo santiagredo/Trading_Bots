@@ -64,6 +64,7 @@ impl Indicators {
             direction: indicator.direction.unwrap_or_default(),
             is_percentage: indicator.is_percentage.unwrap_or_default(),
             value: indicator.value.unwrap_or_default(),
+            last_update: indicator.last_update,
         }
     }
 

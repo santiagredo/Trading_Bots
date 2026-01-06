@@ -49,7 +49,7 @@ impl Indicators<Core> {
             .update_indicator_logic()
             .map_err(handle_user_err)?
             .next_phase::<Data>()
-            .insert_indicator_data(&DBC::db(&env).await?)
+            .update_indicator_data(&DBC::db(&env).await?)
             .await
     }
 

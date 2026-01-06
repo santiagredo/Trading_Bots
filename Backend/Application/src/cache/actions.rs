@@ -127,6 +127,7 @@ mod tests {
             is_percentage: false,
             value: Decimal::new(100, 0),
             pair_id: 1,
+            ..Default::default()
         }
     }
 

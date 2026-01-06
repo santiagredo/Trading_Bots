@@ -24,6 +24,7 @@ impl MigrationTrait for Migration {
                     .col(boolean(Actions::IsPercentage))
                     .col(decimal_len(Actions::Value, 18, 8))
                     .col(integer(Actions::PairId))
+                    .col(ColumnDef::new(Actions::LastUpdate).date_time().null())
                     .to_owned(),
             )
             .await
@@ -103,4 +104,5 @@ enum Actions {
     IsPercentage,
     Value,
     PairId,
+    LastUpdate,
 }

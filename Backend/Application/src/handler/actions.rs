@@ -61,6 +61,7 @@ impl Actions {
             is_percentage: action.is_percentage.unwrap_or_default(),
             value: action.value.unwrap_or_default(),
             pair_id: action.pair_id.unwrap_or_default(),
+            last_update: action.last_update,
         }
     }
 

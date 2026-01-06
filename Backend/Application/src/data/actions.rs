@@ -1,3 +1,4 @@
+use chrono::Local;
 use function_name::named;
 use models::{
     entities::actions::{ActiveModel, Column, Entity, Model},
@@ -17,6 +18,8 @@ use crate::{
 impl Actions<Data> {
     #[named]
     pub async fn insert_action_data(self, db: &DatabaseConnection) -> Result<Model, Response> {
+        let now = Local::now();
+
         let active_model_action = ActiveModel {
             id: ActiveValue::NotSet,
             strategy_id: ActiveValue::Set(self.model.strategy_id.unwrap_or_default()),
@@ -26,6 +29,7 @@ impl Actions<Data> {
             is_percentage: ActiveValue::Set(self.model.is_percentage.unwrap_or_default()),
             value: ActiveValue::Set(self.model.value.unwrap_or_default()),
             pair_id: ActiveValue::Set(self.model.pair_id.unwrap_or_default()),
+            last_update: ActiveValue::Set(now.naive_local().into()),
         };
 
         match Entity::insert(active_model_action)
@@ -127,6 +131,10 @@ impl Actions<Data> {
         if let Some(pair_id) = self.model.pair_id {
             active_model_action.pair_id = ActiveValue::Set(pair_id);
         }
+
+        let now = Local::now();
+
+        active_model_action.last_update = ActiveValue::Set(now.naive_local().into());
 
         match active_model_action.update(db).await {
             Err(err) => log_db_error!(self, err),

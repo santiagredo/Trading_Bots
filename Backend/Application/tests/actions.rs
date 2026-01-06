@@ -12,6 +12,7 @@ fn mock_model(strategy_id: i32) -> Model {
         is_percentage: false,
         value: Decimal::new(50, 0),
         pair_id: 1,
+        ..Default::default()
     }
 }
 
@@ -32,7 +33,7 @@ async fn full_cache_flow_should_work_correctly() {
         .unwrap();
     assert_eq!(cache.len(), 2);
 
-    // Insert individual model 
+    // Insert individual model
     let extra = mock_model(3);
     Actions::<Cache>::set_active_action_cache(&env, extra.clone(), false).await;
 

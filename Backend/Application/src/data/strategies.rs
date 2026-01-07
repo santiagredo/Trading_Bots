@@ -145,9 +145,11 @@ impl Strategies<Data> {
             strategy.error_last_date = ActiveValue::Set(Some(error_last_date))
         }
 
-        let now = Local::now();
+        if self.model.last_update.is_none() {
+            let now = Local::now();
 
-        strategy.last_update = ActiveValue::Set(now.naive_local().into());
+            strategy.last_update = ActiveValue::Set(now.naive_local().into());
+        }
 
         match strategy.update(db).await {
             Err(err) => log_db_error!(self, err),

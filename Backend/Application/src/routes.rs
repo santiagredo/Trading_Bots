@@ -3,9 +3,9 @@ use actix_web::web;
 use crate::controller::{
     delete_action, delete_asset, delete_indicator, delete_strategy, get_account, get_active_action,
     get_active_actions, get_active_asset, get_active_assets, get_active_indicator,
-    get_active_indicators, get_active_pair, get_active_pairs, get_active_strategies,
-    get_active_strategy, get_subscribed_indicators, insert_action, insert_asset,
-    insert_configuration, insert_indicator, insert_ledger, insert_order, insert_pair,
+    get_active_indicators, get_active_metric, get_active_pair, get_active_pairs,
+    get_active_strategies, get_active_strategy, get_subscribed_indicators, insert_action,
+    insert_asset, insert_configuration, insert_indicator, insert_ledger, insert_order, insert_pair,
     insert_strategy, restart_everything, select_action, select_actions, select_active_tasks,
     select_asset, select_assets, select_configuration, select_health_check, select_indicator,
     select_indicators, select_ledger, select_ledgers, select_metrics, select_order, select_pair,
@@ -99,7 +99,11 @@ pub fn routes_config(cfg: &mut web::ServiceConfig) {
             .service(stop_everything)
             .service(restart_everything),
     )
-    .service(web::scope("/metrics").service(select_metrics))
+    .service(
+        web::scope("/metrics")
+            .service(select_metrics)
+            .service(get_active_metric),
+    )
     .service(web::scope("/binance").service(get_account))
     .service(web::scope("/order_status").service(select_status))
     .service(

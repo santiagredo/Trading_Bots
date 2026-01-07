@@ -39,11 +39,16 @@ impl Metrics {
         }
     }
 
+    // db
+    pub async fn select_metrics(self) -> Result<Vec<Model>, Response> {
+        self.next_phase().select_metrics_core().await
+    }
+
+    // cache
     pub async fn get_active_metric(self) -> Option<CriticalMetric> {
         self.next_phase().get_active_metric_core().await
     }
 
-    // cache
     pub async fn set_active_execution_metrics(
         environment: Environments,
         elapsed: Duration,

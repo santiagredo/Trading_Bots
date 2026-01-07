@@ -34,6 +34,14 @@ impl Orders<Core> {
             .await
     }
 
+    pub async fn select_orders_core(self) -> Result<Vec<Model>, Response> {
+        let env = self.environment;
+
+        self.next_phase::<Data>()
+            .select_orders_data(&DBC::db(&env).await?)
+            .await
+    }
+
     pub async fn update_order_core(self) -> Result<Model, Response> {
         let env = self.environment;
 

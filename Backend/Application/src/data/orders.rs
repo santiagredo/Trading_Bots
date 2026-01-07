@@ -58,6 +58,48 @@ impl Orders<Data> {
     }
 
     #[named]
+    pub async fn select_orders_data(self, db: &DatabaseConnection) -> Result<Vec<Model>, Response> {
+        let mut condition = Condition::all();
+
+        if let Some(id) = self.model.id {
+            condition = condition.add(Column::Id.eq(id));
+        }
+
+        if let Some(status_id) = self.model.status_id {
+            condition = condition.add(Column::StatusId.eq(status_id));
+        }
+
+        if let Some(is_sell) = self.model.is_sell {
+            condition = condition.add(Column::IsSell.eq(is_sell));
+        }
+
+        if let Some(strategy_id) = self.model.strategy_id {
+            condition = condition.add(Column::StrategyId.eq(strategy_id));
+        }
+
+        if let Some(base_asset_id) = self.model.base_asset_id {
+            condition = condition.add(Column::BaseAssetId.eq(base_asset_id));
+        }
+
+        if let Some(quote_asset_id) = self.model.quote_asset_id {
+            condition = condition.add(Column::QuoteAssetId.eq(quote_asset_id));
+        }
+
+        if let Some(creation_date) = self.model.creation_date {
+            condition = condition.add(Column::CreationDate.eq(creation_date));
+        }
+
+        if let Some(update_date) = self.model.update_date {
+            condition = condition.add(Column::UpdateDate.eq(update_date));
+        }
+
+        match Entity::find().filter(condition).all(db).await {
+            Err(err) => log_db_error!(self, err),
+            Ok(val) => Ok(val),
+        }
+    }
+
+    #[named]
     pub async fn update_order_data(self, db: &DatabaseConnection) -> Result<Model, Response> {
         let active_model_order = ActiveModel {
             id: ActiveValue::Unchanged(self.model.id.unwrap_or_default()),

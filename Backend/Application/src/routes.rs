@@ -8,8 +8,8 @@ use crate::controller::{
     insert_asset, insert_configuration, insert_indicator, insert_ledger, insert_order, insert_pair,
     insert_strategy, restart_everything, select_action, select_actions, select_active_tasks,
     select_asset, select_assets, select_configuration, select_health_check, select_indicator,
-    select_indicators, select_ledger, select_ledgers, select_metrics, select_order, select_pair,
-    select_pairs, select_record_types, select_status, select_strategies,
+    select_indicators, select_ledger, select_ledgers, select_metrics, select_order, select_orders,
+    select_pair, select_pairs, select_record_types, select_status, select_strategies,
     select_strategies_overview, select_strategy, select_tasks, shutdown_engine,
     start_active_actions, start_active_assets, start_active_indicators, start_active_pairs,
     start_active_strategies, start_active_tasks, start_everything, stop_active_actions,
@@ -48,6 +48,7 @@ pub fn routes_config(cfg: &mut web::ServiceConfig) {
         web::scope("/orders")
             .service(insert_order)
             .service(select_order)
+            .service(select_orders)
             .service(update_order),
     )
     .service(

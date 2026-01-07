@@ -33,6 +33,21 @@ pub async fn select_order(
     }
 }
 
+#[get("/{env}/all")]
+pub async fn select_orders(
+    env: web::Path<Environments>,
+    query: web::Query<OrderRequest>,
+) -> impl Responder {
+    match Orders::new(query.into_inner())
+        .with_env(env.into_inner())
+        .select_orders()
+        .await
+    {
+        Ok(val) => HttpResponse::Ok().json(val),
+        Err(err) => error_response(err),
+    }
+}
+
 #[patch("/{env}")]
 pub async fn update_order(
     env: web::Path<Environments>,

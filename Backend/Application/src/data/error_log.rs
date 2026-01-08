@@ -1,10 +1,15 @@
 use chrono::Local;
-use models::entities::error_log::{ActiveModel, Entity, Model};
-use sea_orm::{ActiveValue, DatabaseConnection, EntityTrait};
+use function_name::named;
+use models::{
+    entities::error_log::{ActiveModel, Column, Entity, Model},
+    structs::ErrorLogRequest,
+};
+use sea_orm::{ActiveValue, DatabaseConnection, EntityTrait, QueryOrder, QuerySelect};
 use tracing::error_span;
 
 use crate::{
     handler::ErrorLogs,
+    log_db_error,
     utils::{handle_db_error, Data, Response},
 };
 
@@ -44,6 +49,19 @@ impl ErrorLogs<Data> {
 
                 return Err(handle_db_error(&err));
             }
+            Ok(val) => Ok(val),
+        }
+    }
+
+    #[named]
+    pub async fn select_logs_data(self, db: &DatabaseConnection) -> Result<Vec<Model>, Response> {
+        match Entity::find()
+            .limit(10)
+            .order_by_desc(Column::Id)
+            .all(db)
+            .await
+        {
+            Err(err) => log_db_error!(self, err),
             Ok(val) => Ok(val),
         }
     }

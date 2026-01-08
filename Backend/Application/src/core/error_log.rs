@@ -13,4 +13,12 @@ impl ErrorLogs<Core> {
             .insert_log_data(&DBC::db(&env).await?)
             .await
     }
+
+    pub async fn select_logs_core(self) -> Result<Vec<Model>, Response> {
+        let env = self.environment;
+
+        self.next_phase()
+            .select_logs_data(&DBC::db(&env).await?)
+            .await
+    }
 }

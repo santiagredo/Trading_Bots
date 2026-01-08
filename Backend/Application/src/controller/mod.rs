@@ -45,3 +45,9 @@ pub use configurations::*;
 
 pub mod health_check;
 pub use health_check::*;
+
+pub mod error_log;
+pub use error_log::*;
+
+pub mod integration_log;
+pub use integration_log::*;

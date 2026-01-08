@@ -43,7 +43,19 @@ impl ErrorLogs {
         }
     }
 
+    pub fn with_env(self, environment: Environments) -> Self {
+        Self {
+            phase: self.phase,
+            environment,
+            model: self.model,
+        }
+    }
+
     pub async fn insert_log(self) -> Result<Model, Response> {
         self.next_phase().insert_log_core().await
+    }
+
+    pub async fn select_logs(self) -> Result<Vec<Model>, Response> {
+        self.next_phase().select_logs_core().await
     }
 }

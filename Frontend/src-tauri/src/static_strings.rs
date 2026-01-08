@@ -1,0 +1,19 @@
+pub static BACKEND_URL: &'static str = "http://localhost:8082";
+
+pub static HEALTH_CHECK: &'static str = "/health_check";
+pub static SHUTDOWN: &'static str = "/shutdown";
+pub static CONFIGURATIONS: &'static str = "/configurations";
+pub static ASSETS: &'static str = "/assets";
+pub static PAIRS: &'static str = "/pairs";
+pub static STRATEGIES: &'static str = "/strategies";
+pub static INDICATORS: &'static str = "/indicators";
+pub static ACTIONS: &'static str = "/actions";
+pub static BINANCE: &'static str = "/binance";
+pub static USER_COMMANDS: &str = "/user_commands";
+pub static LEDGERS: &str = "/ledgers";
+pub static METRICS: &str = "/metrics";
+pub static ORDERS: &str = "/orders";
+pub static ERROR_LOG: &str = "/error_log";
+pub static INTEGRATION_LOG: &str = "/integration_log";
+pub static STRATEGIES_OVERVIEW: &str = "/strategies_overview";
+pub static TASKS: &str = "/tasks";

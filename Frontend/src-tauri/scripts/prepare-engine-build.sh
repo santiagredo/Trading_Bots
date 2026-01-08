@@ -21,5 +21,4 @@ else
   chmod +x "$ENGINE_PATH"
 fi
 
-echo "Starting frontend dev server..."
-npm run dev
+npm run build

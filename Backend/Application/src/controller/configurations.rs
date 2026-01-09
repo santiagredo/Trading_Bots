@@ -21,9 +21,3 @@ pub async fn select_configuration() -> impl Responder {
     let configuration = Configurations::default().select_configuration().await;
     HttpResponse::Ok().json(configuration)
 }
-
-#[post("/shutdown")]
-pub async fn shutdown_engine() -> impl Responder {
-    Configurations::default().stop_engine();
-    HttpResponse::Ok().json("Shutting down")
-}

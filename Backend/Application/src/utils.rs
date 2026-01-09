@@ -51,6 +51,13 @@ impl Response {
             message: format!("{item} not found"),
         }
     }
+
+    pub fn server_error(item: String) -> Response {
+        Response {
+            code: 500,
+            message: format!("Server error: {item}"),
+        }
+    }
 }
 
 pub fn error_response(response: Response) -> HttpResponse {

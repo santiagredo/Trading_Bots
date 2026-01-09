@@ -12,3 +12,6 @@ pub use operation_keys::*;
 
 pub mod status;
 pub use status::*;
+
+pub mod machine_states;
+pub use machine_states::*;

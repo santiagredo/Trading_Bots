@@ -16,8 +16,8 @@ pub use orders::*;
 pub mod pairs;
 pub use pairs::*;
 
-pub mod ticker;
-pub use ticker::*;
+pub mod tickers;
+pub use tickers::*;
 
 pub mod binance;
 pub use binance::*;
@@ -55,11 +55,11 @@ pub use metrics::*;
 pub mod status;
 pub use status::*;
 
-pub mod integration_log;
-pub use integration_log::*;
+pub mod integration_logs;
+pub use integration_logs::*;
 
-pub mod error_log;
-pub use error_log::*;
+pub mod error_logs;
+pub use error_logs::*;
 
 pub mod configurations;
 pub use configurations::*;
@@ -67,5 +67,8 @@ pub use configurations::*;
 pub mod database_connections;
 pub use database_connections::*;
 
-pub mod health_check;
-pub use health_check::*;
+pub mod health_checks;
+pub use health_checks::*;
+
+pub mod engines;
+pub use engines::*;

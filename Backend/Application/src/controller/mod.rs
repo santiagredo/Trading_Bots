@@ -46,8 +46,11 @@ pub use configurations::*;
 pub mod health_check;
 pub use health_check::*;
 
-pub mod error_log;
-pub use error_log::*;
+pub mod error_logs;
+pub use error_logs::*;
 
-pub mod integration_log;
-pub use integration_log::*;
+pub mod integration_logs;
+pub use integration_logs::*;
+
+pub mod engines;
+pub use engines::*;

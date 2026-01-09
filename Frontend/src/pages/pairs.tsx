@@ -4,7 +4,6 @@ import { useState } from "react";
 import { DashboardLayout } from "@/components/dashboard-layout";
 import { PageHeader } from "@/components/page-header";
 import { Column, DataTable } from "@/components/data-table";
-import { StatusBadge } from "@/components/status-badge";
 import { useEnvironment, type Environment } from "@/lib/hooks/use-environment";
 import { useToastContext } from "@/components/toast-provider";
 import React from "react";
@@ -19,7 +18,7 @@ import {
 
 export default function PairsPage() {
     const [loading, setLoading] = React.useState(true);
-    const { success, error } = useToastContext();
+    const { error } = useToastContext();
     const { environment } = useEnvironment();
 
     const [pairs, setPairs] = useState<Pair[]>([]);

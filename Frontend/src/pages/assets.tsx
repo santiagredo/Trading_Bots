@@ -4,8 +4,6 @@ import { useState } from "react";
 import { DashboardLayout } from "@/components/dashboard-layout";
 import { PageHeader } from "@/components/page-header";
 import { Column, DataTable } from "@/components/data-table";
-import { StatCard } from "@/components/stat-card";
-import { Wallet, TrendingUp, DollarSign } from "lucide-react";
 import type { Environment } from "@/lib/hooks/use-environment";
 import { Asset } from "@/interfaces/entities/asset";
 import React from "react";
@@ -16,7 +14,7 @@ import Loading from "@/components/ui/loading";
 
 export default function AssetsPage() {
     const [loading, setLoading] = React.useState(true);
-    const { success, error } = useToastContext();
+    const { error } = useToastContext();
     const { environment } = useEnvironment();
 
     const [assets, setAssets] = useState<Asset[]>([]);

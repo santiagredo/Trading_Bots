@@ -10,10 +10,6 @@
         "tauri": "tauri"
     },
     "dependencies": {
-        "react": "^19.1.0",
-        "react-dom": "^19.1.0",
-        "@tauri-apps/api": "^2",
-        "@tauri-apps/plugin-opener": "^2",
         "@hookform/resolvers": "^3.10.0",
         "@radix-ui/react-accordion": "1.2.2",
         "@radix-ui/react-alert-dialog": "1.1.4",
@@ -42,6 +38,8 @@
         "@radix-ui/react-toggle": "1.1.1",
         "@radix-ui/react-toggle-group": "1.1.1",
         "@radix-ui/react-tooltip": "1.1.6",
+        "@tauri-apps/api": "^2",
+        "@tauri-apps/plugin-opener": "^2",
         "class-variance-authority": "^0.7.1",
         "clsx": "^2.1.1",
         "cmdk": "1.0.4",
@@ -54,7 +52,10 @@
         "lightningcss": "latest",
         "lucide-react": "^0.454.0",
         "next": "16.1.1",
+        "next-themes": "^0.4.6",
+        "react": "^19.1.0",
         "react-day-picker": "9.8.0",
+        "react-dom": "^19.1.0",
         "react-hook-form": "^7.60.0",
         "react-resizable-panels": "^2.1.7",
         "react-router-dom": "^6.28.0",
@@ -76,16 +77,16 @@
         "zustand": "5.0.9"
     },
     "devDependencies": {
+        "@tailwindcss/postcss": "^4.1.9",
+        "@tauri-apps/cli": "^2",
+        "@types/node": "^22",
         "@types/react": "^19.1.8",
         "@types/react-dom": "^19.1.6",
         "@vitejs/plugin-react": "^4.6.0",
-        "typescript": "~5.8.3",
-        "vite": "^7.0.4",
-        "@tauri-apps/cli": "^2",
-        "@tailwindcss/postcss": "^4.1.9",
-        "@types/node": "^22",
         "autoprefixer": "^10.4.20",
         "postcss": "^8.5",
-        "tailwindcss": "^4.1.9"
+        "tailwindcss": "^4.1.9",
+        "typescript": "~5.8.3",
+        "vite": "^7.0.4"
     }
 }

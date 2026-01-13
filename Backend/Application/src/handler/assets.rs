@@ -69,6 +69,7 @@ impl Assets {
             ticker: Some(model.ticker),
             free: Some(model.free),
             locked: Some(model.locked),
+            last_update: model.last_update,
         };
 
         self.model = asset_request;
@@ -82,6 +83,7 @@ impl Assets {
             ticker: asset.ticker.unwrap_or_default(),
             free: asset.free.unwrap_or_default(),
             locked: asset.locked.unwrap_or_default(),
+            last_update: asset.last_update,
         }
     }
 

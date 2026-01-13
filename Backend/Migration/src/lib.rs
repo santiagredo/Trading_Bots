@@ -13,6 +13,9 @@ mod m20250904_011953_create_tasks_table;
 mod m20251106_014805_create_integration_log_table;
 mod m20251106_185615_create_error_log_table;
 mod m20251222_234655_create_metrics_table;
+mod m20260113_191430_update_assets_add_last_update;
+mod m20260113_191948_update_tasks_add_last_update;
+mod m20260113_194125_update_tasks_add_last_execution;
 
 pub struct Migrator;
 
@@ -33,6 +36,9 @@ impl MigratorTrait for Migrator {
             Box::new(m20251106_014805_create_integration_log_table::Migration),
             Box::new(m20251106_185615_create_error_log_table::Migration),
             Box::new(m20251222_234655_create_metrics_table::Migration),
+            Box::new(m20260113_191430_update_assets_add_last_update::Migration),
+            Box::new(m20260113_191948_update_tasks_add_last_update::Migration),
+            Box::new(m20260113_194125_update_tasks_add_last_execution::Migration),
         ]
     }
 }

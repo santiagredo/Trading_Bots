@@ -1,3 +1,4 @@
+use chrono::Local;
 use function_name::named;
 use models::{
     entities::assets::{self, ActiveModel, Column, Entity, Model},
@@ -23,6 +24,7 @@ impl Assets<Data> {
             ticker: ActiveValue::Set(self.model.ticker.clone().unwrap_or_default()),
             free: ActiveValue::Set(self.model.free.unwrap_or_default()),
             locked: ActiveValue::Set(self.model.locked.unwrap_or_default()),
+            last_update: ActiveValue::Set(Local::now().naive_local().into()),
         };
 
         match Entity::insert(active_model_asset)
@@ -102,6 +104,12 @@ impl Assets<Data> {
 
         if self.model.locked.is_some() {
             active_model_asset.locked = ActiveValue::set(self.model.locked.unwrap_or_default());
+        }
+
+        if let Some(last_update) = self.model.last_update {
+            active_model_asset.last_update = ActiveValue::Set(last_update.into())
+        } else {
+            active_model_asset.last_update = ActiveValue::Set(Local::now().naive_local().into())
         }
 
         match active_model_asset.update(db).await {

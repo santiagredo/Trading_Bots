@@ -134,3 +134,28 @@ impl FiniteStateMachine for TradingMode {
         )
     }
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum TaskState {
+    Sleeping,
+    Running,
+    Saving,
+    Stopped,
+}
+
+impl Default for TaskState {
+    fn default() -> Self {
+        TaskState::Sleeping
+    }
+}
+
+// impl FiniteStateMachine for TaskState {
+//     fn can_transition(self, next: Self) -> bool {
+//         use TaskState::*;
+
+//         matches!(
+//             (self, next),
+//             (Sleeping, Running) | (Running, Saving) | (Saving, Sleeping)
+//         )
+//     }
+// }

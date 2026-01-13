@@ -5,13 +5,19 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     entities::tasks::Model,
-    enums::{LifecycleState, TimestampedState},
+    enums::{LifecycleState, TaskState, TimestampedState},
     structs::Environments,
 };
 
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
+pub struct CacheTask {
+    pub model: Model,
+    pub state: TaskState,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct CacheTasks {
-    pub models: HashMap<i32, Model>,
+    pub models: HashMap<i32, CacheTask>,
     pub startup_date: NaiveDateTime,
     pub last_update_date: NaiveDateTime,
     pub status: LifecycleState,

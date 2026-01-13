@@ -1,15 +1,19 @@
-use std::{collections::HashMap, mem, sync::Arc};
+use std::{collections::HashMap, future::Future, mem, sync::Arc, time::Duration};
 
-use chrono::Local;
+use chrono::{Local, NaiveDateTime, Timelike};
 use models::{
     entities::tasks::Model,
-    enums::{transition_with_timestamp, FiniteStateMachine, LifecycleState},
-    structs::{CacheTasks, CacheTasksEnvironments, Environments},
+    enums::{transition_with_timestamp, FiniteStateMachine, LifecycleState, TaskState},
+    structs::{CacheTask, CacheTasks, CacheTasksEnvironments, Environments, TaskRequest},
 };
 use once_cell::sync::Lazy;
-use tokio::sync::RwLock;
+use tokio::{sync::RwLock, time::sleep};
+use tokio_util::sync::CancellationToken;
 
-use crate::{handler::Tasks, utils::Cache};
+use crate::{
+    handler::{Binance, CoinPaprika, Metrics, Tasks},
+    utils::Cache,
+};
 
 static ACTIVE_TASKS: Lazy<Arc<RwLock<CacheTasksEnvironments>>> =
     Lazy::new(|| Arc::new(RwLock::new(CacheTasksEnvironments::new())));
@@ -37,9 +41,64 @@ impl Tasks<Cache> {
             ));
         }
 
-        env_cache.models = tasks.into_iter().map(|t| (t.id, t)).collect();
+        env_cache.models = tasks
+            .into_iter()
+            .map(|t| {
+                (
+                    t.id,
+                    CacheTask {
+                        model: t,
+                        ..Default::default()
+                    },
+                )
+            })
+            .collect();
 
         env_cache.last_update_date = Local::now().naive_local();
+        Ok(())
+    }
+
+    pub async fn set_task_state_cache(
+        environment: Environments,
+        task_id: i32,
+        state: TaskState,
+    ) -> Result<(), String> {
+        let mut cache = ACTIVE_TASKS.write().await;
+        let env_cache = cache
+            .get_mut(&environment)
+            .ok_or("Environment not initialized")?;
+
+        if !env_cache.status.allows(LifecycleState::Running) {
+            return Err("Cache not running".into());
+        }
+
+        let task = env_cache.models.get_mut(&task_id).ok_or("Task not found")?;
+
+        task.state = state;
+        env_cache.last_update_date = Local::now().naive_local();
+
+        Ok(())
+    }
+
+    pub async fn set_task_last_execution_cache(
+        environment: Environments,
+        task_id: i32,
+        last_execution: NaiveDateTime,
+    ) -> Result<(), String> {
+        let mut cache = ACTIVE_TASKS.write().await;
+        let env_cache = cache
+            .get_mut(&environment)
+            .ok_or("Environment not initialized")?;
+
+        if !env_cache.status.allows(LifecycleState::Running) {
+            return Err("Cache not running".into());
+        }
+
+        let task = env_cache.models.get_mut(&task_id).ok_or("Task not found")?;
+
+        task.model.last_execution = Some(last_execution);
+        env_cache.last_update_date = Local::now().naive_local();
+
         Ok(())
     }
 
@@ -51,7 +110,13 @@ impl Tasks<Cache> {
             return Err("Cache not running".into());
         }
 
-        env_cache.models.insert(task.id, task);
+        env_cache.models.insert(
+            task.id,
+            CacheTask {
+                model: task,
+                ..Default::default()
+            },
+        );
         env_cache.last_update_date = Local::now().naive_local();
 
         Ok(())
@@ -60,7 +125,7 @@ impl Tasks<Cache> {
     pub async fn remove_task_cache(
         environment: Environments,
         task_id: i32,
-    ) -> Result<Option<Model>, String> {
+    ) -> Result<Option<CacheTask>, String> {
         let mut cache = ACTIVE_TASKS.write().await;
         let env_cache = cache
             .get_mut(&environment)
@@ -78,7 +143,7 @@ impl Tasks<Cache> {
 
     pub async fn remove_tasks_cache(
         environment: Environments,
-    ) -> Result<HashMap<i32, Model>, String> {
+    ) -> Result<HashMap<i32, CacheTask>, String> {
         let mut cache = ACTIVE_TASKS.write().await;
         let env_cache = cache
             .get_mut(&environment)
@@ -99,7 +164,7 @@ impl Tasks<Cache> {
         cache.get(&environment).cloned()
     }
 
-    pub async fn get_task_cache(environment: Environments, strategy_id: i32) -> Option<Model> {
+    pub async fn get_task_cache(environment: Environments, strategy_id: i32) -> Option<CacheTask> {
         let cache = ACTIVE_TASKS.read().await;
         cache.get(&environment)?.models.get(&strategy_id).cloned()
     }
@@ -121,11 +186,122 @@ impl Tasks<Cache> {
 
         Ok(())
     }
+
+    fn spawn_task<F, Fut>(
+        task: Model,
+        environment: Environments,
+        cancellation_token: CancellationToken,
+        task_fn: F,
+    ) where
+        F: Fn(Environments) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = ()> + Send + 'static,
+    {
+        let delay = task.delay as u64;
+        let cooldown = task.cooldown as u64;
+        let task_id = task.id;
+
+        tokio::spawn(async move {
+            let _ = Self::set_task_state_cache(environment, task_id, TaskState::Sleeping).await;
+
+            loop {
+                tokio::select! {
+                    _ = cancellation_token.cancelled() => {
+                        let _ = Self::set_task_state_cache(
+                            environment,
+                            task_id,
+                            TaskState::Stopped,
+                        ).await;
+                        break;
+                    }
+                    _ = sleep(Duration::from_secs(delay)) => {
+                        let _ = Self::set_task_state_cache(
+                            environment,
+                            task_id,
+                            TaskState::Running,
+                        ).await;
+
+                        task_fn(environment).await;
+
+                        let _ = Self::set_task_state_cache(
+                            environment,
+                            task_id,
+                            TaskState::Saving,
+                        ).await;
+
+                        let now = Local::now().naive_local();
+
+                        let _ = Self::set_task_last_execution_cache(environment, task_id, now).await;
+
+                        let task_request = TaskRequest {
+                            id: Some(task_id),
+                            last_execution: Some(now),
+                            ..Default::default()
+                        };
+
+                        let _ = Tasks::new(task_request).with_env(environment).update_task().await;
+
+                        let _ = Self::set_task_state_cache(
+                            environment,
+                            task_id,
+                            TaskState::Sleeping,
+                        ).await;
+
+                        sleep(Duration::from_secs(cooldown)).await;
+
+                    }
+                }
+            }
+        });
+    }
+
+    pub fn run_task(task: Model, environment: Environments, cancellation_token: CancellationToken) {
+        match task.nick.as_str() {
+            "BNUAB" => Self::spawn_task(task, environment, cancellation_token, |env| async move {
+                Binance::update_account_balances(env).await;
+            }),
+            "BNUEI" => Self::spawn_task(task, environment, cancellation_token, |env| async move {
+                Binance::update_exchange_information(env).await;
+            }),
+            "CPUPS" => Self::spawn_task(task, environment, cancellation_token, |env| async move {
+                CoinPaprika::default()
+                    .with_env(env)
+                    .update_pairs_statistics()
+                    .await;
+            }),
+            "CMPER" => Self::spawn_task(task, environment, cancellation_token, |env| async move {
+                let now = Local::now();
+                let next_hour = match (now + chrono::Duration::hours(1))
+                    .with_minute(0)
+                    .and_then(|t| t.with_second(0))
+                    .and_then(|t| t.with_nanosecond(0))
+                {
+                    Some(t) => t,
+                    None => {
+                        sleep(Duration::from_secs(60)).await;
+                        return;
+                    }
+                };
+
+                let wait = (next_hour - now)
+                    .to_std()
+                    .unwrap_or(Duration::from_secs(3600));
+
+                sleep(wait).await;
+
+                let _ = Metrics::default().with_env(env).persist_metrics().await;
+            }),
+            _ => {}
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use models::{entities::tasks::Model, enums::LifecycleState, structs::Environments};
+    use models::{
+        entities::tasks::Model,
+        enums::{LifecycleState, TaskState},
+        structs::Environments,
+    };
 
     use crate::{handler::Tasks, utils::Cache};
 
@@ -149,11 +325,9 @@ mod tests {
     async fn stop_env(env: Environments) {
         let _ = Tasks::<Cache>::set_status_cache(env, LifecycleState::Stopping).await;
 
-        let removed = Tasks::<Cache>::remove_tasks_cache(env)
+        let _ = Tasks::<Cache>::remove_tasks_cache(env)
             .await
             .expect("remove_tasks_cache should work in Stopping");
-
-        assert!(removed.is_empty() || !removed.is_empty());
 
         let _ = Tasks::<Cache>::set_status_cache(env, LifecycleState::Off).await;
     }
@@ -186,15 +360,18 @@ mod tests {
         start_env(env).await;
 
         let tasks = vec![mock_task(1), mock_task(2)];
-
         Tasks::<Cache>::set_tasks_cache(env, tasks).await.unwrap();
 
         let cache = Tasks::<Cache>::get_tasks_cache(env).await.unwrap();
-        let status = Tasks::<Cache>::get_tasks_state_cache(env).await;
 
         assert_eq!(cache.models.len(), 2);
         assert!(cache.models.contains_key(&1));
         assert!(cache.models.contains_key(&2));
+
+        assert_eq!(cache.models.get(&1).unwrap().state, TaskState::Sleeping);
+        assert_eq!(cache.models.get(&2).unwrap().state, TaskState::Sleeping);
+
+        let status = Tasks::<Cache>::get_tasks_state_cache(env).await;
         assert_eq!(status, LifecycleState::Running);
 
         stop_env(env).await;
@@ -209,7 +386,9 @@ mod tests {
             .unwrap();
 
         let cached = Tasks::<Cache>::get_task_cache(env, 10).await.unwrap();
-        assert_eq!(cached, task);
+
+        assert_eq!(cached.model.id, task.id);
+        assert_eq!(cached.state, TaskState::Sleeping);
 
         stop_env(env).await;
     }
@@ -221,7 +400,6 @@ mod tests {
         Tasks::<Cache>::upsert_task_cache(env, task).await.unwrap();
 
         let removed = Tasks::<Cache>::remove_task_cache(env, 20).await.unwrap();
-
         assert!(removed.is_some());
 
         let cached = Tasks::<Cache>::get_task_cache(env, 20).await;

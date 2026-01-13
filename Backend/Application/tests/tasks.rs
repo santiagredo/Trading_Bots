@@ -1,5 +1,9 @@
 use application::{handler::Tasks, utils::Cache};
-use models::{entities::tasks::Model, enums::LifecycleState, structs::Environments};
+use models::{
+    entities::tasks::Model,
+    enums::{LifecycleState, TaskState},
+    structs::Environments,
+};
 
 fn mock_task(id: i32, nick: &str) -> Model {
     Model {
@@ -38,19 +42,24 @@ async fn full_tasks_cache_flow_should_work_correctly() {
      * ===========================
      */
 
-    let starting = Tasks::<Cache>::set_status_cache(env, LifecycleState::Starting).await;
-    assert!(starting.is_ok());
+    Tasks::<Cache>::set_status_cache(env, LifecycleState::Starting)
+        .await
+        .unwrap();
+
+    Tasks::<Cache>::set_status_cache(env, LifecycleState::Running)
+        .await
+        .unwrap();
 
     let tasks = vec![mock_task(1, "BNUAB"), mock_task(2, "BNUEI")];
-
-    let running = Tasks::<Cache>::set_status_cache(env, LifecycleState::Running).await;
-    assert!(running.is_ok());
-
     Tasks::<Cache>::set_tasks_cache(env, tasks).await.unwrap();
 
     let cache = Tasks::<Cache>::get_tasks_cache(env).await.unwrap();
     assert_eq!(cache.models.len(), 2);
     assert_eq!(cache.status, LifecycleState::Running);
+
+    for task in cache.models.values() {
+        assert_eq!(task.state, TaskState::Sleeping);
+    }
 
     /* ===========================
      * INSERT INDIVIDUAL TASK
@@ -63,16 +72,20 @@ async fn full_tasks_cache_flow_should_work_correctly() {
         .unwrap();
 
     let single = Tasks::<Cache>::get_task_cache(env, 3).await.unwrap();
-    assert_eq!(single, extra);
+    assert_eq!(single.model, extra);
+    assert_eq!(single.state, TaskState::Sleeping);
 
     /* ===========================
      * REMOVE TASK
      * ===========================
      */
 
-    let removed = Tasks::<Cache>::remove_task_cache(env, 3).await.unwrap();
+    let removed = Tasks::<Cache>::remove_task_cache(env, 3)
+        .await
+        .unwrap()
+        .unwrap();
 
-    assert_eq!(removed, Some(extra));
+    assert_eq!(removed.model, extra);
 
     let not_found = Tasks::<Cache>::get_task_cache(env, 3).await;
     assert!(not_found.is_none());

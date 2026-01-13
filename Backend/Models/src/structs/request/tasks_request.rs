@@ -1,3 +1,4 @@
+use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -8,4 +9,6 @@ pub struct TaskRequest {
     pub is_active: Option<bool>,
     pub cooldown: Option<i32>,
     pub delay: Option<i32>,
+    pub last_update: Option<NaiveDateTime>,
+    pub last_execution: Option<NaiveDateTime>,
 }

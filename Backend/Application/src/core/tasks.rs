@@ -1,16 +1,12 @@
-use std::{future::Future, time::Duration};
-
-use chrono::{Local, Timelike};
 use models::{
     entities::tasks::Model,
     enums::LifecycleState,
-    structs::{CacheTasks, Environments},
+    structs::{CacheTask, CacheTasks},
 };
-use tokio::time::sleep;
 use tokio_util::sync::CancellationToken;
 
 use crate::{
-    handler::{Binance, CoinPaprika, Metrics, Tasks, DBC},
+    handler::{Tasks, DBC},
     utils::{handle_user_err, Cache, Core, Response},
 };
 
@@ -48,7 +44,7 @@ impl Tasks<Core> {
         Tasks::<Cache>::get_tasks_cache(self.environment).await
     }
 
-    pub async fn get_task_core(self, task_id: i32) -> Option<Model> {
+    pub async fn get_task_core(self, task_id: i32) -> Option<CacheTask> {
         Tasks::<Cache>::get_task_cache(self.environment, task_id).await
     }
 
@@ -67,7 +63,7 @@ impl Tasks<Core> {
             .map_err(|e| Response::server_error(e))
     }
 
-    pub async fn remove_task_core(self, task_id: i32) -> Result<Option<Model>, Response> {
+    pub async fn remove_task_core(self, task_id: i32) -> Result<Option<CacheTask>, Response> {
         Tasks::<Cache>::remove_task_cache(self.environment, task_id)
             .await
             .map_err(|e| Response::server_error(e))
@@ -113,7 +109,7 @@ impl Tasks<Core> {
         };
 
         for task in tasks.iter() {
-            Self::run_tasks(task.clone(), env, cancellation_token.clone());
+            Tasks::<Cache>::run_task(task.clone(), env, cancellation_token.clone());
         }
 
         if let Err(err) =
@@ -174,104 +170,5 @@ impl Tasks<Core> {
         }
 
         Ok(())
-    }
-
-    fn run_tasks(task: Model, environment: Environments, cancellation_token: CancellationToken) {
-        let (delay, cooldown) = (task.delay as u64, task.cooldown as u64);
-
-        match task.nick.as_str() {
-            "BNUAB" => Self::spawn_task(
-                delay,
-                cooldown,
-                environment,
-                cancellation_token,
-                |env| async move {
-                    Binance::update_account_balances(env).await;
-                },
-            ),
-            "BNUEI" => Self::spawn_task(
-                delay,
-                cooldown,
-                environment,
-                cancellation_token,
-                |env| async move {
-                    Binance::update_exchange_information(env).await;
-                },
-            ),
-            "CPUPS" => Self::spawn_task(
-                delay,
-                cooldown,
-                environment,
-                cancellation_token,
-                |env| async move {
-                    CoinPaprika::default()
-                        .with_env(env)
-                        .update_pairs_statistics()
-                        .await;
-                },
-            ),
-            "CMPER" => Self::spawn_task(
-                delay,
-                cooldown,
-                environment,
-                cancellation_token,
-                |env| async move {
-                    let now = Local::now();
-                    let next_hour = match (now + chrono::Duration::hours(1))
-                        .with_minute(0)
-                        .and_then(|t| t.with_second(0))
-                        .and_then(|t| t.with_nanosecond(0))
-                    {
-                        Some(t) => t,
-                        None => {
-                            tracing::error!("Failed to compute next hour, retrying in 60s");
-                            sleep(Duration::from_secs(60)).await;
-                            return;
-                        }
-                    };
-
-                    let wait = match (next_hour - now).to_std() {
-                        Ok(d) => d,
-                        Err(_) => Duration::from_secs(3600),
-                    };
-
-                    sleep(wait).await;
-
-                    let _ = Metrics::default().with_env(env).persist_metrics().await;
-                },
-            ),
-            _ => {}
-        }
-    }
-
-    fn spawn_task<F, Fut>(
-        delay: u64,
-        cooldown: u64,
-        environment: Environments,
-        cancellation_token: CancellationToken,
-        task_fn: F,
-    ) where
-        F: Fn(Environments) -> Fut + Send + Sync + 'static,
-        Fut: Future<Output = ()> + Send + 'static,
-    {
-        tokio::spawn(async move {
-            loop {
-                tokio::select! {
-                    _ = cancellation_token.cancelled() => {
-                        break;
-                    }
-                    _ = sleep(Duration::from_secs(delay)) => {
-                        task_fn(environment).await;
-
-                        tokio::select! {
-                            _ = cancellation_token.cancelled() => {
-                                break;
-                            }
-                            _ = sleep(Duration::from_secs(cooldown)) => {}
-                        }
-                    }
-                }
-            }
-        });
     }
 }

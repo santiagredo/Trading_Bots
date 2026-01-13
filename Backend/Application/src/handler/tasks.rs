@@ -3,7 +3,7 @@ use std::marker::PhantomData;
 use models::{
     entities::tasks::Model,
     enums::LifecycleState,
-    structs::{CacheTasks, Environments, TaskRequest},
+    structs::{CacheTask, CacheTasks, Environments, TaskRequest},
 };
 use tokio_util::sync::CancellationToken;
 
@@ -70,7 +70,7 @@ impl Tasks {
         self.next_phase().get_tasks_core().await
     }
 
-    pub async fn get_task(self, task_id: i32) -> Option<Model> {
+    pub async fn get_task(self, task_id: i32) -> Option<CacheTask> {
         self.next_phase().get_task_core(task_id).await
     }
 
@@ -82,7 +82,7 @@ impl Tasks {
         self.next_phase().upsert_task_core(task).await
     }
 
-    pub async fn remove_task(self, task_id: i32) -> Result<Option<Model>, Response> {
+    pub async fn remove_task(self, task_id: i32) -> Result<Option<CacheTask>, Response> {
         self.next_phase().remove_task_core(task_id).await
     }
 

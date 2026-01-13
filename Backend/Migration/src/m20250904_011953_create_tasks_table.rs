@@ -74,7 +74,7 @@ impl MigrationTrait for Migration {
 }
 
 #[derive(DeriveIden)]
-enum Tasks {
+pub enum Tasks {
     Table,
     Id,
     Nick,

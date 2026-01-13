@@ -1,5 +1,6 @@
 use std::marker::PhantomData;
 
+use chrono::Local;
 use models::structs::{
     AccountInformation, AssetRequest, Environments, ExchangeInformation, LedgerRequest,
     OrderRequest,
@@ -53,6 +54,7 @@ impl Binance {
                 locked: Some(balance.locked),
                 name: Some(asset.name.clone()),
                 ticker: Some(asset.ticker.clone()),
+                last_update: Some(Local::now().naive_local()),
             };
 
             let _ = Assets::from_request(asset_request.clone())

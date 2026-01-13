@@ -1,3 +1,4 @@
+use chrono::NaiveDateTime;
 use sea_orm::prelude::Decimal;
 use serde::{Deserialize, Serialize};
 
@@ -10,6 +11,7 @@ pub struct AssetRequest {
     pub ticker: Option<String>,
     pub free: Option<Decimal>,
     pub locked: Option<Decimal>,
+    pub last_update: Option<NaiveDateTime>,
 }
 
 impl AssetRequest {
@@ -20,6 +22,7 @@ impl AssetRequest {
             ticker: Some(asset.ticker.clone()),
             free: Some(asset.free),
             locked: Some(asset.locked),
+            last_update: asset.last_update,
         }
     }
 

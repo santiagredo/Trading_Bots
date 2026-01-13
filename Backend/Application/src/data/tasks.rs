@@ -1,3 +1,4 @@
+use chrono::Local;
 use function_name::named;
 use models::{
     entities::tasks::{self, Column, Entity, Model},
@@ -66,6 +67,16 @@ impl Tasks<Data> {
 
         if let Some(delay) = self.model.delay {
             task.delay = ActiveValue::Set(delay.into());
+        }
+
+        if let Some(last_update) = self.model.last_update {
+            task.last_update = ActiveValue::Set(last_update.into())
+        } else {
+            task.last_update = ActiveValue::Set(Local::now().naive_local().into())
+        }
+
+        if let Some(last_execution) = self.model.last_execution {
+            task.last_execution = ActiveValue::Set(last_execution.into())
         }
 
         match task.update(db).await {

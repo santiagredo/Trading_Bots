@@ -2,6 +2,7 @@ use std::{collections::HashMap, marker::PhantomData};
 
 use models::{
     entities::{actions::Model, assets, pairs},
+    enums::LifecycleState,
     structs::{ActionRequest, Environments, Ticker},
 };
 
@@ -87,20 +88,28 @@ impl Actions {
     }
 
     // cache
-    pub async fn get_active_actions(self) -> Option<HashMap<i32, Model>> {
-        self.next_phase().get_active_actions_core().await
+    pub async fn get_actions(self) -> Option<HashMap<i32, Model>> {
+        self.next_phase().get_actions_core().await
     }
 
-    pub async fn get_active_action(self) -> Option<Model> {
-        self.next_phase().get_active_action_core().await
+    pub async fn get_action(self) -> Option<Model> {
+        self.next_phase().get_action_core().await
     }
 
-    pub async fn start_active_actions(self) -> Result<(), Response> {
-        self.next_phase().start_active_actions_core().await
+    pub async fn get_actions_state(self) -> LifecycleState {
+        self.next_phase().get_actions_state_core().await
     }
 
-    pub async fn stop_active_actions(self) {
-        self.next_phase().stop_active_actions_core().await
+    pub async fn start_actions(self) -> Result<(), Response> {
+        self.next_phase().start_actions_core().await
+    }
+
+    pub async fn stop_actions(self) -> Result<(), Response> {
+        self.next_phase().stop_actions_core().await
+    }
+
+    pub async fn reset_actions(self) -> Result<(), Response> {
+        self.next_phase().reset_actions_core().await
     }
 
     // misc

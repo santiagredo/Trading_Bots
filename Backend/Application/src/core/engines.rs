@@ -1,4 +1,5 @@
-use models::structs::CacheEngine;
+use models::{enums::LifecycleState, structs::CacheEngine};
+use tokio_util::sync::CancellationToken;
 
 use crate::{
     handler::Engines,
@@ -17,7 +18,15 @@ impl Engines<Core> {
             .map_err(|err| Response::server_error(err))
     }
 
+    pub fn get_engine_token_core(self) -> CancellationToken {
+        self.next_phase().get_engine_token_cache()
+    }
+
     pub async fn stop_engine_core(self) {
-        self.next_phase().stop_engine_cache().await;
+        let _ = Engines::new(LifecycleState::Stopping)
+            .set_engine_status()
+            .await;
+
+        self.next_phase().stop_engine_cache()
     }
 }

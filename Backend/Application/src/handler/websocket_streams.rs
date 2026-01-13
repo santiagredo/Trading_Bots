@@ -1,7 +1,6 @@
+use models::{enums::SocketStatus, structs::Environments};
 use std::marker::PhantomData;
-
-use models::structs::Environments;
-use tokio::task::AbortHandle;
+use tokio_util::sync::CancellationToken;
 
 use crate::{
     handler::Senders,
@@ -15,11 +14,15 @@ pub struct WebsocketStreams<Phase = Types> {
 }
 
 impl<Phase> WebsocketStreams<Phase> {
-    pub fn next_phase<Next>(self) -> WebsocketStreams<Next> {
+    fn cast<Next>(self) -> WebsocketStreams<Next> {
         WebsocketStreams {
-            phase: PhantomData::<Next>,
+            phase: PhantomData,
             environment: self.environment,
         }
+    }
+
+    pub fn next_phase<Next>(self) -> WebsocketStreams<Next> {
+        self.cast()
     }
 }
 
@@ -31,22 +34,38 @@ impl WebsocketStreams {
         }
     }
 
-    pub async fn set_binance_ws_abort_handle(abort_handle: AbortHandle) {
-        WebsocketStreams::<Core>::set_binance_ws_abort_handle_core(abort_handle).await
-    }
-
-    pub async fn get_binance_ws_abort_handle() -> Option<AbortHandle> {
-        WebsocketStreams::<Core>::get_binance_ws_abort_handle_core().await
-    }
-
-    pub async fn start_socket_loop(self, senders: Senders) {
-        let memory_abort_handle = Self::get_binance_ws_abort_handle().await;
-
-        if memory_abort_handle.filter(|h| !h.is_finished()).is_some() {
-            return;
+    pub fn default() -> Self {
+        Self {
+            phase: PhantomData::<Types>,
+            environment: Environments::DEV,
         }
+    }
 
-        let abort_handle = self.next_phase().spawn_socket_loop_core(senders);
-        Self::set_binance_ws_abort_handle(abort_handle).await;
+    pub fn with_env(self, environment: Environments) -> Self {
+        Self {
+            phase: self.phase,
+            environment,
+        }
+    }
+}
+
+impl WebsocketStreams<Types> {
+    /// Start WebSocket connection
+    pub async fn start_websocket(
+        self,
+        senders: Senders,
+        token: &CancellationToken,
+    ) -> Result<(), String> {
+        self.next_phase().start_websocket_core(senders, token).await
+    }
+
+    /// Get current socket status
+    pub async fn get_status(self) -> SocketStatus {
+        self.next_phase().get_status_core().await
+    }
+
+    /// Stop WebSocket connection
+    pub async fn stop_websocket() -> Result<(), String> {
+        WebsocketStreams::<Core>::stop_websocket_core().await
     }
 }

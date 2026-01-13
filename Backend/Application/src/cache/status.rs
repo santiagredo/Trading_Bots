@@ -1,214 +1,340 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, mem, sync::Arc};
 
-use models::{entities::status::Model, enums::Status, structs::Environments};
+use chrono::Local;
+use models::{
+    entities::status::Model,
+    enums::{FiniteStateMachine, LifecycleState, Status, transition_with_timestamp},
+    structs::{CacheStatus, CacheStatusEnvironments, Environments},
+};
 use once_cell::sync::Lazy;
 use tokio::sync::RwLock;
 
 use crate::{handler::OrderStatus, utils::Cache};
 
-#[derive(Default)]
-struct CacheEnvironments {
-    pub environments: HashMap<Environments, CacheStatus>,
-}
-
-#[derive(Default)]
-struct CacheStatus {
-    pub is_initialized: bool,
-    pub models: HashMap<Status, i32>,
-}
-
-static ACTIVE_STATUS: Lazy<Arc<RwLock<CacheEnvironments>>> =
-    Lazy::new(|| Arc::new(RwLock::new(CacheEnvironments::default())));
+static ACTIVE_STATUS: Lazy<Arc<RwLock<CacheStatusEnvironments>>> =
+    Lazy::new(|| Arc::new(RwLock::new(CacheStatusEnvironments::new())));
 
 impl OrderStatus<Cache> {
-    pub async fn set_active_status_cache(
-        environment: &Environments,
-        status: Vec<Model>,
-    ) -> Vec<Model> {
-        let mut cache_status = ACTIVE_STATUS.write().await;
+    // =========================
+    // Lifecycle
+    // =========================
 
-        let env_map = cache_status
-            .environments
-            .entry(*environment)
-            .or_insert_with(CacheStatus::default);
+    pub async fn set_status_cache(
+        environment: Environments,
+        status: LifecycleState,
+    ) -> Result<(), String> {
+        let mut cache = ACTIVE_STATUS.write().await;
+        let env_cache = cache.get_or_create(environment);
 
-        env_map.models.clear();
+        transition_with_timestamp(env_cache, status)?;
+        Ok(())
+    }
 
-        for sta in status.iter() {
-            env_map.models.insert(Status::from_model(sta), sta.id);
+    // =========================
+    // Mutations
+    // =========================
+
+    pub async fn set_statuses_cache(
+        environment: Environments,
+        models: Vec<Model>,
+    ) -> Result<(), String> {
+        let mut cache = ACTIVE_STATUS.write().await;
+        let env_cache = cache.get_or_create(environment);
+
+        if !env_cache.status.allows(LifecycleState::Running) {
+            return Err(format!(
+                "Cannot load status: cache not running ({:?})",
+                env_cache.status
+            ));
         }
 
-        env_map.is_initialized = true;
+        env_cache.models = models.into_iter().map(|m| (m.id, m)).collect();
+        env_cache.last_update_date = Local::now().naive_local();
 
-        status
+        Ok(())
     }
 
-    pub async fn get_active_status_cache(
-        environment: &Environments,
-    ) -> Option<HashMap<Status, i32>> {
-        let cache_status = ACTIVE_STATUS.read().await;
+    pub async fn upsert_status_cache(
+        environment: Environments,
+        model: Model,
+    ) -> Result<(), String> {
+        let mut cache = ACTIVE_STATUS.write().await;
+        let env_cache = cache.get_or_create(environment);
 
-        let env_map = cache_status.environments.get(environment)?;
+        if !env_cache.status.allows(LifecycleState::Running) {
+            return Err("Cache not running".into());
+        }
 
-        Some(env_map.models.clone())
+        env_cache.models.insert(model.id, model);
+        env_cache.last_update_date = Local::now().naive_local();
+
+        Ok(())
     }
 
-    pub async fn get_active_status(environment: &Environments, status: &Status) -> Option<i32> {
-        let cache_status = ACTIVE_STATUS.read().await;
+    pub async fn remove_status_cache(
+        environment: Environments,
+        status_id: i32,
+    ) -> Result<Option<Model>, String> {
+        let mut cache = ACTIVE_STATUS.write().await;
+        let env_cache = cache
+            .get_mut(&environment)
+            .ok_or("Environment not initialized")?;
 
-        let env_map = cache_status.environments.get(environment)?;
+        if !env_cache.status.allows(LifecycleState::Running) {
+            return Err("Cache not running".into());
+        }
 
-        env_map.models.get(status).copied()
+        let removed = env_cache.models.remove(&status_id);
+        env_cache.last_update_date = Local::now().naive_local();
+
+        Ok(removed)
     }
 
-    pub async fn get_active_status_status_cache(environment: &Environments) -> bool {
-        let cache_status = ACTIVE_STATUS.read().await;
+    pub async fn remove_statuses_cache(
+        environment: Environments,
+    ) -> Result<HashMap<i32, Model>, String> {
+        let mut cache = ACTIVE_STATUS.write().await;
+        let env_cache = cache
+            .get_mut(&environment)
+            .ok_or("Environment not initialized")?;
 
-        cache_status
-            .environments
+        if !env_cache.status.allows(LifecycleState::Stopping) {
+            return Err("Cache not stopping".into());
+        }
+
+        let removed = mem::take(&mut env_cache.models);
+        env_cache.last_update_date = Local::now().naive_local();
+
+        Ok(removed)
+    }
+
+    // =========================
+    // Queries
+    // =========================
+
+    pub async fn get_status_cache(environment: Environments) -> Option<CacheStatus> {
+        let cache = ACTIVE_STATUS.read().await;
+        cache.get(&environment).cloned()
+    }
+
+    pub async fn get_status_by_enum(environment: Environments, status: Status) -> Option<Model> {
+        let cache = ACTIVE_STATUS.read().await;
+        let env_cache = cache.get(&environment)?;
+
+        env_cache
+            .models
+            .values()
+            .find(|m| Status::from_model(m) == status)
+            .cloned()
+    }
+
+    pub async fn get_cache_state(environment: Environments) -> LifecycleState {
+        let cache = ACTIVE_STATUS.read().await;
+        cache
             .get(&environment)
-            .map(|val| val.is_initialized)
-            .unwrap_or(false)
+            .map(|c| c.status)
+            .unwrap_or(LifecycleState::Off)
     }
 
-    pub async fn stop_active_status_cache(environment: &Environments) {
-        let mut cache_status = ACTIVE_STATUS.write().await;
+    pub async fn reset_status_cache(environment: Environments) -> Result<(), String> {
+        let mut cache = ACTIVE_STATUS.write().await;
 
-        if let Some(env_map) = cache_status.environments.get_mut(environment) {
-            env_map.models.clear();
-            env_map.is_initialized = false;
+        if let Some(env_cache) = cache.environments.get_mut(&environment) {
+            *env_cache = CacheStatus::new();
         }
+
+        Ok(())
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use models::{entities::status::Model, enums::Status, structs::Environments};
+    use models::{
+        entities::status::Model,
+        enums::{LifecycleState, Status},
+        structs::Environments,
+    };
 
     use crate::{handler::OrderStatus, utils::Cache};
 
+    // =========================
     // Helpers
-    fn mock_model(id: i32, name: &str) -> Model {
+    // =========================
+
+    fn mock_status(id: i32, name: &str) -> Model {
         Model {
             id,
             name: name.to_string(),
         }
     }
 
-    async fn reset_env(env: Environments) {
-        OrderStatus::<Cache>::stop_active_status_cache(&env).await;
+    async fn start_env(env: Environments) {
+        let _ = OrderStatus::<Cache>::set_status_cache(env, LifecycleState::Starting).await;
+        let _ = OrderStatus::<Cache>::set_status_cache(env, LifecycleState::Running).await;
     }
 
-    // Scenarios (unit responsibilities)
+    async fn stop_env(env: Environments) {
+        let _ = OrderStatus::<Cache>::set_status_cache(env, LifecycleState::Stopping).await;
 
-    // Verifies that reset clears cache state
+        let _ = OrderStatus::<Cache>::remove_statuses_cache(env)
+            .await
+            .expect("remove_statuses_cache should work in Stopping");
+
+        let _ = OrderStatus::<Cache>::set_status_cache(env, LifecycleState::Off).await;
+    }
+
+    // =========================
+    // Scenarios
+    // =========================
+
     async fn scenario_reset_env_clears_state(env: Environments) {
-        let models = vec![mock_model(1, "OPEN"), mock_model(2, "COMPLETED")];
+        start_env(env).await;
 
-        OrderStatus::<Cache>::set_active_status_cache(&env, models).await;
-        reset_env(env).await;
-
-        let cache = OrderStatus::<Cache>::get_active_status_cache(&env)
-            .await
-            .expect("environment entry should exist");
-
-        let status = OrderStatus::<Cache>::get_active_status_status_cache(&env).await;
-
-        assert!(cache.is_empty());
-        assert!(!status);
-    }
-
-    // Verifies bulk insertion and initialization flag
-    async fn scenario_set_active_status_cache(env: Environments) {
-        reset_env(env).await;
-
-        let models = vec![
-            mock_model(1, "OPEN"),
-            mock_model(2, "COMPLETED"),
-            mock_model(3, "ABORTED"),
-        ];
-
-        OrderStatus::<Cache>::set_active_status_cache(&env, models).await;
-
-        let cache = OrderStatus::<Cache>::get_active_status_cache(&env)
-            .await
-            .expect("cache should exist");
-
-        let status_flag = OrderStatus::<Cache>::get_active_status_status_cache(&env).await;
-
-        assert_eq!(cache.len(), 3);
-        assert!(cache.contains_key(&Status::Open));
-        assert!(cache.contains_key(&Status::Completed));
-        assert!(cache.contains_key(&Status::Aborted));
-        assert!(status_flag);
-
-        reset_env(env).await;
-    }
-
-    // Verifies single status retrieval
-    async fn scenario_get_active_status(env: Environments) {
-        reset_env(env).await;
-
-        let model = mock_model(10, "COMPLETED");
-        OrderStatus::<Cache>::set_active_status_cache(&env, vec![model]).await;
-
-        let cached = OrderStatus::<Cache>::get_active_status(&env, &Status::Completed).await;
-
-        assert_eq!(cached, Some(10));
-
-        reset_env(env).await;
-    }
-
-    // Verifies overwrite behavior (models are cleared before insert)
-    async fn scenario_overwrite_active_status_cache(env: Environments) {
-        reset_env(env).await;
-
-        let first = vec![mock_model(1, "OPEN"), mock_model(2, "COMPLETED")];
-
-        OrderStatus::<Cache>::set_active_status_cache(&env, first).await;
-
-        let second = vec![mock_model(3, "ABORTED")];
-
-        OrderStatus::<Cache>::set_active_status_cache(&env, second).await;
-
-        let cache = OrderStatus::<Cache>::get_active_status_cache(&env)
+        OrderStatus::<Cache>::set_statuses_cache(env, vec![mock_status(1, "OPEN")])
             .await
             .unwrap();
 
-        assert_eq!(cache.len(), 1);
-        assert!(cache.contains_key(&Status::Aborted));
-        assert!(!cache.contains_key(&Status::Open));
-        assert!(!cache.contains_key(&Status::Completed));
+        let _ = OrderStatus::<Cache>::set_status_cache(env, LifecycleState::Stopping).await;
 
-        reset_env(env).await;
+        let removed = OrderStatus::<Cache>::remove_statuses_cache(env)
+            .await
+            .unwrap();
+
+        assert_eq!(removed.len(), 1);
+
+        let cache = OrderStatus::<Cache>::get_status_cache(env).await.unwrap();
+        assert!(cache.models.is_empty());
+
+        let _ = OrderStatus::<Cache>::set_status_cache(env, LifecycleState::Off).await;
+
+        let state = OrderStatus::<Cache>::get_cache_state(env).await;
+        assert_eq!(state, LifecycleState::Off);
     }
 
-    // Verifies initialized flag behavior
-    async fn scenario_get_active_status_status_cache(env: Environments) {
-        reset_env(env).await;
+    async fn scenario_set_status_cache(env: Environments) {
+        start_env(env).await;
 
-        let initial = OrderStatus::<Cache>::get_active_status_status_cache(&env).await;
-        assert!(!initial);
+        OrderStatus::<Cache>::set_statuses_cache(
+            env,
+            vec![
+                mock_status(1, "OPEN"),
+                mock_status(2, "COMPLETED"),
+                mock_status(3, "ABORTED"),
+            ],
+        )
+        .await
+        .unwrap();
 
-        let models = vec![mock_model(1, "OPEN")];
-        OrderStatus::<Cache>::set_active_status_cache(&env, models).await;
+        let cache = OrderStatus::<Cache>::get_status_cache(env).await.unwrap();
 
-        let status = OrderStatus::<Cache>::get_active_status_status_cache(&env).await;
-        assert!(status);
+        assert_eq!(cache.models.len(), 3);
+        assert!(cache.models.contains_key(&1));
+        assert!(cache.models.contains_key(&2));
+        assert!(cache.models.contains_key(&3));
 
-        reset_env(env).await;
+        stop_env(env).await;
     }
+
+    async fn scenario_get_status_by_enum(env: Environments) {
+        start_env(env).await;
+
+        OrderStatus::<Cache>::set_statuses_cache(env, vec![mock_status(10, "COMPLETED")])
+            .await
+            .unwrap();
+
+        let cached = OrderStatus::<Cache>::get_status_by_enum(env, Status::Completed)
+            .await
+            .unwrap();
+
+        assert_eq!(cached.id, 10);
+
+        stop_env(env).await;
+    }
+
+    async fn scenario_upsert_status(env: Environments) {
+        start_env(env).await;
+
+        let status = mock_status(20, "OPEN");
+
+        OrderStatus::<Cache>::upsert_status_cache(env, status.clone())
+            .await
+            .unwrap();
+
+        let cached = OrderStatus::<Cache>::get_status_by_enum(env, Status::Open)
+            .await
+            .unwrap();
+
+        assert_eq!(cached, status);
+
+        stop_env(env).await;
+    }
+
+    async fn scenario_remove_single_status(env: Environments) {
+        start_env(env).await;
+
+        OrderStatus::<Cache>::upsert_status_cache(env, mock_status(30, "ABORTED"))
+            .await
+            .unwrap();
+
+        let removed = OrderStatus::<Cache>::remove_status_cache(env, 30)
+            .await
+            .unwrap();
+
+        assert!(removed.is_some());
+
+        let missing = OrderStatus::<Cache>::get_status_by_enum(env, Status::Aborted).await;
+        assert!(missing.is_none());
+
+        stop_env(env).await;
+    }
+
+    async fn scenario_get_cache_state(env: Environments) {
+        assert_eq!(
+            OrderStatus::<Cache>::get_cache_state(env).await,
+            LifecycleState::Off
+        );
+
+        start_env(env).await;
+
+        assert_eq!(
+            OrderStatus::<Cache>::get_cache_state(env).await,
+            LifecycleState::Running
+        );
+
+        stop_env(env).await;
+    }
+
+    async fn scenario_cannot_mutate_when_not_running(env: Environments) {
+        let result =
+            OrderStatus::<Cache>::set_statuses_cache(env, vec![mock_status(1, "OPEN")]).await;
+
+        assert!(result.is_err());
+    }
+
+    async fn scenario_cannot_remove_all_when_running(env: Environments) {
+        start_env(env).await;
+
+        let result = OrderStatus::<Cache>::remove_statuses_cache(env).await;
+        assert!(result.is_err());
+
+        stop_env(env).await;
+    }
+
+    // =========================
+    // Entry point
+    // =========================
 
     #[tokio::test]
-    async fn order_status_cache_unit_responsibilities() {
+    async fn cache_order_status_unit_responsibilities() {
         let env = Environments::DEV;
 
         scenario_reset_env_clears_state(env).await;
-        scenario_set_active_status_cache(env).await;
-        scenario_get_active_status(env).await;
-        scenario_overwrite_active_status_cache(env).await;
-        scenario_get_active_status_status_cache(env).await;
-
-        reset_env(env).await;
+        scenario_set_status_cache(env).await;
+        scenario_get_status_by_enum(env).await;
+        scenario_upsert_status(env).await;
+        scenario_remove_single_status(env).await;
+        scenario_get_cache_state(env).await;
+        scenario_cannot_mutate_when_not_running(env).await;
+        scenario_cannot_remove_all_when_running(env).await;
     }
 }

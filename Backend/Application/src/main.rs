@@ -1,4 +1,4 @@
-use application::{cache::engines::ACTIVE_SHUTDOWN, handler::Engines, startup::run};
+use application::{handler::Engines, startup::run};
 use models::enums::LifecycleState;
 
 #[actix_web::main]
@@ -11,17 +11,13 @@ async fn main() -> std::io::Result<()> {
         .await
         .unwrap();
 
+    let cancel_token = Engines::default().get_engine_token();
+
     tokio::select! {
         _ = server => {
             dbg!("Server exited unexpectedly");
         }
-        _ = ACTIVE_SHUTDOWN.notified() => {
-
-            Engines::new(LifecycleState::Stopping)
-                .set_engine_status()
-                .await
-                .unwrap();
-
+        _ = cancel_token.cancelled() => {
             dbg!("Shutdown requested");
             handle.stop(true).await;
         }

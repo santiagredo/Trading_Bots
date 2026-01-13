@@ -20,7 +20,7 @@ static ACTIVE_METRICS: Lazy<Arc<RwLock<CacheEnvironments>>> =
     Lazy::new(|| Arc::new(RwLock::new(CacheEnvironments::default())));
 
 impl Metrics<Cache> {
-    pub async fn get_active_metrics_cache(self) -> Option<CriticalMetric> {
+    pub async fn get_metrics_cache(self) -> Option<CriticalMetric> {
         let environment = self.environment;
 
         let active_metrics = ACTIVE_METRICS.read().await;
@@ -30,7 +30,7 @@ impl Metrics<Cache> {
         Some(env_map.model.clone())
     }
 
-    pub async fn set_active_execution_metrics_cache(
+    pub async fn set_execution_metrics_cache(
         environment: Environments,
         elapsed: Duration,
         success: bool,
@@ -61,7 +61,7 @@ impl Metrics<Cache> {
         }
     }
 
-    pub async fn set_active_posting_metrics_cache(environment: Environments, increase: bool) {
+    pub async fn set_posting_metrics_cache(environment: Environments, increase: bool) {
         let mut active_metrics = ACTIVE_METRICS.write().await;
 
         let env_map = active_metrics
@@ -71,9 +71,9 @@ impl Metrics<Cache> {
 
         if increase {
             env_map.model.active_posting += 1;
-            env_map.model.max_active_posting = env_map
+            env_map.model.max_posting = env_map
                 .model
-                .max_active_posting
+                .max_posting
                 .max(env_map.model.active_posting);
 
             return;
@@ -84,7 +84,7 @@ impl Metrics<Cache> {
         }
     }
 
-    pub async fn set_active_skipped_metrics_cache(environment: Environments) {
+    pub async fn set_skipped_metrics_cache(environment: Environments) {
         let mut active_metrics = ACTIVE_METRICS.write().await;
 
         let env_map = active_metrics
@@ -103,7 +103,7 @@ impl Metrics<Cache> {
         Some(env_map.model.clone())
     }
 
-    pub async fn stop_active_metrics_cache(self) {
+    pub async fn stop_metrics_cache(self) {
         let environment = self.environment;
 
         let mut active_metrics = ACTIVE_METRICS.write().await;
@@ -131,7 +131,7 @@ mod tests {
         Metrics::default()
             .with_env(env)
             .next_phase()
-            .stop_active_metrics_cache()
+            .stop_metrics_cache()
             .await;
         Metrics::<Cache>::persist_metrics_cache(env).await;
     }
@@ -142,7 +142,7 @@ mod tests {
     async fn scenario_initial_metrics_is_none(env: Environments) {
         reset_env(env).await;
 
-        let result = metrics(env).get_active_metrics_cache().await;
+        let result = metrics(env).get_metrics_cache().await;
 
         assert!(result.is_none());
     }
@@ -151,11 +151,11 @@ mod tests {
     async fn scenario_success_execution_updates_metrics(env: Environments) {
         reset_env(env).await;
 
-        Metrics::<Cache>::set_active_execution_metrics_cache(env, Duration::from_millis(100), true)
+        Metrics::<Cache>::set_execution_metrics_cache(env, Duration::from_millis(100), true)
             .await;
 
         let metric = metrics(env)
-            .get_active_metrics_cache()
+            .get_metrics_cache()
             .await
             .expect("metrics should exist");
 
@@ -171,11 +171,11 @@ mod tests {
     async fn scenario_error_execution_updates_metrics(env: Environments) {
         reset_env(env).await;
 
-        Metrics::<Cache>::set_active_execution_metrics_cache(env, Duration::from_millis(50), false)
+        Metrics::<Cache>::set_execution_metrics_cache(env, Duration::from_millis(50), false)
             .await;
 
         let metric = metrics(env)
-            .get_active_metrics_cache()
+            .get_metrics_cache()
             .await
             .expect("metrics should exist");
 
@@ -189,39 +189,39 @@ mod tests {
     async fn scenario_max_execution_time_is_tracked(env: Environments) {
         reset_env(env).await;
 
-        Metrics::<Cache>::set_active_execution_metrics_cache(env, Duration::from_millis(100), true)
+        Metrics::<Cache>::set_execution_metrics_cache(env, Duration::from_millis(100), true)
             .await;
 
-        Metrics::<Cache>::set_active_execution_metrics_cache(env, Duration::from_millis(50), true)
+        Metrics::<Cache>::set_execution_metrics_cache(env, Duration::from_millis(50), true)
             .await;
 
-        let metric = metrics(env).get_active_metrics_cache().await.unwrap();
+        let metric = metrics(env).get_metrics_cache().await.unwrap();
 
         assert_eq!(metric.max_execution_time, Duration::from_millis(100));
     }
 
     // Verifies posting metrics
-    async fn scenario_active_posting_metrics(env: Environments) {
+    async fn scenario_posting_metrics(env: Environments) {
         reset_env(env).await;
 
-        Metrics::<Cache>::set_active_posting_metrics_cache(env, true).await;
-        Metrics::<Cache>::set_active_posting_metrics_cache(env, true).await;
-        Metrics::<Cache>::set_active_posting_metrics_cache(env, false).await;
+        Metrics::<Cache>::set_posting_metrics_cache(env, true).await;
+        Metrics::<Cache>::set_posting_metrics_cache(env, true).await;
+        Metrics::<Cache>::set_posting_metrics_cache(env, false).await;
 
-        let metric = metrics(env).get_active_metrics_cache().await.unwrap();
+        let metric = metrics(env).get_metrics_cache().await.unwrap();
 
         assert_eq!(metric.active_posting, 1);
-        assert_eq!(metric.max_active_posting, 2);
+        assert_eq!(metric.max_posting, 2);
     }
 
     // Verifies skipped metrics
     async fn scenario_skipped_metrics(env: Environments) {
         reset_env(env).await;
 
-        Metrics::<Cache>::set_active_skipped_metrics_cache(env).await;
-        Metrics::<Cache>::set_active_skipped_metrics_cache(env).await;
+        Metrics::<Cache>::set_skipped_metrics_cache(env).await;
+        Metrics::<Cache>::set_skipped_metrics_cache(env).await;
 
-        let metric = metrics(env).get_active_metrics_cache().await.unwrap();
+        let metric = metrics(env).get_metrics_cache().await.unwrap();
 
         assert_eq!(metric.skipped_due_to_lock, 2);
     }
@@ -230,12 +230,12 @@ mod tests {
     async fn scenario_stop_resets_metrics(env: Environments) {
         reset_env(env).await;
 
-        Metrics::<Cache>::set_active_execution_metrics_cache(env, Duration::from_millis(10), true)
+        Metrics::<Cache>::set_execution_metrics_cache(env, Duration::from_millis(10), true)
             .await;
 
-        metrics(env).stop_active_metrics_cache().await;
+        metrics(env).stop_metrics_cache().await;
 
-        let metric = metrics(env).get_active_metrics_cache().await.unwrap();
+        let metric = metrics(env).get_metrics_cache().await.unwrap();
 
         assert_eq!(metric, CriticalMetric::default());
     }
@@ -244,13 +244,13 @@ mod tests {
     async fn scenario_persist_metrics(env: Environments) {
         reset_env(env).await;
 
-        Metrics::<Cache>::set_active_execution_metrics_cache(env, Duration::from_millis(10), true)
+        Metrics::<Cache>::set_execution_metrics_cache(env, Duration::from_millis(10), true)
             .await;
 
         let persisted = Metrics::<Cache>::persist_metrics_cache(env).await;
         assert!(persisted.is_some());
 
-        let after = metrics(env).get_active_metrics_cache().await;
+        let after = metrics(env).get_metrics_cache().await;
         assert!(after.is_none());
     }
 
@@ -262,7 +262,7 @@ mod tests {
         scenario_success_execution_updates_metrics(env).await;
         scenario_error_execution_updates_metrics(env).await;
         scenario_max_execution_time_is_tracked(env).await;
-        scenario_active_posting_metrics(env).await;
+        scenario_posting_metrics(env).await;
         scenario_skipped_metrics(env).await;
         scenario_stop_resets_metrics(env).await;
         scenario_persist_metrics(env).await;

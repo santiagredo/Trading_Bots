@@ -1,12 +1,12 @@
 use actix_web::{post, web, HttpResponse, Responder};
 use models::structs::Environments;
 
-use crate::{handler::UserCommands, utils::error_response};
+use crate::handler::UserCommands;
 
 #[post("/{env}/start")]
 pub async fn start_everything(env: web::Path<Environments>) -> impl Responder {
     match UserCommands::start_everything(env.into_inner()).await {
-        Err(err) => error_response(err),
+        Err(err) => HttpResponse::InternalServerError().json(err),
         Ok(_) => HttpResponse::Ok().finish(),
     }
 }
@@ -14,7 +14,7 @@ pub async fn start_everything(env: web::Path<Environments>) -> impl Responder {
 #[post("/{env}/stop")]
 pub async fn stop_everything(env: web::Path<Environments>) -> impl Responder {
     match UserCommands::stop_everything(env.into_inner()).await {
-        Err(err) => error_response(err),
+        Err(err) => HttpResponse::InternalServerError().json(err),
         Ok(_) => HttpResponse::Ok().finish(),
     }
 }
@@ -22,7 +22,7 @@ pub async fn stop_everything(env: web::Path<Environments>) -> impl Responder {
 #[post("/{env}/restart")]
 pub async fn restart_everything(env: web::Path<Environments>) -> impl Responder {
     match UserCommands::restart_everything(env.into_inner()).await {
-        Err(err) => error_response(err),
+        Err(err) => HttpResponse::InternalServerError().json(err),
         Ok(_) => HttpResponse::Ok().finish(),
     }
 }

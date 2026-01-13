@@ -1,10 +1,12 @@
-use std::{collections::HashMap, marker::PhantomData};
+use std::marker::PhantomData;
 
 use models::{
     entities::assets::Model,
-    structs::{AssetRequest, CacheAsset, Environments},
+    enums::LifecycleState,
+    structs::{AssetRequest, CacheAssets, Environments},
 };
 use sea_orm::prelude::Decimal;
+use tokio_util::sync::CancellationToken;
 
 use crate::utils::{Response, Types};
 
@@ -105,34 +107,46 @@ impl Assets {
     }
 
     // cache
-    pub async fn get_active_assets(self) -> Option<HashMap<i32, CacheAsset>> {
-        self.next_phase().get_active_assets_core().await
+    pub async fn get_assets(self) -> Option<CacheAssets> {
+        self.next_phase().get_assets_core().await
     }
 
-    pub async fn get_active_asset(self) -> Option<CacheAsset> {
-        self.next_phase().get_active_asset_core().await
+    pub async fn get_asset(self) -> Option<Model> {
+        self.next_phase().get_asset_core().await
     }
 
-    pub async fn set_active_asset(self, is_remove: bool) -> Model {
-        self.next_phase().set_active_asset_core(is_remove).await
+    pub async fn get_assets_state(self) -> LifecycleState {
+        self.next_phase().get_assets_state_core().await
     }
 
-    pub async fn set_active_asset_value(
+    pub async fn upsert_asset(self) -> Result<(), String> {
+        self.next_phase().upsert_asset_core().await
+    }
+
+    pub async fn remove_asset(self) -> Result<Option<Model>, String> {
+        self.next_phase().remove_asset_core().await
+    }
+
+    pub async fn set_asset_value(
         self,
         value: Decimal,
         is_locked: bool,
         is_sell: bool,
     ) -> Result<(Model, Decimal), Response> {
         self.next_phase()
-            .set_active_asset_value_core(value, is_locked, is_sell)
+            .set_asset_value_core(value, is_locked, is_sell)
             .await
     }
 
-    pub async fn start_active_assets(self) -> Result<(), Response> {
-        self.next_phase().start_active_assets_core().await
+    pub async fn start_assets(self, token: &CancellationToken) -> Result<(), Response> {
+        self.next_phase().start_assets_core(&token).await
     }
 
-    pub async fn stop_active_assets(self) -> Result<(), Response> {
-        self.next_phase().stop_active_assets_core().await
+    pub async fn stop_assets(self) -> Result<(), Response> {
+        self.next_phase().stop_assets_core().await
+    }
+
+    pub async fn reset_assets(self) -> Result<(), Response> {
+        self.next_phase().reset_assets_core().await
     }
 }

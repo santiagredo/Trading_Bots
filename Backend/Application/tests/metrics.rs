@@ -9,26 +9,26 @@ async fn full_metrics_cache_flow_should_work_correctly() {
     let metrics = Metrics::default().with_env(env).next_phase::<Cache>();
 
     // Initial state
-    assert!(metrics.get_active_metrics_cache().await.is_none());
+    assert!(metrics.get_metrics_cache().await.is_none());
 
     // Successful execution
-    Metrics::<Cache>::set_active_execution_metrics_cache(env, Duration::from_millis(100), true)
+    Metrics::<Cache>::set_execution_metrics_cache(env, Duration::from_millis(100), true)
         .await;
 
     // Error execution
-    Metrics::<Cache>::set_active_execution_metrics_cache(env, Duration::from_millis(200), false)
+    Metrics::<Cache>::set_execution_metrics_cache(env, Duration::from_millis(200), false)
         .await;
 
     // Posting activity
-    Metrics::<Cache>::set_active_posting_metrics_cache(env, true).await;
-    Metrics::<Cache>::set_active_posting_metrics_cache(env, false).await;
+    Metrics::<Cache>::set_posting_metrics_cache(env, true).await;
+    Metrics::<Cache>::set_posting_metrics_cache(env, false).await;
 
     // Skipped
-    Metrics::<Cache>::set_active_skipped_metrics_cache(env).await;
+    Metrics::<Cache>::set_skipped_metrics_cache(env).await;
 
     let metrics = Metrics::default().with_env(env).next_phase::<Cache>();
 
-    let metric = metrics.get_active_metrics_cache().await.unwrap();
+    let metric = metrics.get_metrics_cache().await.unwrap();
 
     assert_eq!(metric.executions_ok, 1);
     assert_eq!(metric.executions_err, 1);
@@ -44,5 +44,5 @@ async fn full_metrics_cache_flow_should_work_correctly() {
     let metrics = Metrics::default().with_env(env).next_phase::<Cache>();
 
     // Cache cleared
-    assert!(metrics.get_active_metrics_cache().await.is_none());
+    assert!(metrics.get_metrics_cache().await.is_none());
 }

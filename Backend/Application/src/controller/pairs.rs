@@ -66,13 +66,13 @@ pub async fn update_pair(
 
 // cache
 #[get("/{env}/memory")]
-pub async fn get_active_pair(
+pub async fn get_pair(
     env: web::Path<Environments>,
     pair: web::Query<PairRequest>,
 ) -> impl Responder {
     match Pairs::new(pair.into_inner())
         .with_env(env.into_inner())
-        .get_active_pair()
+        .get_pair()
         .await
     {
         Some(val) => HttpResponse::Ok().json(val),
@@ -81,35 +81,13 @@ pub async fn get_active_pair(
 }
 
 #[get("/{env}/memory/all")]
-pub async fn get_active_pairs(env: web::Path<Environments>) -> impl Responder {
+pub async fn get_pairs(env: web::Path<Environments>) -> impl Responder {
     match Pairs::default()
         .with_env(env.into_inner())
-        .get_active_pairs()
+        .get_pairs()
         .await
     {
         Some(val) => HttpResponse::Ok().json(val),
         None => HttpResponse::NotFound().finish(),
     }
-}
-
-#[post("/{env}/memory/start")]
-pub async fn start_active_pairs(env: web::Path<Environments>) -> impl Responder {
-    match Pairs::default()
-        .with_env(env.into_inner())
-        .start_active_pairs()
-        .await
-    {
-        Ok(val) => HttpResponse::Ok().json(val),
-        Err(err) => error_response(err),
-    }
-}
-
-#[post("/{env}/memory/stop")]
-pub async fn stop_active_pairs(env: web::Path<Environments>) -> impl Responder {
-    Pairs::default()
-        .with_env(env.into_inner())
-        .stop_active_pairs()
-        .await;
-
-    HttpResponse::Ok().finish()
 }

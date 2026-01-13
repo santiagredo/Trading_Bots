@@ -12,7 +12,7 @@ static ACTIVE_SENDERS: Lazy<Arc<RwLock<Option<Senders>>>> =
     Lazy::new(|| Arc::new(RwLock::new(None)));
 
 impl Senders<Cache> {
-    pub async fn set_active_senders_cache() -> Senders {
+    pub async fn set_senders_cache() -> Senders {
         let mut senders_lock = ACTIVE_SENDERS.write().await;
 
         let (command_sender, _) = Senders::set_commands_brodcast();
@@ -31,14 +31,14 @@ impl Senders<Cache> {
         senders
     }
 
-    pub async fn get_active_senders_cache() -> Senders {
+    pub async fn get_senders_cache() -> Senders {
         let senders_lock = ACTIVE_SENDERS.read().await;
 
         if let Some(senders) = senders_lock.as_ref() {
             senders.clone()
         } else {
             drop(senders_lock);
-            Self::set_active_senders_cache().await
+            Self::set_senders_cache().await
         }
     }
 }

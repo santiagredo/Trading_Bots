@@ -1,27 +1,30 @@
-use std::sync::Arc;
-
 use once_cell::sync::Lazy;
-use tokio::{sync::RwLock, task::AbortHandle};
+use std::sync::Arc;
+use tokio::sync::RwLock;
+use tokio_util::sync::CancellationToken;
 
 use crate::{handler::WebsocketStreams, utils::Cache};
 
-static BINANCE_WS_ABORT_HANDLE: Lazy<Arc<RwLock<Option<AbortHandle>>>> =
+static WEBSOCKET_CANCELLATION_TOKEN: Lazy<Arc<RwLock<Option<CancellationToken>>>> =
     Lazy::new(|| Arc::new(RwLock::new(None)));
 
 impl WebsocketStreams<Cache> {
-    pub async fn set_binance_ws_abort_handle_cache(abort_handle: AbortHandle) {
-        let mut memory_abort_handle_lock = BINANCE_WS_ABORT_HANDLE.write().await;
+    pub async fn set_cancellation_token_cache(token: CancellationToken) {
+        let mut token_lock = WEBSOCKET_CANCELLATION_TOKEN.write().await;
 
-        if let Some(memory_abort_handle) = memory_abort_handle_lock.as_ref() {
-            memory_abort_handle.abort();
+        // Cancel previous token if exists
+        if let Some(prev_token) = token_lock.as_ref() {
+            prev_token.cancel();
         }
 
-        *memory_abort_handle_lock = Some(abort_handle);
+        *token_lock = Some(token);
     }
 
-    pub async fn get_binance_ws_abort_handle_cache() -> Option<AbortHandle> {
-        let memory_abort_handle_lock = BINANCE_WS_ABORT_HANDLE.read().await;
+    pub async fn get_cancellation_token_cache() -> Option<CancellationToken> {
+        WEBSOCKET_CANCELLATION_TOKEN.read().await.clone()
+    }
 
-        memory_abort_handle_lock.clone()
+    pub async fn remove_cancellation_token_cache() -> Option<CancellationToken> {
+        WEBSOCKET_CANCELLATION_TOKEN.write().await.take()
     }
 }

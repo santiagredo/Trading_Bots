@@ -1,10 +1,14 @@
-use std::fmt::Debug;
+use std::fmt::{self, Debug, Display};
 
 use chrono::{Local, NaiveDateTime};
 use serde::{Deserialize, Serialize};
 
-pub trait FiniteStateMachine: Copy + Sized + Debug {
+pub trait FiniteStateMachine: Copy + Sized + Debug + PartialEq {
     fn can_transition(self, next: Self) -> bool;
+
+    fn allows(self, required: Self) -> bool {
+        self == required
+    }
 }
 
 pub fn apply_fsm_transition<T: FiniteStateMachine>(current: &mut T, next: T) -> Result<(), String> {
@@ -48,6 +52,19 @@ pub enum LifecycleState {
 impl Default for LifecycleState {
     fn default() -> Self {
         LifecycleState::Off
+    }
+}
+
+impl Display for LifecycleState {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let s = match self {
+            LifecycleState::Off => "off",
+            LifecycleState::Starting => "starting",
+            LifecycleState::Running => "running",
+            LifecycleState::Stopping => "stopping",
+        };
+
+        write!(f, "{s}")
     }
 }
 

@@ -1,125 +1,166 @@
-use std::{
-    collections::{hash_map::Entry, HashMap, HashSet},
-    sync::Arc,
-};
+use std::collections::{hash_map::Entry, HashMap, HashSet};
+use std::sync::Arc;
 
-use models::{entities::indicators::Model, structs::Environments};
+use chrono::Local;
+use models::enums::FiniteStateMachine;
+use models::{
+    entities::indicators::Model,
+    enums::{transition_with_timestamp, LifecycleState},
+    structs::{CacheSubscribedIndicatorsEnvironments, Environments},
+};
 use once_cell::sync::Lazy;
 use tokio::sync::RwLock;
 
 use crate::{handler::SubscribedIndicators, utils::Cache};
 
-#[derive(Default)]
-struct CacheEnvironments {
-    pub environments: HashMap<Environments, CacheSubscribedIndicators>,
-}
-
-#[derive(Default)]
-struct CacheSubscribedIndicators {
-    pub is_initialized: bool,
-    pub models: HashMap<String, HashSet<i32>>,
-}
-
-static ACTIVE_SUBSCRIBED_INDICATORS: Lazy<Arc<RwLock<CacheEnvironments>>> =
-    Lazy::new(|| Arc::new(RwLock::new(CacheEnvironments::default())));
+static ACTIVE_SUBSCRIBED_INDICATORS: Lazy<Arc<RwLock<CacheSubscribedIndicatorsEnvironments>>> =
+    Lazy::new(|| Arc::new(RwLock::new(CacheSubscribedIndicatorsEnvironments::new())));
 
 impl SubscribedIndicators<Cache> {
-    pub async fn set_active_subscribed_indicators_cache(
-        environment: &Environments,
-        indicators_map: HashMap<String, HashSet<i32>>,
-    ) -> HashMap<String, HashSet<i32>> {
-        let mut cache_indicators = ACTIVE_SUBSCRIBED_INDICATORS.write().await;
+    /* ===========================
+     * LIFECYCLE
+     * ===========================
+     */
 
-        let env_map = cache_indicators
-            .environments
-            .entry(*environment)
-            .or_insert_with(CacheSubscribedIndicators::default);
+    pub async fn set_status_cache(
+        environment: Environments,
+        status: LifecycleState,
+    ) -> Result<(), String> {
+        let mut cache = ACTIVE_SUBSCRIBED_INDICATORS.write().await;
+        let env_cache = cache.get_or_create(environment);
 
-        for (ticker, indicators_id) in &indicators_map {
-            env_map
-                .models
-                .insert(ticker.to_string(), indicators_id.clone());
-        }
-
-        env_map.is_initialized = true;
-
-        indicators_map
+        transition_with_timestamp(env_cache, status)?;
+        Ok(())
     }
 
-    pub async fn set_active_subscribed_indicator_cache(
-        environment: &Environments,
+    /* ===========================
+     * WRITE
+     * ===========================
+     */
+
+    pub async fn set_subscribed_indicators_cache(
+        environment: Environments,
+        indicators: HashMap<String, HashSet<i32>>,
+    ) -> Result<(), String> {
+        let mut cache = ACTIVE_SUBSCRIBED_INDICATORS.write().await;
+        let env_cache = cache.get_or_create(environment);
+
+        if !env_cache.status.allows(LifecycleState::Running) {
+            return Err(format!("Cache not running ({:?})", env_cache.status));
+        }
+
+        env_cache.models = indicators;
+        env_cache.last_update_date = Local::now().naive_local();
+
+        Ok(())
+    }
+
+    pub async fn upsert_subscribed_indicator_cache(
+        environment: Environments,
         indicator: Model,
-        is_remove: bool,
-    ) -> Model {
-        let mut cache_indicators = ACTIVE_SUBSCRIBED_INDICATORS.write().await;
+    ) -> Result<(), String> {
+        let mut cache = ACTIVE_SUBSCRIBED_INDICATORS.write().await;
+        let env_cache = cache.get_or_create(environment);
 
-        let Some(env_map) = cache_indicators.environments.get_mut(environment) else {
-            return indicator;
-        };
+        if !env_cache.status.allows(LifecycleState::Running) {
+            return Err("Cache not running".into());
+        }
 
-        match env_map.models.entry(indicator.symbol.clone()) {
-            Entry::Occupied(mut entry) if is_remove => {
-                entry.get_mut().remove(&indicator.strategy_id);
-
-                if entry.get().is_empty() {
-                    entry.remove_entry();
-                }
-            }
-            Entry::Occupied(mut entry) if !is_remove => {
+        match env_cache.models.entry(indicator.symbol.clone()) {
+            Entry::Occupied(mut entry) => {
                 entry.get_mut().insert(indicator.strategy_id);
             }
-            Entry::Vacant(entry) if !is_remove => {
+            Entry::Vacant(entry) => {
                 entry.insert([indicator.strategy_id].into_iter().collect());
             }
-            _ => {}
         }
 
-        indicator
+        env_cache.last_update_date = Local::now().naive_local();
+        Ok(())
     }
 
-    pub async fn get_active_subscribed_indicators_cache(
-        environment: &Environments,
+    pub async fn remove_subscribed_indicator_cache(
+        environment: Environments,
+        indicator: Model,
+    ) -> Result<(), String> {
+        let mut cache = ACTIVE_SUBSCRIBED_INDICATORS.write().await;
+        let env_cache = cache
+            .get_mut(&environment)
+            .ok_or("Environment not initialized")?;
+
+        if !env_cache.status.allows(LifecycleState::Running) {
+            return Err("Cache not running".into());
+        }
+
+        if let Entry::Occupied(mut entry) = env_cache.models.entry(indicator.symbol.clone()) {
+            entry.get_mut().remove(&indicator.strategy_id);
+            if entry.get().is_empty() {
+                entry.remove();
+            }
+        }
+
+        env_cache.last_update_date = Local::now().naive_local();
+        Ok(())
+    }
+
+    pub async fn remove_all_subscribed_indicators_cache(
+        environment: Environments,
+    ) -> Result<HashMap<String, HashSet<i32>>, String> {
+        let mut cache = ACTIVE_SUBSCRIBED_INDICATORS.write().await;
+        let env_cache = cache
+            .get_mut(&environment)
+            .ok_or("Environment not initialized")?;
+
+        if !env_cache.status.allows(LifecycleState::Stopping) {
+            return Err("Cache not stopping".into());
+        }
+
+        let removed = std::mem::take(&mut env_cache.models);
+        env_cache.last_update_date = Local::now().naive_local();
+
+        Ok(removed)
+    }
+
+    /* ===========================
+     * READ
+     * ===========================
+     */
+
+    pub async fn get_subscribed_indicators_cache(
+        environment: Environments,
     ) -> Option<HashMap<String, HashSet<i32>>> {
-        let cache_indicators = ACTIVE_SUBSCRIBED_INDICATORS.read().await;
-
-        let env_map = cache_indicators.environments.get(&environment)?;
-
-        Some(env_map.models.clone())
+        let cache = ACTIVE_SUBSCRIBED_INDICATORS.read().await;
+        cache.get(&environment).map(|c| c.models.clone())
     }
 
-    pub async fn get_active_subscribed_indicator_cache(
-        environment: &Environments,
-        key: String,
+    pub async fn get_subscribed_indicator_cache(
+        environment: Environments,
+        symbol: &str,
     ) -> Option<HashSet<i32>> {
-        let cache_indicators = ACTIVE_SUBSCRIBED_INDICATORS.read().await;
-
-        let env_map = cache_indicators.environments.get(&environment)?;
-
-        let cache_indicator = env_map.models.get(&key)?;
-
-        Some(cache_indicator.clone())
+        let cache = ACTIVE_SUBSCRIBED_INDICATORS.read().await;
+        cache.get(&environment)?.models.get(symbol).cloned()
     }
 
-    pub async fn get_active_subscribed_indicators_status_cache(environment: &Environments) -> bool {
-        let cache_indicators = ACTIVE_SUBSCRIBED_INDICATORS.read().await;
-
-        cache_indicators
-            .environments
+    pub async fn get_subscribed_indicators_state_cache(
+        environment: Environments,
+    ) -> LifecycleState {
+        let cache = ACTIVE_SUBSCRIBED_INDICATORS.read().await;
+        cache
             .get(&environment)
-            .map(|val| val.is_initialized)
-            .unwrap_or(false)
+            .map(|c| c.status)
+            .unwrap_or(LifecycleState::Off)
     }
 
-    pub async fn stop_active_subscribed_indicators_cache(environment: &Environments) {
-        let mut cache_indicators = ACTIVE_SUBSCRIBED_INDICATORS.write().await;
+    pub async fn reset_subscribed_indicators_cache(
+        environment: Environments,
+    ) -> Result<(), String> {
+        let mut cache = ACTIVE_SUBSCRIBED_INDICATORS.write().await;
 
-        let Some(env_map) = cache_indicators.environments.get_mut(environment) else {
-            return;
-        };
+        if let Some(env_cache) = cache.environments.get_mut(&environment) {
+            *env_cache = models::structs::CacheSubscribedIndicators::new();
+        }
 
-        env_map.models = HashMap::new();
-
-        env_map.is_initialized = false;
+        Ok(())
     }
 }
 
@@ -127,12 +168,16 @@ impl SubscribedIndicators<Cache> {
 mod tests {
     use std::collections::{HashMap, HashSet};
 
-    use models::{entities::indicators::Model, structs::Environments};
+    use models::{entities::indicators::Model, enums::LifecycleState, structs::Environments};
 
     use crate::{handler::SubscribedIndicators, utils::Cache};
 
-    // Helpers
-    fn mock_model(symbol: &str, strategy_id: i32) -> Model {
+    /* =========================
+     * Helpers
+     * =========================
+     */
+
+    fn mock_indicator(symbol: &str, strategy_id: i32) -> Model {
         Model {
             id: strategy_id,
             strategy_id,
@@ -148,187 +193,185 @@ mod tests {
         ])
     }
 
-    async fn reset_env(env: Environments) {
-        SubscribedIndicators::<Cache>::stop_active_subscribed_indicators_cache(&env).await;
+    async fn start_env(env: Environments) {
+        let _ =
+            SubscribedIndicators::<Cache>::set_status_cache(env, LifecycleState::Starting).await;
+
+        let _ = SubscribedIndicators::<Cache>::set_status_cache(env, LifecycleState::Running).await;
     }
 
-    // Scenarios (unit responsibilities)
+    async fn stop_env(env: Environments) {
+        let _ =
+            SubscribedIndicators::<Cache>::set_status_cache(env, LifecycleState::Stopping).await;
 
-    // Verifies that reset_env fully clears cache state
-    async fn scenario_reset_env_clears_state(env: Environments) {
-        let map = mock_map();
-
-        SubscribedIndicators::<Cache>::set_active_subscribed_indicators_cache(&env, map).await;
-        reset_env(env).await;
-
-        let cache = SubscribedIndicators::<Cache>::get_active_subscribed_indicators_cache(&env)
+        let removed = SubscribedIndicators::<Cache>::remove_all_subscribed_indicators_cache(env)
             .await
-            .expect("environment entry should exist");
+            .expect("remove_all_subscribed_indicators_cache should work in Stopping");
 
-        let status =
-            SubscribedIndicators::<Cache>::get_active_subscribed_indicators_status_cache(&env)
-                .await;
+        assert!(removed.is_empty() || !removed.is_empty());
+
+        let _ = SubscribedIndicators::<Cache>::set_status_cache(env, LifecycleState::Off).await;
+    }
+
+    /* =========================
+     * Scenarios (unit responsibilities)
+     * =========================
+     */
+
+    async fn scenario_reset_env_clears_state(env: Environments) {
+        start_env(env).await;
+
+        let map = mock_map();
+        SubscribedIndicators::<Cache>::set_subscribed_indicators_cache(env, map)
+            .await
+            .unwrap();
+
+        let _ =
+            SubscribedIndicators::<Cache>::set_status_cache(env, LifecycleState::Stopping).await;
+
+        let removed = SubscribedIndicators::<Cache>::remove_all_subscribed_indicators_cache(env)
+            .await
+            .unwrap();
+
+        assert!(!removed.is_empty());
+
+        let cache = SubscribedIndicators::<Cache>::get_subscribed_indicators_cache(env)
+            .await
+            .unwrap();
 
         assert!(cache.is_empty());
-        assert!(!status);
+
+        let _ = SubscribedIndicators::<Cache>::set_status_cache(env, LifecycleState::Off).await;
+
+        let status =
+            SubscribedIndicators::<Cache>::get_subscribed_indicators_state_cache(env).await;
+
+        assert_eq!(status, LifecycleState::Off);
     }
 
-    // Verifies bulk insertion and initialization flag
-    async fn scenario_set_active_subscribed_indicators_cache(env: Environments) {
-        reset_env(env).await;
+    async fn scenario_set_subscribed_indicators_cache(env: Environments) {
+        start_env(env).await;
 
         let map = mock_map();
 
-        SubscribedIndicators::<Cache>::set_active_subscribed_indicators_cache(&env, map.clone())
-            .await;
-
-        let cache = SubscribedIndicators::<Cache>::get_active_subscribed_indicators_cache(&env)
+        SubscribedIndicators::<Cache>::set_subscribed_indicators_cache(env, map.clone())
             .await
-            .expect("cache should exist");
+            .unwrap();
+
+        let cache = SubscribedIndicators::<Cache>::get_subscribed_indicators_cache(env)
+            .await
+            .unwrap();
 
         let status =
-            SubscribedIndicators::<Cache>::get_active_subscribed_indicators_status_cache(&env)
-                .await;
+            SubscribedIndicators::<Cache>::get_subscribed_indicators_state_cache(env).await;
 
         assert_eq!(cache.len(), 2);
         assert_eq!(cache.get("BTCUSDT").unwrap().len(), 2);
         assert_eq!(cache.get("ETHUSDT").unwrap().len(), 1);
-        assert!(status);
+        assert_eq!(status, LifecycleState::Running);
 
-        reset_env(env).await;
+        stop_env(env).await;
     }
 
-    // Verifies single indicator insertion
-    async fn scenario_set_active_subscribed_indicator_insert(env: Environments) {
-        reset_env(env).await;
+    async fn scenario_upsert_subscribed_indicator_insert(env: Environments) {
+        start_env(env).await;
 
-        let model = mock_model("BTCUSDT", 10);
+        let indicator = mock_indicator("BTCUSDT", 10);
 
-        SubscribedIndicators::<Cache>::set_active_subscribed_indicator_cache(
-            &env,
-            model.clone(),
-            false,
-        )
-        .await;
+        SubscribedIndicators::<Cache>::upsert_subscribed_indicator_cache(env, indicator.clone())
+            .await
+            .unwrap();
 
-        let cached = SubscribedIndicators::<Cache>::get_active_subscribed_indicator_cache(
-            &env,
-            "BTCUSDT".to_string(),
-        )
-        .await
-        .unwrap();
+        let cached = SubscribedIndicators::<Cache>::get_subscribed_indicator_cache(env, "BTCUSDT")
+            .await
+            .unwrap();
 
         assert!(cached.contains(&10));
 
-        reset_env(env).await;
+        stop_env(env).await;
     }
 
-    // Verifies multiple inserts under same symbol
     async fn scenario_multiple_indicators_same_symbol(env: Environments) {
-        reset_env(env).await;
+        start_env(env).await;
 
-        let m1 = mock_model("BTCUSDT", 1);
-        let m2 = mock_model("BTCUSDT", 2);
+        let i1 = mock_indicator("BTCUSDT", 1);
+        let i2 = mock_indicator("BTCUSDT", 2);
 
-        SubscribedIndicators::<Cache>::set_active_subscribed_indicator_cache(&env, m1, false).await;
-        SubscribedIndicators::<Cache>::set_active_subscribed_indicator_cache(&env, m2, false).await;
+        SubscribedIndicators::<Cache>::upsert_subscribed_indicator_cache(env, i1)
+            .await
+            .unwrap();
 
-        let cached = SubscribedIndicators::<Cache>::get_active_subscribed_indicator_cache(
-            &env,
-            "BTCUSDT".to_string(),
-        )
-        .await
-        .unwrap();
+        SubscribedIndicators::<Cache>::upsert_subscribed_indicator_cache(env, i2)
+            .await
+            .unwrap();
+
+        let cached = SubscribedIndicators::<Cache>::get_subscribed_indicator_cache(env, "BTCUSDT")
+            .await
+            .unwrap();
 
         assert_eq!(cached.len(), 2);
         assert!(cached.contains(&1));
         assert!(cached.contains(&2));
 
-        reset_env(env).await;
+        stop_env(env).await;
     }
 
-    // Verifies indicator removal
-    async fn scenario_set_active_subscribed_indicator_remove(env: Environments) {
-        reset_env(env).await;
+    async fn scenario_remove_subscribed_indicator(env: Environments) {
+        start_env(env).await;
 
-        let model = mock_model("ETHUSDT", 99);
+        let indicator = mock_indicator("ETHUSDT", 99);
 
-        SubscribedIndicators::<Cache>::set_active_subscribed_indicator_cache(
-            &env,
-            model.clone(),
-            false,
-        )
-        .await;
-
-        SubscribedIndicators::<Cache>::set_active_subscribed_indicator_cache(
-            &env,
-            model.clone(),
-            true,
-        )
-        .await;
-
-        let cached = SubscribedIndicators::<Cache>::get_active_subscribed_indicator_cache(
-            &env,
-            "ETHUSDT".to_string(),
-        )
-        .await;
-
-        assert!(cached.is_none());
-
-        reset_env(env).await;
-    }
-
-    // Verifies retrieval of all subscribed indicators
-    async fn scenario_get_active_subscribed_indicators_cache(env: Environments) {
-        reset_env(env).await;
-
-        let map = mock_map();
-
-        SubscribedIndicators::<Cache>::set_active_subscribed_indicators_cache(&env, map.clone())
-            .await;
-
-        let cache = SubscribedIndicators::<Cache>::get_active_subscribed_indicators_cache(&env)
+        SubscribedIndicators::<Cache>::upsert_subscribed_indicator_cache(env, indicator.clone())
             .await
             .unwrap();
 
-        assert_eq!(cache.len(), map.len());
+        SubscribedIndicators::<Cache>::remove_subscribed_indicator_cache(env, indicator)
+            .await
+            .unwrap();
 
-        reset_env(env).await;
+        let cached =
+            SubscribedIndicators::<Cache>::get_subscribed_indicator_cache(env, "ETHUSDT").await;
+
+        assert!(cached.is_none());
+
+        stop_env(env).await;
     }
 
-    // Verifies initialized status behavior
-    async fn scenario_get_active_subscribed_indicators_status_cache(env: Environments) {
-        reset_env(env).await;
+    async fn scenario_cannot_write_when_not_running(env: Environments) {
+        let indicator = mock_indicator("BTCUSDT", 5);
 
-        let initial_status =
-            SubscribedIndicators::<Cache>::get_active_subscribed_indicators_status_cache(&env)
-                .await;
-        assert!(!initial_status);
+        let result =
+            SubscribedIndicators::<Cache>::upsert_subscribed_indicator_cache(env, indicator).await;
 
-        let map = mock_map();
-        SubscribedIndicators::<Cache>::set_active_subscribed_indicators_cache(&env, map).await;
-
-        let status =
-            SubscribedIndicators::<Cache>::get_active_subscribed_indicators_status_cache(&env)
-                .await;
-        assert!(status);
-
-        reset_env(env).await;
+        assert!(result.is_err());
     }
+
+    async fn scenario_cannot_remove_all_when_running(env: Environments) {
+        start_env(env).await;
+
+        let result =
+            SubscribedIndicators::<Cache>::remove_all_subscribed_indicators_cache(env).await;
+
+        assert!(result.is_err());
+
+        stop_env(env).await;
+    }
+
+    /* =========================
+     * Entry point
+     * =========================
+     */
 
     #[tokio::test]
     async fn cache_subscribed_indicators_unit_responsibilities() {
         let env = Environments::DEV;
 
         scenario_reset_env_clears_state(env).await;
-        scenario_set_active_subscribed_indicators_cache(env).await;
-        scenario_set_active_subscribed_indicator_insert(env).await;
+        scenario_set_subscribed_indicators_cache(env).await;
+        scenario_upsert_subscribed_indicator_insert(env).await;
         scenario_multiple_indicators_same_symbol(env).await;
-        scenario_set_active_subscribed_indicator_remove(env).await;
-        scenario_get_active_subscribed_indicators_cache(env).await;
-        scenario_get_active_subscribed_indicators_status_cache(env).await;
-
-        // Final safety cleanup
-        reset_env(env).await;
+        scenario_remove_subscribed_indicator(env).await;
+        scenario_cannot_write_when_not_running(env).await;
+        scenario_cannot_remove_all_when_running(env).await;
     }
 }

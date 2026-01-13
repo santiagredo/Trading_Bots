@@ -1,14 +1,15 @@
 use models::{enums::transition_with_timestamp, structs::CacheEngine};
 use once_cell::sync::Lazy;
 use std::sync::Arc;
-use tokio::sync::{Notify, RwLock};
+use tokio::sync::RwLock;
+use tokio_util::sync::CancellationToken;
 
 use crate::{handler::Engines, utils::Cache};
 
 static ACTIVE_ENGINE: Lazy<Arc<RwLock<CacheEngine>>> =
     Lazy::new(|| Arc::new(RwLock::new(CacheEngine::new())));
 
-pub static ACTIVE_SHUTDOWN: Lazy<Notify> = Lazy::new(Notify::new);
+pub static ACTIVE_ENGINE_TOKEN: Lazy<CancellationToken> = Lazy::new(CancellationToken::new);
 
 impl Engines<Cache> {
     pub async fn set_engine_status_cache(self) -> Result<CacheEngine, String> {
@@ -25,7 +26,11 @@ impl Engines<Cache> {
         active_engine.clone()
     }
 
-    pub async fn stop_engine_cache(self) {
-        ACTIVE_SHUTDOWN.notify_one();
+    pub fn get_engine_token_cache(self) -> CancellationToken {
+        ACTIVE_ENGINE_TOKEN.clone()
+    }
+
+    pub fn stop_engine_cache(self) {
+        ACTIVE_ENGINE_TOKEN.cancel();
     }
 }

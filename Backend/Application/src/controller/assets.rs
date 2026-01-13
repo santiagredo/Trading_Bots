@@ -81,13 +81,13 @@ pub async fn delete_asset(
 
 // cache
 #[get("/{env}/memory")]
-pub async fn get_active_asset(
+pub async fn get_asset(
     env: web::Path<Environments>,
     asset: web::Query<AssetRequest>,
 ) -> impl Responder {
     match Assets::new(asset.into_inner())
         .with_env(env.into_inner())
-        .get_active_asset()
+        .get_asset()
         .await
     {
         Some(val) => HttpResponse::Ok().json(val),
@@ -96,37 +96,13 @@ pub async fn get_active_asset(
 }
 
 #[get("/{env}/memory/all")]
-pub async fn get_active_assets(env: web::Path<Environments>) -> impl Responder {
+pub async fn get_assets(env: web::Path<Environments>) -> impl Responder {
     match Assets::default()
         .with_env(env.into_inner())
-        .get_active_assets()
+        .get_assets()
         .await
     {
         Some(val) => HttpResponse::Ok().json(val),
         None => HttpResponse::NotFound().finish(),
-    }
-}
-
-#[post("/{env}/memory/start")]
-pub async fn start_active_assets(env: web::Path<Environments>) -> impl Responder {
-    match Assets::default()
-        .with_env(env.into_inner())
-        .start_active_assets()
-        .await
-    {
-        Ok(val) => HttpResponse::Ok().json(val),
-        Err(err) => error_response(err),
-    }
-}
-
-#[post("/{env}/memory/stop")]
-pub async fn stop_active_assets(env: web::Path<Environments>) -> impl Responder {
-    match Assets::default()
-        .with_env(env.into_inner())
-        .stop_active_assets()
-        .await
-    {
-        Ok(val) => HttpResponse::Ok().json(val),
-        Err(err) => error_response(err),
     }
 }

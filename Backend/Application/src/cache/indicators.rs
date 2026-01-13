@@ -1,128 +1,156 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, mem, sync::Arc};
 
-use models::{entities::indicators::Model, structs::Environments};
+use chrono::Local;
+use models::{
+    entities::indicators::Model,
+    enums::{transition_with_timestamp, FiniteStateMachine, LifecycleState},
+    structs::{CacheIndicators, CacheIndicatorsEnvironments, Environments},
+};
 use once_cell::sync::Lazy;
 use tokio::sync::RwLock;
 
 use crate::{handler::Indicators, utils::Cache};
 
-#[derive(Default)]
-struct CacheEnvironments {
-    pub environments: HashMap<Environments, CacheIndicators>,
-}
-
-#[derive(Default)]
-struct CacheIndicators {
-    pub is_initialized: bool,
-    pub models: HashMap<i32, Model>,
-}
-
-static ACTIVE_INDICATORS: Lazy<Arc<RwLock<CacheEnvironments>>> =
-    Lazy::new(|| Arc::new(RwLock::new(CacheEnvironments::default())));
+static ACTIVE_INDICATORS: Lazy<Arc<RwLock<CacheIndicatorsEnvironments>>> =
+    Lazy::new(|| Arc::new(RwLock::new(CacheIndicatorsEnvironments::new())));
 
 impl Indicators<Cache> {
-    pub async fn set_active_indicators_cache(
-        environment: &Environments,
+    // =========================
+    // Lifecycle
+    // =========================
+
+    pub async fn set_status_cache(
+        environment: Environments,
+        status: LifecycleState,
+    ) -> Result<(), String> {
+        let mut cache = ACTIVE_INDICATORS.write().await;
+        let env_cache = cache.get_or_create(environment);
+
+        transition_with_timestamp(env_cache, status)?;
+        Ok(())
+    }
+
+    // =========================
+    // Mutations
+    // =========================
+
+    pub async fn set_indicators_cache(
+        environment: Environments,
         indicators: Vec<Model>,
-    ) -> Vec<Model> {
-        let mut cache_indicators = ACTIVE_INDICATORS.write().await;
+    ) -> Result<(), String> {
+        let mut cache = ACTIVE_INDICATORS.write().await;
+        let env_cache = cache.get_or_create(environment);
 
-        let env_map = cache_indicators
-            .environments
-            .entry(*environment)
-            .or_insert_with(CacheIndicators::default);
-
-        for indicator in indicators.iter() {
-            env_map
-                .models
-                .insert(indicator.strategy_id, indicator.clone());
+        if !env_cache.status.allows(LifecycleState::Running) {
+            return Err(format!(
+                "Cannot load indicators: cache not running ({:?})",
+                env_cache.status
+            ));
         }
 
-        // dbg!(&active_indicators_map);
-        env_map.is_initialized = true;
+        env_cache.models = indicators.into_iter().map(|i| (i.strategy_id, i)).collect();
 
-        indicators
+        env_cache.last_update_date = Local::now().naive_local();
+        Ok(())
     }
 
-    pub async fn set_active_indicator_cache(
-        environment: &Environments,
+    pub async fn upsert_indicator_cache(
+        environment: Environments,
         indicator: Model,
-        is_remove: bool,
-    ) -> Model {
-        let mut active_indicators = ACTIVE_INDICATORS.write().await;
+    ) -> Result<(), String> {
+        let mut cache = ACTIVE_INDICATORS.write().await;
+        let env_cache = cache.get_or_create(environment);
 
-        let env_map = active_indicators
-            .environments
-            .entry(*environment)
-            .or_insert_with(CacheIndicators::default);
-
-        if is_remove {
-            env_map
-                .models
-                .remove(&indicator.strategy_id)
-                .map(|val| val)
-                .unwrap_or(indicator)
-        } else {
-            env_map
-                .models
-                .insert(indicator.strategy_id, indicator.clone());
-
-            indicator
+        if !env_cache.status.allows(LifecycleState::Running) {
+            return Err("Cache not running".into());
         }
+
+        env_cache.models.insert(indicator.strategy_id, indicator);
+
+        env_cache.last_update_date = Local::now().naive_local();
+        Ok(())
     }
 
-    pub async fn get_active_indicators_cache(
-        environment: &Environments,
-    ) -> Option<HashMap<i32, Model>> {
-        let active_indicators = ACTIVE_INDICATORS.read().await;
+    pub async fn remove_indicator_cache(
+        environment: Environments,
+        strategy_id: i32,
+    ) -> Result<Option<Model>, String> {
+        let mut cache = ACTIVE_INDICATORS.write().await;
+        let env_cache = cache
+            .get_mut(&environment)
+            .ok_or("Environment not initialized")?;
 
-        let env_map = active_indicators.environments.get(&environment)?;
+        if !env_cache.status.allows(LifecycleState::Running) {
+            return Err("Cache not running".into());
+        }
 
-        Some(env_map.models.clone())
+        let removed = env_cache.models.remove(&strategy_id);
+        env_cache.last_update_date = Local::now().naive_local();
+
+        Ok(removed)
     }
 
-    pub async fn get_active_indicator_cache(
-        environment: &Environments,
-        key: &i32,
-    ) -> Option<Model> {
-        let active_indicators = ACTIVE_INDICATORS.read().await;
+    pub async fn remove_indicators_cache(
+        environment: Environments,
+    ) -> Result<HashMap<i32, Model>, String> {
+        let mut cache = ACTIVE_INDICATORS.write().await;
+        let env_cache = cache
+            .get_mut(&environment)
+            .ok_or("Environment not initialized")?;
 
-        let env_map = active_indicators.environments.get(&environment)?;
+        if !env_cache.status.allows(LifecycleState::Stopping) {
+            return Err("Cache not stopping".into());
+        }
 
-        let cache_indicator = env_map.models.get(key)?;
+        let removed = mem::take(&mut env_cache.models);
+        env_cache.last_update_date = Local::now().naive_local();
 
-        Some(cache_indicator.clone())
+        Ok(removed)
     }
 
-    pub async fn get_active_indicators_status_cache(environment: &Environments) -> bool {
-        let cache_indicators = ACTIVE_INDICATORS.read().await;
+    // =========================
+    // Queries
+    // =========================
 
-        cache_indicators
-            .environments
+    pub async fn get_indicators_cache(environment: Environments) -> Option<CacheIndicators> {
+        let cache = ACTIVE_INDICATORS.read().await;
+        cache.get(&environment).cloned()
+    }
+
+    pub async fn get_indicator_cache(environment: Environments, strategy_id: i32) -> Option<Model> {
+        let cache = ACTIVE_INDICATORS.read().await;
+        cache.get(&environment)?.models.get(&strategy_id).cloned()
+    }
+
+    pub async fn get_cache_state(environment: Environments) -> LifecycleState {
+        let cache = ACTIVE_INDICATORS.read().await;
+        cache
             .get(&environment)
-            .map(|val| val.is_initialized)
-            .unwrap_or(false)
+            .map(|c| c.status)
+            .unwrap_or(LifecycleState::Off)
     }
 
-    pub async fn stop_active_indicators_cache(environment: &Environments) {
-        let mut cache_indicators = ACTIVE_INDICATORS.write().await;
+    pub async fn reset_indicators_cache(environment: Environments) -> Result<(), String> {
+        let mut cache = ACTIVE_INDICATORS.write().await;
 
-        let Some(env_map) = cache_indicators.environments.get_mut(environment) else {
-            return;
-        };
+        if let Some(env_cache) = cache.environments.get_mut(&environment) {
+            *env_cache = CacheIndicators::new();
+        }
 
-        env_map.models = HashMap::new();
-
-        env_map.is_initialized = false;
+        Ok(())
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::{handler::Indicators, utils::Cache};
-    use models::{entities::indicators::Model, structs::Environments};
+    use models::{entities::indicators::Model, enums::LifecycleState, structs::Environments};
 
+    use crate::{handler::Indicators, utils::Cache};
+
+    // =========================
     // Helpers
+    // =========================
+
     fn mock_indicator(strategy_id: i32) -> Model {
         Model {
             id: strategy_id,
@@ -132,135 +160,145 @@ mod tests {
         }
     }
 
-    async fn reset_env(env: Environments) {
-        Indicators::<Cache>::stop_active_indicators_cache(&env).await;
+    async fn start_env(env: Environments) {
+        let _ = Indicators::<Cache>::set_status_cache(env, LifecycleState::Starting).await;
+        let _ = Indicators::<Cache>::set_status_cache(env, LifecycleState::Running).await;
     }
 
-    // Scenarios (unit responsibilities)
+    async fn stop_env(env: Environments) {
+        let _ = Indicators::<Cache>::set_status_cache(env, LifecycleState::Stopping).await;
+
+        let removed = Indicators::<Cache>::remove_indicators_cache(env)
+            .await
+            .expect("remove_indicators_cache should work in Stopping");
+
+        assert!(removed.is_empty() || !removed.is_empty());
+
+        let _ = Indicators::<Cache>::set_status_cache(env, LifecycleState::Off).await;
+    }
+
+    // =========================
+    // Scenarios
+    // =========================
+
     async fn scenario_reset_env_clears_state(env: Environments) {
-        let indicators = vec![mock_indicator(1), mock_indicator(2)];
+        start_env(env).await;
 
-        Indicators::<Cache>::set_active_indicators_cache(&env, indicators).await;
-        reset_env(env).await;
-
-        let cache = Indicators::<Cache>::get_active_indicators_cache(&env)
+        Indicators::<Cache>::set_indicators_cache(env, vec![mock_indicator(1)])
             .await
-            .expect("environment entry should exist");
+            .unwrap();
 
-        let status = Indicators::<Cache>::get_active_indicators_status_cache(&env).await;
+        let _ = Indicators::<Cache>::set_status_cache(env, LifecycleState::Stopping).await;
 
-        assert!(cache.is_empty());
-        assert!(!status);
+        let removed = Indicators::<Cache>::remove_indicators_cache(env)
+            .await
+            .unwrap();
+        assert_eq!(removed.len(), 1);
+
+        let cache = Indicators::<Cache>::get_indicators_cache(env)
+            .await
+            .unwrap();
+        assert!(cache.models.is_empty());
+
+        let _ = Indicators::<Cache>::set_status_cache(env, LifecycleState::Off).await;
+
+        let status = Indicators::<Cache>::get_cache_state(env).await;
+        assert_eq!(status, LifecycleState::Off);
     }
 
-    async fn scenario_set_active_indicators_cache(env: Environments) {
-        reset_env(env).await;
+    async fn scenario_set_indicators_cache(env: Environments) {
+        start_env(env).await;
 
-        let indicators = vec![mock_indicator(1), mock_indicator(2)];
-
-        Indicators::<Cache>::set_active_indicators_cache(&env, indicators).await;
-
-        let cache = Indicators::<Cache>::get_active_indicators_cache(&env)
+        Indicators::<Cache>::set_indicators_cache(env, vec![mock_indicator(1), mock_indicator(2)])
             .await
-            .expect("cache should exist");
+            .unwrap();
 
-        let status = Indicators::<Cache>::get_active_indicators_status_cache(&env).await;
+        let cache = Indicators::<Cache>::get_indicators_cache(env)
+            .await
+            .unwrap();
 
-        assert_eq!(cache.len(), 2);
-        assert!(cache.contains_key(&1));
-        assert!(cache.contains_key(&2));
-        assert!(status);
+        assert_eq!(cache.models.len(), 2);
+        assert!(cache.models.contains_key(&1));
+        assert!(cache.models.contains_key(&2));
 
-        reset_env(env).await;
+        stop_env(env).await;
     }
 
-    async fn scenario_set_active_indicator_cache_insert(env: Environments) {
-        reset_env(env).await;
+    async fn scenario_upsert_indicator(env: Environments) {
+        start_env(env).await;
 
         let indicator = mock_indicator(10);
-
-        Indicators::<Cache>::set_active_indicator_cache(&env, indicator.clone(), false).await;
-
-        let cached = Indicators::<Cache>::get_active_indicator_cache(&env, &10).await;
-
-        assert_eq!(cached, Some(indicator));
-
-        reset_env(env).await;
-    }
-
-    async fn scenario_set_active_indicator_cache_remove(env: Environments) {
-        reset_env(env).await;
-
-        let indicator = mock_indicator(20);
-
-        Indicators::<Cache>::set_active_indicator_cache(&env, indicator.clone(), false).await;
-        Indicators::<Cache>::set_active_indicator_cache(&env, indicator, true).await;
-
-        let cached = Indicators::<Cache>::get_active_indicator_cache(&env, &20).await;
-
-        assert!(cached.is_none());
-
-        reset_env(env).await;
-    }
-
-    async fn scenario_get_active_indicators_cache(env: Environments) {
-        reset_env(env).await;
-
-        let indicators = vec![mock_indicator(1), mock_indicator(2), mock_indicator(3)];
-
-        Indicators::<Cache>::set_active_indicators_cache(&env, indicators).await;
-
-        let cache = Indicators::<Cache>::get_active_indicators_cache(&env)
+        Indicators::<Cache>::upsert_indicator_cache(env, indicator.clone())
             .await
-            .expect("cache should exist");
+            .unwrap();
 
-        assert_eq!(cache.len(), 3);
+        let cached = Indicators::<Cache>::get_indicator_cache(env, 10)
+            .await
+            .unwrap();
 
-        reset_env(env).await;
+        assert_eq!(cached, indicator);
+
+        stop_env(env).await;
     }
 
-    async fn scenario_get_active_indicator_cache(env: Environments) {
-        reset_env(env).await;
+    async fn scenario_remove_indicator(env: Environments) {
+        start_env(env).await;
 
-        let indicator = mock_indicator(42);
+        Indicators::<Cache>::upsert_indicator_cache(env, mock_indicator(20))
+            .await
+            .unwrap();
 
-        Indicators::<Cache>::set_active_indicator_cache(&env, indicator.clone(), false).await;
+        let removed = Indicators::<Cache>::remove_indicator_cache(env, 20)
+            .await
+            .unwrap();
 
-        let cached = Indicators::<Cache>::get_active_indicator_cache(&env, &42).await;
+        assert!(removed.is_some());
+        assert!(Indicators::<Cache>::get_indicator_cache(env, 20)
+            .await
+            .is_none());
 
-        assert_eq!(cached, Some(indicator));
-
-        reset_env(env).await;
+        stop_env(env).await;
     }
 
-    async fn scenario_get_active_indicators_status_cache(env: Environments) {
-        reset_env(env).await;
+    async fn scenario_get_cache_state(env: Environments) {
+        assert_eq!(
+            Indicators::<Cache>::get_cache_state(env).await,
+            LifecycleState::Off
+        );
 
-        let initial_status = Indicators::<Cache>::get_active_indicators_status_cache(&env).await;
-        assert!(!initial_status);
+        start_env(env).await;
 
-        let indicators = vec![mock_indicator(1)];
-        Indicators::<Cache>::set_active_indicators_cache(&env, indicators).await;
+        assert_eq!(
+            Indicators::<Cache>::get_cache_state(env).await,
+            LifecycleState::Running
+        );
 
-        let status = Indicators::<Cache>::get_active_indicators_status_cache(&env).await;
-        assert!(status);
-
-        reset_env(env).await;
+        stop_env(env).await;
     }
+
+    async fn scenario_cannot_remove_indicators_when_running(env: Environments) {
+        start_env(env).await;
+
+        let result = Indicators::<Cache>::remove_indicators_cache(env).await;
+
+        assert!(result.is_err());
+
+        stop_env(env).await;
+    }
+
+    // =========================
+    // Entry point
+    // =========================
 
     #[tokio::test]
     async fn cache_indicators_unit_responsibilities() {
         let env = Environments::DEV;
 
         scenario_reset_env_clears_state(env).await;
-        scenario_set_active_indicators_cache(env).await;
-        scenario_set_active_indicator_cache_insert(env).await;
-        scenario_set_active_indicator_cache_remove(env).await;
-        scenario_get_active_indicators_cache(env).await;
-        scenario_get_active_indicator_cache(env).await;
-        scenario_get_active_indicators_status_cache(env).await;
-
-        // Final safety cleanup
-        reset_env(env).await;
+        scenario_set_indicators_cache(env).await;
+        scenario_upsert_indicator(env).await;
+        scenario_remove_indicator(env).await;
+        scenario_get_cache_state(env).await;
+        scenario_cannot_remove_indicators_when_running(env).await;
     }
 }

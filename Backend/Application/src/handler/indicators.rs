@@ -5,6 +5,7 @@ use models::{
         indicators::{self, Model},
         pairs,
     },
+    enums::LifecycleState,
     structs::{Environments, IndicatorRequest, Ticker},
 };
 
@@ -90,24 +91,32 @@ impl Indicators {
     }
 
     // cache
-    pub async fn get_active_indicators(self) -> Option<HashMap<i32, Model>> {
-        self.next_phase().get_active_indicators_core().await
+    pub async fn get_indicators(self) -> Option<HashMap<i32, Model>> {
+        self.next_phase().get_indicators_core().await
     }
 
-    pub async fn get_active_indicator(self) -> Option<Model> {
-        self.next_phase().get_active_indicator_core().await
+    pub async fn get_indicator(self) -> Option<Model> {
+        self.next_phase().get_indicator_core().await
     }
 
-    pub async fn start_active_indicators(self) -> Result<(), Response> {
-        self.next_phase().start_active_indicators_core().await
+    pub async fn get_indicators_state(self) -> LifecycleState {
+        self.next_phase().get_indicators_state_core().await
     }
 
-    pub async fn stop_active_indicators(self) {
-        self.next_phase().stop_active_indicators_core().await
+    pub async fn start_indicators(self) -> Result<(), Response> {
+        self.next_phase().start_indicators_core().await
+    }
+
+    pub async fn stop_indicators(self) -> Result<(), Response> {
+        self.next_phase().stop_indicators_core().await
+    }
+
+    pub async fn reset_indicators(self) -> Result<(), Response> {
+        self.next_phase().reset_indicators_core().await
     }
 
     // misc
-    pub fn evalute_active_indicators(
+    pub fn evalute_indicators(
         ticker: &Ticker,
         indicator: &indicators::Model,
         pair: &pairs::Model,

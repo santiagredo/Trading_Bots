@@ -1,10 +1,10 @@
 use application::{handler::Indicators, utils::Cache};
-use models::{entities::indicators::Model, structs::Environments};
+use models::{entities::indicators::Model, enums::LifecycleState, structs::Environments};
 
-fn mock_indicator(strategy_id: i32) -> Model {
+fn mock_indicator(id: i32) -> Model {
     Model {
-        id: strategy_id,
-        strategy_id,
+        id,
+        strategy_id: id,
         is_active: true,
         ..Default::default()
     }
@@ -14,36 +14,78 @@ fn mock_indicator(strategy_id: i32) -> Model {
 async fn full_indicators_cache_flow_should_work_correctly() {
     let env = Environments::DEV;
 
-    // Initial state
-    Indicators::<Cache>::stop_active_indicators_cache(&env).await;
-    assert!(!Indicators::<Cache>::get_active_indicators_status_cache(&env).await);
+    /* ===========================
+     * INITIAL STATE
+     * ===========================
+     */
 
-    // Load multiple indicators
+    let reset = Indicators::<Cache>::reset_indicators_cache(env).await;
+    assert!(reset.is_ok());
+
+    let off = Indicators::<Cache>::set_status_cache(env, LifecycleState::Off).await;
+    assert!(off.is_err());
+
+    let status = Indicators::<Cache>::get_cache_state(env).await;
+    assert_eq!(status, LifecycleState::Off);
+
+    let cache = Indicators::<Cache>::get_indicators_cache(env).await;
+    assert!(cache.is_some_and(|val| val.models.is_empty()));
+
+    /* ===========================
+     * LOAD MULTIPLE INDICATORS
+     * ===========================
+     */
+
+    let starting = Indicators::<Cache>::set_status_cache(env, LifecycleState::Starting).await;
+    assert!(starting.is_ok());
+
     let indicators = vec![mock_indicator(1), mock_indicator(2)];
-    Indicators::<Cache>::set_active_indicators_cache(&env, indicators).await;
 
-    let cache = Indicators::<Cache>::get_active_indicators_cache(&env)
+    let running = Indicators::<Cache>::set_status_cache(env, LifecycleState::Running).await;
+    assert!(running.is_ok());
+
+    Indicators::<Cache>::set_indicators_cache(env, indicators)
         .await
         .unwrap();
-    assert_eq!(cache.len(), 2);
 
-    // Insert individual indicator
+    let cache = Indicators::<Cache>::get_indicators_cache(env)
+        .await
+        .unwrap();
+    assert_eq!(cache.models.len(), 2);
+    assert_eq!(cache.status, LifecycleState::Running);
+
+    /* ===========================
+     * INSERT INDIVIDUAL INDICATOR
+     * ===========================
+     */
+
     let extra = mock_indicator(3);
-    Indicators::<Cache>::set_active_indicator_cache(&env, extra.clone(), false).await;
-
-    let single = Indicators::<Cache>::get_active_indicator_cache(&env, &3).await;
-    assert_eq!(single, Some(extra));
-
-    // Status is true
-    assert!(Indicators::<Cache>::get_active_indicators_status_cache(&env).await);
-
-    // Stop
-    Indicators::<Cache>::stop_active_indicators_cache(&env).await;
-
-    let final_cache = Indicators::<Cache>::get_active_indicators_cache(&env)
+    Indicators::<Cache>::upsert_indicator_cache(env, extra.clone())
         .await
         .unwrap();
 
-    assert!(final_cache.is_empty());
-    assert!(!Indicators::<Cache>::get_active_indicators_status_cache(&env).await);
+    let single = Indicators::<Cache>::get_indicator_cache(env, 3)
+        .await
+        .unwrap();
+    assert_eq!(single, extra);
+
+    /* ===========================
+     * STOP
+     * ===========================
+     */
+
+    Indicators::<Cache>::set_status_cache(env, LifecycleState::Stopping)
+        .await
+        .unwrap();
+
+    Indicators::<Cache>::remove_indicators_cache(env)
+        .await
+        .unwrap();
+
+    Indicators::<Cache>::set_status_cache(env, LifecycleState::Off)
+        .await
+        .unwrap();
+
+    let final_cache = Indicators::<Cache>::get_indicators_cache(env).await;
+    assert!(final_cache.is_some_and(|val| val.models.is_empty()));
 }

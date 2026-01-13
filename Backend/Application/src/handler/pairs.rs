@@ -2,6 +2,7 @@ use std::{collections::HashMap, marker::PhantomData};
 
 use models::{
     entities::pairs::Model,
+    enums::LifecycleState,
     structs::{Environments, PairRequest},
 };
 
@@ -217,23 +218,35 @@ impl Pairs {
     }
 
     // cache
-    pub async fn get_active_pairs(self) -> Option<HashMap<i32, Model>> {
-        self.next_phase().get_active_pairs_core().await
+    pub async fn get_pairs(self) -> Option<HashMap<i32, Model>> {
+        self.next_phase().get_pairs_core().await
     }
 
-    pub async fn get_active_pair(self) -> Option<Model> {
-        self.next_phase().get_active_pair_core().await
+    pub async fn get_pair(self) -> Option<Model> {
+        self.next_phase().get_pair_core().await
     }
 
-    pub async fn set_active_pair(self, is_remove: bool) -> Model {
-        self.next_phase().set_active_pair_core(is_remove).await
+    pub async fn get_pairs_state(self) -> LifecycleState {
+        self.next_phase().get_pairs_state_core().await
     }
 
-    pub async fn start_active_pairs(self) -> Result<(), Response> {
-        self.next_phase().start_active_pairs_core().await
+    pub async fn upsert_pair(self) -> Result<(), Response> {
+        self.next_phase().upsert_pair_core().await
     }
 
-    pub async fn stop_active_pairs(self) {
-        self.next_phase().stop_active_pairs_core().await
+    pub async fn remove_pair(self) -> Result<Option<Model>, Response> {
+        self.next_phase().remove_pair_core().await
+    }
+
+    pub async fn start_pairs(self) -> Result<(), Response> {
+        self.next_phase().start_pairs_core().await
+    }
+
+    pub async fn stop_pairs(self) -> Result<(), Response> {
+        self.next_phase().stop_pairs_core().await
+    }
+
+    pub async fn reset_pairs(self) -> Result<(), Response> {
+        self.next_phase().reset_pairs_core().await
     }
 }

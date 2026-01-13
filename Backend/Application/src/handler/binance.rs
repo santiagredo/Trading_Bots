@@ -55,9 +55,9 @@ impl Binance {
                 ticker: Some(asset.ticker.clone()),
             };
 
-            Assets::from_request(asset_request.clone())
+            let _ = Assets::from_request(asset_request.clone())
                 .with_env(environment)
-                .set_active_asset(false)
+                .upsert_asset()
                 .await;
 
             let stored_model = match Assets::from_request(asset_request)
@@ -288,10 +288,10 @@ impl Binance {
                 Ok(val) => val,
             };
 
-            Pairs::default()
+            let _ = Pairs::default()
                 .with_env(environment)
                 .from_model(model)
-                .set_active_pair(false)
+                .upsert_pair()
                 .await;
         }
     }

@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use models::{entities::pairs::Model, structs::AssetRequest};
+use models::{entities::pairs::Model, enums::LifecycleState, structs::AssetRequest};
 
 use crate::{
     handler::{Assets, Pairs, DBC},
@@ -8,29 +8,29 @@ use crate::{
 };
 
 impl Pairs<Core> {
-    // db
+    /* ===========================
+     * DB
+     * ===========================
+     */
+
     pub async fn insert_pair_core(self) -> Result<Model, Response> {
         let env = self.environment;
 
-        let base_asset_request = AssetRequest {
+        let base_asset = Assets::from_request(AssetRequest {
             id: self.model.base_asset_id.clone(),
             ..Default::default()
-        };
+        })
+        .with_env(env)
+        .select_asset()
+        .await?;
 
-        let base_asset = Assets::from_request(base_asset_request)
-            .with_env(env)
-            .select_asset()
-            .await?;
-
-        let quote_asset_request = AssetRequest {
+        let quote_asset = Assets::from_request(AssetRequest {
             id: self.model.quote_asset_id.clone(),
             ..Default::default()
-        };
-
-        let quote_asset = Assets::from_request(quote_asset_request)
-            .with_env(env)
-            .select_asset()
-            .await?;
+        })
+        .with_env(env)
+        .select_asset()
+        .await?;
 
         self.next_phase::<Logic>()
             .insert_pair_logic(base_asset, quote_asset)
@@ -59,25 +59,21 @@ impl Pairs<Core> {
     pub async fn update_pair_core(self) -> Result<Model, Response> {
         let env = self.environment;
 
-        let base_asset_request = AssetRequest {
+        let base_asset = Assets::from_request(AssetRequest {
             id: self.model.base_asset_id.clone(),
             ..Default::default()
-        };
+        })
+        .with_env(env)
+        .select_asset()
+        .await?;
 
-        let base_asset = Assets::from_request(base_asset_request)
-            .with_env(env)
-            .select_asset()
-            .await?;
-
-        let quote_asset_request = AssetRequest {
+        let quote_asset = Assets::from_request(AssetRequest {
             id: self.model.quote_asset_id.clone(),
             ..Default::default()
-        };
-
-        let quote_asset = Assets::from_request(quote_asset_request)
-            .with_env(env)
-            .select_asset()
-            .await?;
+        })
+        .with_env(env)
+        .select_asset()
+        .await?;
 
         self.next_phase::<Logic>()
             .update_pair_logic(base_asset, quote_asset)
@@ -87,43 +83,143 @@ impl Pairs<Core> {
             .await
     }
 
-    // cache
-    pub async fn get_active_pairs_core(self) -> Option<HashMap<i32, Model>> {
-        let env = self.environment;
-        Pairs::<Cache>::get_active_pairs_cache(&env).await
+    /* ===========================
+     * CACHE (READ)
+     * ===========================
+     */
+
+    pub async fn get_pairs_core(self) -> Option<HashMap<i32, Model>> {
+        Pairs::<Cache>::get_pairs_cache(self.environment)
+            .await
+            .map(|c| c.models)
     }
 
-    pub async fn get_active_pair_core(self) -> Option<Model> {
+    pub async fn get_pair_core(self) -> Option<Model> {
+        let id = self.model.id.unwrap_or_default();
+        Pairs::<Cache>::get_pair_cache(self.environment, id).await
+    }
+
+    pub async fn get_pairs_state_core(self) -> LifecycleState {
+        Pairs::<Cache>::get_cache_state(self.environment).await
+    }
+
+    /* ===========================
+     * CACHE (WRITE)
+     * ===========================
+     */
+
+    pub async fn upsert_pair_core(self) -> Result<(), Response> {
+        let env = self.environment;
+        let model = Pairs::into_model(self.model);
+
+        Pairs::<Cache>::upsert_pair_cache(env, model)
+            .await
+            .map_err(|err| Response {
+                code: 500,
+                message: err,
+            })
+    }
+
+    pub async fn remove_pair_core(self) -> Result<Option<Model>, Response> {
         let env = self.environment;
         let id = self.model.id.unwrap_or_default();
 
-        Pairs::<Cache>::get_active_pair_cache(&env, &id).await
+        Pairs::<Cache>::remove_pair_cache(env, id)
+            .await
+            .map_err(|err| Response {
+                code: 500,
+                message: err,
+            })
     }
 
-    pub async fn set_active_pair_core(self, is_remove: bool) -> Model {
-        let environment = self.environment;
-        let pair = Pairs::into_model(self.model);
+    /* ===========================
+     * START ACTIVE PAIRS
+     * ===========================
+     */
 
-        Pairs::<Cache>::set_active_pair_cache(&environment, pair, is_remove).await
-    }
-
-    pub async fn start_active_pairs_core(self) -> Result<(), Response> {
+    pub async fn start_pairs_core(self) -> Result<(), Response> {
         let env = self.environment;
 
-        if !Pairs::<Cache>::get_active_pairs_status_cache(&env).await {
-            let pairs_request = Pairs::default().with_env(env);
+        // STARTING
+        if let Err(err) = Pairs::<Cache>::set_status_cache(env, LifecycleState::Starting).await {
+            return Err(Response {
+                code: 500,
+                message: err,
+            });
+        }
 
-            let models = pairs_request.select_pairs().await?;
+        // Load active pairs from DB
+        let pairs_request = Pairs::default().with_env(env);
 
-            Pairs::<Cache>::set_active_pairs_cache(&env, models).await;
+        let pairs = match pairs_request.select_pairs().await {
+            Ok(p) => p,
+            Err(err) => {
+                let _ = Pairs::<Cache>::reset_pairs_cache(env).await;
+                return Err(err);
+            }
+        };
+
+        // RUNNING
+        if let Err(err) = Pairs::<Cache>::set_status_cache(env, LifecycleState::Running).await {
+            let _ = Pairs::<Cache>::reset_pairs_cache(env).await;
+            return Err(Response {
+                code: 500,
+                message: err,
+            });
+        }
+
+        // Populate cache
+        if let Err(err) = Pairs::<Cache>::set_pairs_cache(env, pairs).await {
+            let _ = Pairs::<Cache>::reset_pairs_cache(env).await;
+            return Err(Response {
+                code: 500,
+                message: err,
+            });
         }
 
         Ok(())
     }
 
-    pub async fn stop_active_pairs_core(self) {
+    /* ===========================
+     * STOP ACTIVE PAIRS
+     * ===========================
+     */
+
+    pub async fn stop_pairs_core(self) -> Result<(), Response> {
         let env = self.environment;
 
-        Pairs::<Cache>::stop_active_pairs_cache(&env).await
+        // STOPPING
+        if let Err(err) = Pairs::<Cache>::set_status_cache(env, LifecycleState::Stopping).await {
+            return Err(Response {
+                code: 500,
+                message: err,
+            });
+        }
+
+        // Remove pairs
+        if let Err(err) = Pairs::<Cache>::remove_pairs_cache(env).await {
+            let _ = Pairs::<Cache>::reset_pairs_cache(env).await;
+            return Err(Response {
+                code: 500,
+                message: err,
+            });
+        }
+
+        // OFF
+        if let Err(err) = Pairs::<Cache>::set_status_cache(env, LifecycleState::Off).await {
+            let _ = Pairs::<Cache>::reset_pairs_cache(env).await;
+            return Err(Response {
+                code: 500,
+                message: err,
+            });
+        }
+
+        Ok(())
+    }
+
+    pub async fn reset_pairs_core(self) -> Result<(), Response> {
+        Pairs::<Cache>::reset_pairs_cache(self.environment)
+            .await
+            .map_err(Response::server_error)
     }
 }

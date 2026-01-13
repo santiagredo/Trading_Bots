@@ -33,7 +33,7 @@ impl Senders {
         broadcast::channel::<(Environments, orders::Model)>(64)
     }
 
-    pub async fn get_active_senders() -> Senders {
-        Senders::<Core>::get_active_senders_core().await
+    pub async fn get_senders() -> Senders {
+        Senders::<Core>::get_senders_core().await
     }
 }

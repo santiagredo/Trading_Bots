@@ -36,20 +36,20 @@ pub async fn update_task(
 
 // cache
 #[get("/{env}/memory/all")]
-pub async fn select_active_tasks(env: web::Path<Environments>) -> impl Responder {
+pub async fn get_tasks(env: web::Path<Environments>) -> impl Responder {
     let result = Tasks::default()
         .with_env(env.into_inner())
-        .get_active_tasks()
+        .get_tasks()
         .await;
 
     HttpResponse::Ok().json(result)
 }
 
 #[post("/{env}/memory/start")]
-pub async fn start_active_tasks(env: web::Path<Environments>) -> impl Responder {
+pub async fn start_tasks_manually(env: web::Path<Environments>) -> impl Responder {
     match Tasks::default()
         .with_env(env.into_inner())
-        .start_active_tasks()
+        .start_tasks_manually()
         .await
     {
         Ok(val) => HttpResponse::Ok().json(val),
@@ -58,11 +58,13 @@ pub async fn start_active_tasks(env: web::Path<Environments>) -> impl Responder 
 }
 
 #[post("/{env}/memory/stop")]
-pub async fn stop_active_tasks(env: web::Path<Environments>) -> impl Responder {
-    Tasks::default()
+pub async fn stop_tasks(env: web::Path<Environments>) -> impl Responder {
+    match Tasks::default()
         .with_env(env.into_inner())
-        .stop_active_tasks()
-        .await;
-
-    HttpResponse::Ok().finish()
+        .stop_tasks()
+        .await
+    {
+        Err(err) => error_response(err),
+        Ok(_) => HttpResponse::Ok().finish(),
+    }
 }

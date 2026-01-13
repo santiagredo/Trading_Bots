@@ -1,21 +1,25 @@
-use std::collections::HashMap;
-
 use chrono::NaiveDateTime;
 use models::{
     entities::strategies::Model,
-    structs::{CacheStrategy, Environments, StrategyOverview},
+    enums::LifecycleState,
+    structs::{CacheStrategies, CacheStrategy, Environments, StrategyOverview},
 };
+use tokio_util::sync::CancellationToken;
 
 use crate::{
     guard::StrategiesExecutionGuard,
     handler::{
         Binance, Senders, Strategies, StrategiesOverview, SubscribedIndicators, Tickers, DBC,
     },
-    utils::{handle_user_err, Cache, Data, Logic, Response},
+    utils::{handle_user_err, Cache, Core, Data, Logic, Response},
 };
 
-impl<Core> Strategies<Core> {
-    // db
+impl Strategies<Core> {
+    /* ===========================
+     * DB
+     * ===========================
+     */
+
     pub async fn insert_strategy_core(self) -> Result<Model, Response> {
         let env = self.environment;
 
@@ -65,142 +69,220 @@ impl<Core> Strategies<Core> {
             .await
     }
 
-    // cache
-    pub async fn get_active_strategies_core(self) -> Option<HashMap<i32, CacheStrategy>> {
-        let env = self.environment;
-        Strategies::<Cache>::get_active_strategies_cache(&env).await
+    /* ===========================
+     * CACHE (READ)
+     * ===========================
+     */
+
+    pub async fn get_strategies_core(self) -> Option<CacheStrategies> {
+        Strategies::<Cache>::get_strategies_cache(self.environment).await
     }
 
-    pub async fn get_active_strategy_core(self) -> Option<CacheStrategy> {
-        let env = self.environment;
-        let id = self.model.id.unwrap_or_default();
-
-        Strategies::<Cache>::get_active_strategy_cache(&env, &id).await
-    }
-
-    pub async fn set_active_strategy_core(self, is_remove: bool, error: Option<String>) -> Model {
-        let env = self.environment;
-        let model = Strategies::into_model(self.model);
-
-        Strategies::<Cache>::set_active_strategy_cache(&env, model, is_remove, error).await
-    }
-
-    pub async fn set_active_strategy_posting_core(self, is_posting: bool) -> Result<(), String> {
-        let environment = self.environment;
-        let strategy = self.model.id.unwrap_or_default();
-
-        Strategies::<Cache>::set_active_strategy_posting_cache(environment, strategy, is_posting)
+    pub async fn get_strategy_core(self) -> Option<CacheStrategy> {
+        Strategies::<Cache>::get_strategy_cache(self.environment, self.model.id.unwrap_or_default())
             .await
     }
 
-    pub async fn stop_active_strategies_core(self) {
-        let env = self.environment;
-
-        Strategies::<Cache>::stop_active_strategies_cache(&env).await;
+    pub async fn get_strategies_state_core(self) -> LifecycleState {
+        Strategies::<Cache>::get_strategies_state_cache(self.environment).await
     }
 
-    pub async fn start_active_strategies_core(self) -> Result<(), Response> {
-        if !Strategies::<Cache>::get_active_strategies_status_cache(&self.environment).await {
-            let mut strategies_request = Strategies::default().with_env(self.environment);
-            strategies_request.model.is_active = Some(true);
+    /* ===========================
+     * CACHE (WRITE)
+     * ===========================
+     */
 
-            let active_strategies = strategies_request
-                .select_strategies()
-                .await
-                .unwrap_or_default();
+    pub async fn upsert_strategy_core(self) -> Result<(), String> {
+        let env = self.environment;
+        let model = Strategies::into_model(self.model);
 
-            Strategies::<Cache>::set_active_strategies_cache(&self.environment, active_strategies)
-                .await;
+        Strategies::<Cache>::upsert_strategy_cache(env, model).await
+    }
 
-            let senders = Senders::get_active_senders().await;
-            let mut tickers_receiver = senders.event_sender.subscribe();
+    pub async fn remove_strategy_core(self) -> Result<Option<CacheStrategy>, String> {
+        let env = self.environment;
+        let id = self.model.id.unwrap_or_default();
 
-            let join_handle = tokio::spawn(async move {
-                while let Ok(ticker) = tickers_receiver.recv().await {
-                    tokio::spawn(async move {
-                        let environment = self.environment;
+        Strategies::<Cache>::remove_strategy_cache(env, id).await
+    }
 
-                        let Some(ticker) = Tickers::get_ticker(ticker.symbol).await else {
-                            return;
+    pub async fn set_strategy_posting_core(self, is_posting: bool) -> Result<(), String> {
+        Strategies::<Cache>::set_strategy_posting_cache(
+            self.environment,
+            self.model.id.unwrap_or_default(),
+            is_posting,
+        )
+        .await
+    }
+
+    /* ===========================
+     * START ACTIVE STRATEGIES
+     * ===========================
+     */
+
+    pub async fn start_strategies_core(self, token: &CancellationToken) -> Result<(), Response> {
+        let env = self.environment;
+
+        // STARTING
+        Strategies::<Cache>::set_status_cache(env, LifecycleState::Starting)
+            .await
+            .map_err(|e| Response {
+                code: 500,
+                message: e,
+            })?;
+
+        // Load from DB
+        let models = match Strategies::default()
+            .with_env(env)
+            .select_strategies()
+            .await
+        {
+            Ok(m) => m.into_iter().filter(|s| s.is_active).collect(),
+            Err(err) => {
+                let _ = Strategies::<Cache>::reset_strategies_cache(env).await;
+                return Err(Response {
+                    code: 500,
+                    message: err.message,
+                });
+            }
+        };
+
+        // RUNNING
+        Strategies::<Cache>::set_status_cache(env, LifecycleState::Running)
+            .await
+            .map_err(|e| Response {
+                code: 500,
+                message: e,
+            })?;
+
+        // Set cache
+        Strategies::<Cache>::set_strategies_cache(env, models)
+            .await
+            .map_err(|e| Response {
+                code: 500,
+                message: e,
+            })?;
+
+        // Runtime
+        let senders = Senders::get_senders().await;
+        let mut tickers_receiver = senders.event_sender.subscribe();
+
+        let cancellation_token = token.clone();
+
+        tokio::spawn(async move {
+            loop {
+                tokio::select! {
+                    _ = cancellation_token.cancelled() => {
+                        break;
+                    }
+
+                    msg = tickers_receiver.recv() => {
+                        let Ok(ticker_evt) = msg else {
+                            continue;
                         };
 
-                        let subscribed_indicators_request =
-                            SubscribedIndicators::new(self.environment);
+                        let environment = env;
 
-                        // get strategies associated to ticker
-                        let subscribed_indicators = subscribed_indicators_request
-                            .get_active_subscribed_indicators()
+                        let Some(ticker) = Tickers::get_ticker(ticker_evt.symbol).await else {
+                            continue;
+                        };
+
+                        let subscribed = SubscribedIndicators::new(environment)
+                            .get_subscribed_indicators()
                             .await
-                            .and_then(|m| m.get(&ticker.symbol.to_ascii_uppercase()).cloned())
-                            .unwrap_or_default()
-                            .into_iter()
-                            .collect::<Vec<i32>>();
+                            .and_then(|m| m.get(&ticker.symbol).cloned())
+                            .unwrap_or_default();
 
-                        for strategy_id in subscribed_indicators {
-                            if let Some(strategy_overview) =
-                                StrategiesOverview::get_active_strategy_overview(
-                                    environment,
-                                    &strategy_id,
-                                    ticker.symbol.clone(),
-                                )
-                                .await
+                        for strategy_id in subscribed {
+                            if let Some(overview) = StrategiesOverview::get_strategy_overview(
+                                environment,
+                                &strategy_id,
+                                ticker.symbol.clone(),
+                            )
+                            .await
                             {
-                                Self::evalute_active_strategies_core(
-                                    strategy_overview,
-                                    environment,
-                                )
-                                .await;
+                                Self::evaluate_strategy(overview, environment).await;
                             }
                         }
-                    });
+                    }
                 }
-            });
-
-            Strategies::<Cache>::set_active_strategies_join_handle_cache(
-                &self.environment,
-                join_handle,
-            )
-            .await;
-        }
+            }
+        });
 
         Ok(())
     }
 
-    async fn evalute_active_strategies_core(
-        strategy_overview: StrategyOverview,
-        environment: Environments,
-    ) {
-        let mut execution_guard = StrategiesExecutionGuard::new(
+    /* ===========================
+     * STOP ACTIVE STRATEGIES
+     * ===========================
+     */
+
+    pub async fn stop_strategies_core(self) -> Result<(), Response> {
+        let env = self.environment;
+
+        // STOPPING
+        Strategies::<Cache>::set_status_cache(env, LifecycleState::Stopping)
+            .await
+            .map_err(|e| Response {
+                code: 500,
+                message: e,
+            })?;
+
+        // Remove cache
+        Strategies::<Cache>::remove_strategies_cache(env)
+            .await
+            .map_err(|e| Response {
+                code: 500,
+                message: e,
+            })?;
+
+        // OFF
+        Strategies::<Cache>::set_status_cache(env, LifecycleState::Off)
+            .await
+            .map_err(|e| Response {
+                code: 500,
+                message: e,
+            })?;
+
+        Ok(())
+    }
+
+    /* ===========================
+     * Runtime evaluation
+     * ===========================
+     */
+
+    async fn evaluate_strategy(strategy_overview: StrategyOverview, environment: Environments) {
+        let mut guard = StrategiesExecutionGuard::new(
             environment,
             Strategies::default()
                 .into_request(strategy_overview.strategy.clone())
                 .model,
         );
 
-        execution_guard.err();
+        guard.err();
 
         let mut order = match StrategiesOverview::evaluate_strategy_overview(&strategy_overview) {
+            Ok(o) => o,
             Err(err) => {
-                Strategies::default()
-                    .into_request(strategy_overview.strategy)
-                    .with_env(environment)
-                    .set_active_strategy(false, Some(err))
-                    .await;
-
-                execution_guard.none();
-
+                let _ = Strategies::<Cache>::set_strategy_error_cache(
+                    environment,
+                    strategy_overview.strategy.id,
+                    Some(err),
+                )
+                .await;
+                guard.none();
                 return;
             }
-            Ok(val) => val,
         };
 
-        if let Err(err) = execution_guard.lock().await {
-            Strategies::default()
-                .into_request(strategy_overview.strategy)
-                .with_env(environment)
-                .set_active_strategy(false, Some(err))
-                .await;
-
+        if let Err(err) = guard.lock().await {
+            let _ = Strategies::<Cache>::set_strategy_error_cache(
+                environment,
+                strategy_overview.strategy.id,
+                Some(err),
+            )
+            .await;
             return;
         }
 
@@ -214,25 +296,25 @@ impl<Core> Strategies<Core> {
             }
         }
 
-        let order = match order.insert_order().await {
-            Err(err) => {
-                dbg!(eprintln!("{}", err.message));
-                return;
-            }
-            Ok(val) => val,
-        };
-
-        let senders = Senders::get_active_senders().await;
-        if let Err(err) = senders.order_sender.send((environment, order)) {
-            dbg!(eprint!("Failed to send order command: {}", err.to_string()));
-            return;
+        if let Ok(order) = order.insert_order().await {
+            let senders = Senders::get_senders().await;
+            let _ = senders.order_sender.send((environment, order));
         }
 
-        // update speed metrics
-        execution_guard.ok();
+        guard.ok();
     }
 
-    // misc
+    pub async fn reset_strategies_core(self) -> Result<(), Response> {
+        Strategies::<Cache>::reset_strategies_cache(self.environment)
+            .await
+            .map_err(Response::server_error)
+    }
+
+    /* ===========================
+     * Misc
+     * ===========================
+     */
+
     pub fn evaluate_cooldown_core(
         self,
         last_exec: Option<NaiveDateTime>,

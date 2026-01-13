@@ -45,6 +45,13 @@ pub struct Response {
 }
 
 impl Response {
+    pub fn bad_request(item: String) -> Response {
+        Response {
+            code: 400,
+            message: format!("Bad request: {item}"),
+        }
+    }
+
     pub fn not_found(item: String) -> Response {
         Response {
             code: 404,

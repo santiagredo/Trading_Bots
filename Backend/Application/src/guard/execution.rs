@@ -40,7 +40,7 @@ impl StrategiesExecutionGuard {
 
         Strategies::new(strategy)
             .with_env(self.environment)
-            .set_active_strategy_posting(true)
+            .set_strategy_posting(true)
             .await
     }
 }
@@ -72,18 +72,18 @@ impl Drop for StrategiesExecutionGuard {
         };
 
         tokio::spawn(async move {
-            Metrics::set_active_execution_metrics(environment, elapsed, success).await;
+            Metrics::set_execution_metrics(environment, elapsed, success).await;
 
             // update posting in cache
             let _ = Strategies::new(strategy_request.clone())
                 .with_env(environment)
-                .set_active_strategy_posting(false)
+                .set_strategy_posting(false)
                 .await;
 
             // update last exec and error date in cache
             let _ = Strategies::new(strategy_request.clone())
                 .with_env(environment)
-                .set_active_strategy(false, None)
+                .upsert_strategy()
                 .await;
 
             // update last exec and error date in db

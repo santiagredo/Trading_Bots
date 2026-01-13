@@ -1,10 +1,10 @@
-use std::collections::HashMap;
-
 use models::{
     entities::assets::Model,
-    structs::{AssetRequest, CacheAsset, LedgerRequest},
+    enums::LifecycleState,
+    structs::{AssetRequest, CacheAssets, LedgerRequest},
 };
 use sea_orm::prelude::Decimal;
+use tokio_util::sync::CancellationToken;
 
 use crate::{
     handler::{Assets, Ledgers, Senders, DBC},
@@ -12,7 +12,11 @@ use crate::{
 };
 
 impl Assets<Core> {
-    // db
+    /* ===========================
+     * DB
+     * ===========================
+     */
+
     pub async fn insert_asset_core(self) -> Result<Model, Response> {
         let env = self.environment;
 
@@ -62,153 +66,259 @@ impl Assets<Core> {
             .await
     }
 
-    // cache
-    pub async fn get_active_assets_core(self) -> Option<HashMap<i32, CacheAsset>> {
-        Assets::<Cache>::get_active_assets_cache(&self.environment).await
+    /* ===========================
+     * CACHE (READ)
+     * ===========================
+     */
+
+    pub async fn get_assets_core(self) -> Option<CacheAssets> {
+        Assets::<Cache>::get_assets_cache(self.environment).await
     }
 
-    pub async fn get_active_asset_core(self) -> Option<CacheAsset> {
-        Assets::<Cache>::get_active_asset_cache(
-            &self.environment,
-            &self.model.id.unwrap_or_default(),
-        )
-        .await
+    pub async fn get_asset_core(self) -> Option<Model> {
+        Assets::<Cache>::get_asset_cache(self.environment, self.model.id.unwrap_or_default()).await
     }
 
-    pub async fn set_active_asset_core(self, is_remove: bool) -> Model {
+    pub async fn get_assets_state_core(self) -> LifecycleState {
+        Assets::<Cache>::get_assets_state_cache(self.environment).await
+    }
+
+    /* ===========================
+     * CACHE (WRITE)
+     * ===========================
+     */
+
+    pub async fn upsert_asset_core(self) -> Result<(), String> {
         let env = self.environment;
         let model = Assets::into_model(self.model);
 
-        Assets::<Cache>::set_active_asset_cache(&env, model, is_remove).await
+        Assets::<Cache>::upsert_asset_cache(env, model).await
     }
 
-    pub async fn set_active_asset_value_core(
+    pub async fn remove_asset_core(self) -> Result<Option<Model>, String> {
+        let env = self.environment;
+        let id = self.model.id.unwrap_or_default();
+
+        Assets::<Cache>::remove_asset_cache(env, id).await
+    }
+
+    pub async fn set_asset_value_core(
         self,
         value: Decimal,
         is_locked: bool,
         is_sell: bool,
     ) -> Result<(Model, Decimal), Response> {
-        let Some(memory_asset) = Assets::<Cache>::set_active_asset_value_cache(
-            &self.environment,
-            &self.model.id.unwrap_or_default(),
+        let Ok(result) = Assets::<Cache>::update_asset_balance_cache(
+            self.environment,
+            self.model.id.unwrap_or_default(),
             value,
             is_locked,
             is_sell,
         )
         .await
         else {
-            return Err(Response::not_found("Memory asset".to_string()));
+            return Err(Response {
+                code: 404,
+                message: "Memory asset not found".into(),
+            });
         };
 
-        Ok(memory_asset)
+        Ok(result)
     }
 
-    pub async fn start_active_assets_core(self) -> Result<(), Response> {
+    /* ===========================
+     * START ACTIVE ASSETS
+     * ===========================
+     */
+
+    pub async fn start_assets_core(self, token: &CancellationToken) -> Result<(), Response> {
         let env = self.environment;
 
-        if !Assets::<Cache>::get_active_assets_status_cache(&env).await {
-            let mut assets_request = Assets::default();
-            assets_request.environment = env;
-
-            let models = assets_request.select_assets().await?;
-
-            Assets::<Cache>::set_active_assets_cache(&env, models).await;
-
-            let senders = Senders::get_active_senders().await;
-            let mut orders_receiver = senders.order_sender.subscribe();
-
-            let join_handle = tokio::spawn(async move {
-                while let Ok((environment, order)) = orders_receiver.recv().await {
-                    // base asset
-                    let mut base_asset = Assets::default().with_env(environment);
-                    base_asset.model.id = Some(order.base_asset_id);
-
-                    let (base_model, base_previous_balance) = base_asset
-                        .set_active_asset_value(order.base_asset_amount, false, order.is_sell)
-                        .await
-                        .unwrap_or_default();
-
-                    let base_asset_request = AssetRequest::from_model(&base_model);
-
-                    let base_asset_ledger = LedgerRequest::from_asset(&base_model)
-                        .from_order(&order)
-                        .update_values(
-                            false,
-                            order.base_asset_amount,
-                            base_previous_balance,
-                            base_asset_request.free.unwrap_or_default(),
-                        );
-
-                    if let Err(err) = Assets::from_request(base_asset_request)
-                        .with_env(environment)
-                        .update_asset()
-                        .await
-                    {
-                        dbg!(eprintln!("{}", err.message));
-                        continue;
-                    };
-
-                    if let Err(err) = Ledgers::new(base_asset_ledger)
-                        .with_env(environment)
-                        .insert_ledger()
-                        .await
-                    {
-                        dbg!(eprintln!("{}", err.message));
-                        continue;
-                    };
-
-                    // quote asset
-                    let mut quote_asset = Assets::default().with_env(environment);
-                    quote_asset.model.id = Some(order.quote_asset_id);
-
-                    let (quote_model, quote_previous_balance) = quote_asset
-                        .set_active_asset_value(order.quote_asset_amount, false, !order.is_sell)
-                        .await
-                        .unwrap_or_default();
-
-                    let quote_asset_request = AssetRequest::from_model(&quote_model);
-
-                    let quote_asset_ledger = LedgerRequest::from_asset(&quote_model)
-                        .from_order(&order)
-                        .update_values(
-                            false,
-                            order.quote_asset_amount,
-                            quote_previous_balance,
-                            quote_asset_request.free.unwrap_or_default(),
-                        );
-
-                    if let Err(err) = Assets::from_request(quote_asset_request)
-                        .with_env(environment)
-                        .update_asset()
-                        .await
-                    {
-                        dbg!(eprintln!("{}", err.message));
-                        continue;
-                    };
-
-                    if let Err(err) = Ledgers::new(quote_asset_ledger)
-                        .with_env(environment)
-                        .insert_ledger()
-                        .await
-                    {
-                        dbg!(eprintln!("{}", err.message));
-                        continue;
-                    };
-                }
+        // STARTING
+        if let Err(err) =
+            Assets::<Cache>::set_status_cache(env, models::enums::LifecycleState::Starting).await
+        {
+            return Err(Response {
+                code: 500,
+                message: err,
             });
+        }
 
-            Assets::<Cache>::set_active_assets_join_handle_cache(&self.environment, join_handle)
-                .await;
+        // Load from DB
+        let models = match Assets::default().with_env(env).select_assets().await {
+            Ok(m) => m,
+            Err(err) => {
+                let _ = Assets::<Cache>::reset_assets_cache(env).await;
+                return Err(Response {
+                    code: 500,
+                    message: err.message,
+                });
+            }
+        };
+
+        // RUNNING
+        if let Err(err) =
+            Assets::<Cache>::set_status_cache(env, models::enums::LifecycleState::Running).await
+        {
+            let _ = Assets::<Cache>::reset_assets_cache(env).await;
+            return Err(Response {
+                code: 500,
+                message: err,
+            });
+        }
+
+        // Set assets
+        if let Err(err) = Assets::<Cache>::set_assets_cache(env, models).await {
+            let _ = Assets::<Cache>::reset_assets_cache(env).await;
+            return Err(Response {
+                code: 500,
+                message: err,
+            });
+        }
+
+        // Runtime
+        let senders = Senders::get_senders().await;
+        let mut orders_receiver = senders.order_sender.subscribe();
+        let cancellation_token = token.clone();
+
+        tokio::spawn(async move {
+            loop {
+                tokio::select! {
+                    _ = cancellation_token.cancelled() => break,
+                    msg = orders_receiver.recv() => {
+                        let Ok((environment, order)) = msg else { continue };
+
+                        // BASE ASSET
+                        let mut base_asset = Assets::default().with_env(environment);
+                        base_asset.model.id = Some(order.base_asset_id);
+
+                        let Ok((base_model, base_prev)) = base_asset
+                            .set_asset_value(
+                                order.base_asset_amount,
+                                false,
+                                order.is_sell,
+                            )
+                            .await else { continue };
+
+                        let base_req = AssetRequest::from_model(&base_model);
+                        let base_ledger = LedgerRequest::from_asset(&base_model)
+                            .from_order(&order)
+                            .update_values(
+                                false,
+                                order.base_asset_amount,
+                                base_prev,
+                                base_req.free.unwrap_or_default(),
+                            );
+
+                        if Assets::from_request(base_req)
+                            .with_env(environment)
+                            .update_asset()
+                            .await
+                            .is_err()
+                        {
+                            continue;
+                        }
+
+                        let _ = Ledgers::new(base_ledger)
+                            .with_env(environment)
+                            .insert_ledger()
+                            .await;
+
+                        // QUOTE ASSET
+                        let mut quote_asset = Assets::default().with_env(environment);
+                        quote_asset.model.id = Some(order.quote_asset_id);
+
+                        let Ok((quote_model, quote_prev)) = quote_asset
+                            .set_asset_value(
+                                order.quote_asset_amount,
+                                false,
+                                !order.is_sell,
+                            )
+                            .await else { continue };
+
+                        let quote_req = AssetRequest::from_model(&quote_model);
+                        let quote_ledger = LedgerRequest::from_asset(&quote_model)
+                            .from_order(&order)
+                            .update_values(
+                                false,
+                                order.quote_asset_amount,
+                                quote_prev,
+                                quote_req.free.unwrap_or_default(),
+                            );
+
+                        if Assets::from_request(quote_req)
+                            .with_env(environment)
+                            .update_asset()
+                            .await
+                            .is_err()
+                        {
+                            continue;
+                        }
+
+                        let _ = Ledgers::new(quote_ledger)
+                            .with_env(environment)
+                            .insert_ledger()
+                            .await;
+                    }
+                }
+            }
+        });
+
+        Ok(())
+    }
+
+    /* ===========================
+     * STOP ACTIVE ASSETS
+     * ===========================
+     */
+
+    pub async fn stop_assets_core(self) -> Result<(), Response> {
+        let env = self.environment;
+
+        // STOPPING
+        if let Err(err) =
+            Assets::<Cache>::set_status_cache(env, models::enums::LifecycleState::Stopping).await
+        {
+            let _ = Assets::<Cache>::reset_assets_cache(env).await;
+            return Err(Response {
+                code: 500,
+                message: err,
+            });
+        }
+
+        // Remove assets
+        if let Err(err) = Assets::<Cache>::remove_assets_cache(env).await {
+            let _ = Assets::<Cache>::reset_assets_cache(env).await;
+            return Err(Response {
+                code: 500,
+                message: err,
+            });
+        }
+
+        // OFF
+        if let Err(err) =
+            Assets::<Cache>::set_status_cache(env, models::enums::LifecycleState::Off).await
+        {
+            let _ = Assets::<Cache>::reset_assets_cache(env).await;
+            return Err(Response {
+                code: 500,
+                message: err,
+            });
         }
 
         Ok(())
     }
 
-    pub async fn stop_active_assets_core(self) -> Result<(), Response> {
-        let env = self.environment;
+    pub async fn reset_assets_core(self) -> Result<(), Response> {
+        let environment = self.environment;
 
-        Assets::<Cache>::stop_active_assets_cache(&env)
-            .await
-            .map_err(handle_user_err)
+        if let Err(err) = Assets::<Cache>::reset_assets_cache(environment).await {
+            return Err(Response {
+                code: 500,
+                message: err,
+            });
+        };
+
+        Ok(())
     }
 }

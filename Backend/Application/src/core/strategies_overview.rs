@@ -26,7 +26,7 @@ impl StrategiesOverview<Core> {
         Ok(StrategiesOverview::<Logic>::select_strategies_overview_logic(results))
     }
 
-    pub async fn get_active_strategy_overview_core(
+    pub async fn get_strategy_overview_core(
         environment: Environments,
         strategy_id: &i32,
         symbol: String,
@@ -35,7 +35,7 @@ impl StrategiesOverview<Core> {
         strategy_request.model.id = Some(*strategy_id);
         strategy_request.environment = environment;
 
-        let strategy = match strategy_request.get_active_strategy().await {
+        let strategy = match strategy_request.get_strategy().await {
             None => return None,
             Some(val) => {
                 if val.is_posting {
@@ -51,7 +51,7 @@ impl StrategiesOverview<Core> {
         indicator_request.model.strategy_id = Some(*strategy_id);
         indicator_request.environment = environment;
 
-        let Some(indicator) = indicator_request.get_active_indicator().await else {
+        let Some(indicator) = indicator_request.get_indicator().await else {
             return None;
         };
 
@@ -59,7 +59,7 @@ impl StrategiesOverview<Core> {
         action_request.model.strategy_id = Some(*strategy_id);
         action_request.environment = environment;
 
-        let Some(action) = action_request.get_active_action().await else {
+        let Some(action) = action_request.get_action().await else {
             return None;
         };
 
@@ -67,7 +67,7 @@ impl StrategiesOverview<Core> {
         pair_request.model.id = Some(action.pair_id);
         pair_request.environment = environment;
 
-        let Some(pair) = pair_request.get_active_pair().await else {
+        let Some(pair) = pair_request.get_pair().await else {
             return None;
         };
 
@@ -75,7 +75,7 @@ impl StrategiesOverview<Core> {
         base_asset_request.model.id = Some(pair.base_asset_id);
         base_asset_request.environment = environment;
 
-        let Some(base_asset) = base_asset_request.get_active_asset().await else {
+        let Some(base_asset) = base_asset_request.get_asset().await else {
             return None;
         };
 
@@ -83,7 +83,7 @@ impl StrategiesOverview<Core> {
         quote_asset_request.model.id = Some(pair.quote_asset_id);
         quote_asset_request.environment = environment;
 
-        let Some(quote_asset) = quote_asset_request.get_active_asset().await else {
+        let Some(quote_asset) = quote_asset_request.get_asset().await else {
             return None;
         };
 
@@ -92,8 +92,8 @@ impl StrategiesOverview<Core> {
         };
 
         let Some(order_status) = OrderStatus::default()
-            .with_env(&environment)
-            .get_active_status()
+            .with_env(environment)
+            .get_statuses()
             .await
         else {
             return None;
@@ -104,8 +104,8 @@ impl StrategiesOverview<Core> {
             indicator,
             action,
             pair,
-            base_asset: base_asset.model,
-            quote_asset: quote_asset.model,
+            base_asset: base_asset,
+            quote_asset: quote_asset,
             ticker,
             order_status,
         };
@@ -133,7 +133,7 @@ impl StrategiesOverview<Core> {
         }
 
         // evalute indicator
-        match Indicators::evalute_active_indicators(
+        match Indicators::evalute_indicators(
             &strategy_overview.ticker,
             &strategy_overview.indicator,
             &strategy_overview.pair,
@@ -156,10 +156,13 @@ impl StrategiesOverview<Core> {
         };
 
         // create order
-        let order_status = *strategy_overview
+        let order_status = strategy_overview
             .order_status
-            .get(&Status::Completed)
-            .unwrap_or(&2);
+            .values()
+            .find(|m| Status::Completed == Status::from_model(m))
+            .cloned()
+            .map(|val| val.id)
+            .unwrap_or(2);
 
         let order = Orders::default()
             .from_strategy(&strategy_overview.strategy)

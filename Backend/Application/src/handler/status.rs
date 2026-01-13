@@ -1,6 +1,10 @@
 use std::{collections::HashMap, marker::PhantomData};
 
-use models::{entities::status::Model, enums::Status, structs::Environments};
+use models::{
+    entities::status::Model,
+    enums::{LifecycleState, Status},
+    structs::Environments,
+};
 
 use crate::utils::{Response, Types};
 
@@ -30,27 +34,35 @@ impl OrderStatus {
         }
     }
 
-    pub fn with_env(self, environment: &Environments) -> Self {
+    pub fn with_env(self, environment: Environments) -> Self {
         Self {
             phase: self.phase,
-            environment: *environment,
+            environment: environment,
             model: self.model,
         }
     }
 
-    pub async fn get_active_status(self) -> Option<HashMap<Status, i32>> {
-        self.next_phase().get_active_status_core().await
+    pub async fn get_statuses(self) -> Option<HashMap<i32, Model>> {
+        self.next_phase().get_statuses_core().await
     }
 
-    pub async fn start_active_status(self) -> Result<(), Response> {
-        self.next_phase().start_active_status_core().await
+    pub async fn start_status(self) -> Result<(), Response> {
+        self.next_phase().start_status_core().await
     }
 
-    pub async fn stop_active_status(self) {
-        self.next_phase().stop_active_status_core().await
+    pub async fn stop_status(self) -> Result<(), Response> {
+        self.next_phase().stop_status_core().await
     }
 
     pub async fn select_status(self) -> Result<Vec<Model>, Response> {
         self.next_phase().select_status_core().await
+    }
+
+    pub async fn reset_status(self) -> Result<(), Response> {
+        self.next_phase().reset_status_core().await
+    }
+
+    pub async fn get_status_state(self) -> LifecycleState {
+        self.next_phase().get_status_state_core().await
     }
 }

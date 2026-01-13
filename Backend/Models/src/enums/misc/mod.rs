@@ -15,3 +15,6 @@ pub use status::*;
 
 pub mod machine_states;
 pub use machine_states::*;
+
+pub mod socket_state;
+pub use socket_state::*;

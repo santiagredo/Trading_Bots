@@ -39,12 +39,12 @@ impl StrategiesOverview {
         }
     }
 
-    pub async fn get_active_strategy_overview(
+    pub async fn get_strategy_overview(
         environment: Environments,
         strategy_id: &i32,
         symbol: String,
     ) -> Option<StrategyOverview> {
-        StrategiesOverview::<Core>::get_active_strategy_overview_core(
+        StrategiesOverview::<Core>::get_strategy_overview_core(
             environment,
             strategy_id,
             symbol,

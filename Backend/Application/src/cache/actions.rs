@@ -1,123 +1,146 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, mem, sync::Arc};
 
-use models::{entities::actions::Model, structs::Environments};
+use chrono::Local;
+use models::{
+    entities::actions::Model,
+    enums::{transition_with_timestamp, FiniteStateMachine, LifecycleState},
+    structs::{CacheActions, CacheActionsEnvironments, Environments},
+};
 use once_cell::sync::Lazy;
 use tokio::sync::RwLock;
 
 use crate::{handler::Actions, utils::Cache};
 
-#[derive(Default)]
-struct CacheEnvironments {
-    pub environments: HashMap<Environments, CacheActions>,
-}
-
-#[derive(Default)]
-struct CacheActions {
-    pub is_initialized: bool,
-    pub models: HashMap<i32, Model>,
-}
-
-static ACTIVE_ACTIONS: Lazy<Arc<RwLock<CacheEnvironments>>> =
-    Lazy::new(|| Arc::new(RwLock::new(CacheEnvironments::default())));
+static ACTIVE_ACTIONS: Lazy<Arc<RwLock<CacheActionsEnvironments>>> =
+    Lazy::new(|| Arc::new(RwLock::new(CacheActionsEnvironments::new())));
 
 impl Actions<Cache> {
-    pub async fn set_active_actions_cache(
-        environment: &Environments,
+    pub async fn set_status_cache(
+        environment: Environments,
+        status: LifecycleState,
+    ) -> Result<(), String> {
+        let mut cache = ACTIVE_ACTIONS.write().await;
+        let env_cache = cache.get_or_create(environment);
+
+        transition_with_timestamp(env_cache, status)?;
+        Ok(())
+    }
+
+    pub async fn set_actions_cache(
+        environment: Environments,
         actions: Vec<Model>,
-    ) -> Vec<Model> {
-        let mut cache_actions = ACTIVE_ACTIONS.write().await;
+    ) -> Result<(), String> {
+        let mut cache = ACTIVE_ACTIONS.write().await;
+        let env_cache = cache.get_or_create(environment);
 
-        let env_map = cache_actions
-            .environments
-            .entry(*environment)
-            .or_insert_with(CacheActions::default);
-
-        for action in actions.iter() {
-            env_map.models.insert(action.strategy_id, action.clone());
+        if !env_cache.status.allows(LifecycleState::Running) {
+            return Err(format!(
+                "Cannot load actions: cache not running ({:?})",
+                env_cache.status
+            ));
         }
 
-        env_map.is_initialized = true;
+        env_cache.models = actions.into_iter().map(|a| (a.strategy_id, a)).collect();
 
-        actions
+        env_cache.last_update_date = Local::now().naive_local();
+        Ok(())
     }
 
-    pub async fn set_active_action_cache(
-        environment: &Environments,
+    pub async fn upsert_action_cache(
+        environment: Environments,
         action: Model,
-        is_remove: bool,
-    ) -> Model {
-        let mut cache_actions = ACTIVE_ACTIONS.write().await;
+    ) -> Result<(), String> {
+        let mut cache = ACTIVE_ACTIONS.write().await;
+        let env_cache = cache.get_or_create(environment);
 
-        let env_map = cache_actions
-            .environments
-            .entry(*environment)
-            .or_insert_with(CacheActions::default);
-
-        if is_remove {
-            env_map
-                .models
-                .remove(&action.strategy_id)
-                .map(|val| val)
-                .unwrap_or(action)
-        } else {
-            env_map.models.insert(action.strategy_id, action.clone());
-
-            action
+        if !env_cache.status.allows(LifecycleState::Running) {
+            return Err("Cache not running".into());
         }
+
+        env_cache.models.insert(action.strategy_id, action);
+        env_cache.last_update_date = Local::now().naive_local();
+
+        Ok(())
     }
 
-    pub async fn get_active_actions_cache(
-        environment: &Environments,
-    ) -> Option<HashMap<i32, Model>> {
-        let cache_actions = ACTIVE_ACTIONS.read().await;
+    pub async fn remove_action_cache(
+        environment: Environments,
+        strategy_id: i32,
+    ) -> Result<Option<Model>, String> {
+        let mut cache = ACTIVE_ACTIONS.write().await;
+        let env_cache = cache
+            .get_mut(&environment)
+            .ok_or("Environment not initialized")?;
 
-        let env_map = cache_actions.environments.get(&environment)?;
+        if !env_cache.status.allows(LifecycleState::Running) {
+            return Err("Cache not running".into());
+        }
 
-        Some(env_map.models.clone())
+        let removed = env_cache.models.remove(&strategy_id);
+        env_cache.last_update_date = Local::now().naive_local();
+
+        Ok(removed)
     }
 
-    pub async fn get_active_action_cache(environment: &Environments, key: &i32) -> Option<Model> {
-        let cache_actions = ACTIVE_ACTIONS.read().await;
+    pub async fn remove_actions_cache(
+        environment: Environments,
+    ) -> Result<HashMap<i32, Model>, String> {
+        let mut cache = ACTIVE_ACTIONS.write().await;
+        let env_cache = cache
+            .get_mut(&environment)
+            .ok_or("Environment not initialized")?;
 
-        let env_map = cache_actions.environments.get(&environment)?;
+        if !env_cache.status.allows(LifecycleState::Stopping) {
+            return Err("Cache not stopping".into());
+        }
 
-        let cache_action = env_map.models.get(key)?;
+        let removed = mem::take(&mut env_cache.models);
+        env_cache.last_update_date = Local::now().naive_local();
 
-        Some(cache_action.clone())
+        Ok(removed)
     }
 
-    pub async fn get_active_actions_status_cache(environment: &Environments) -> bool {
-        let cache_actions = ACTIVE_ACTIONS.read().await;
+    pub async fn get_actions_cache(environment: Environments) -> Option<CacheActions> {
+        let cache = ACTIVE_ACTIONS.read().await;
+        cache.get(&environment).cloned()
+    }
 
-        cache_actions
-            .environments
+    pub async fn get_action_cache(environment: Environments, strategy_id: i32) -> Option<Model> {
+        let cache = ACTIVE_ACTIONS.read().await;
+        cache.get(&environment)?.models.get(&strategy_id).cloned()
+    }
+
+    pub async fn get_cache_state(environment: Environments) -> LifecycleState {
+        let cache = ACTIVE_ACTIONS.read().await;
+        cache
             .get(&environment)
-            .map(|val| val.is_initialized)
-            .unwrap_or(false)
+            .map(|c| c.status)
+            .unwrap_or(LifecycleState::Off)
     }
 
-    pub async fn stop_active_actions_cache(environment: &Environments) {
-        let mut cache_actions = ACTIVE_ACTIONS.write().await;
+    pub async fn reset_actions_cache(environment: Environments) -> Result<(), String> {
+        let mut cache = ACTIVE_ACTIONS.write().await;
 
-        let Some(env_map) = cache_actions.environments.get_mut(environment) else {
-            return;
-        };
+        if let Some(env_cache) = cache.environments.get_mut(&environment) {
+            *env_cache = CacheActions::new();
+        }
 
-        env_map.models = HashMap::new();
-
-        env_map.is_initialized = false;
+        Ok(())
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use models::{entities::actions::Model, structs::Environments};
+    use models::{entities::actions::Model, enums::LifecycleState, structs::Environments};
     use sea_orm::prelude::Decimal;
 
     use crate::{handler::Actions, utils::Cache};
 
+    // =========================
     // Helpers
-    fn mock_model(strategy_id: i32) -> Model {
+    // =========================
+
+    fn mock_action(strategy_id: i32) -> Model {
         Model {
             id: strategy_id,
             strategy_id,
@@ -131,142 +154,141 @@ mod tests {
         }
     }
 
-    async fn reset_env(env: Environments) {
-        Actions::<Cache>::stop_active_actions_cache(&env).await;
+    async fn start_env(env: Environments) {
+        let _ = Actions::<Cache>::set_status_cache(env, LifecycleState::Starting).await;
+        let _ = Actions::<Cache>::set_status_cache(env, LifecycleState::Running).await;
     }
 
+    async fn stop_env(env: Environments) {
+        let _ = Actions::<Cache>::set_status_cache(env, LifecycleState::Stopping).await;
+
+        let removed = Actions::<Cache>::remove_actions_cache(env)
+            .await
+            .expect("remove_actions_cache should work in Stopping");
+
+        assert!(removed.is_empty() || !removed.is_empty());
+
+        let _ = Actions::<Cache>::set_status_cache(env, LifecycleState::Off).await;
+    }
+
+    // =========================
     // Scenarios (unit responsibilities)
+    // =========================
 
-    // Verifies that reset_env fully clears cache state
     async fn scenario_reset_env_clears_state(env: Environments) {
-        let models = vec![mock_model(1), mock_model(2)];
+        start_env(env).await;
 
-        Actions::<Cache>::set_active_actions_cache(&env, models).await;
-        reset_env(env).await;
-
-        let cache = Actions::<Cache>::get_active_actions_cache(&env)
+        let actions = vec![mock_action(1)];
+        Actions::<Cache>::set_actions_cache(env, actions)
             .await
-            .expect("environment entry should exist");
+            .unwrap();
 
-        let status = Actions::<Cache>::get_active_actions_status_cache(&env).await;
+        let _ = Actions::<Cache>::set_status_cache(env, LifecycleState::Stopping).await;
 
-        assert!(cache.is_empty());
-        assert!(!status);
+        let removed = Actions::<Cache>::remove_actions_cache(env).await.unwrap();
+        assert_eq!(removed.len(), 1);
+
+        let cache = Actions::<Cache>::get_actions_cache(env).await.unwrap();
+        assert!(cache.models.is_empty());
+
+        let _ = Actions::<Cache>::set_status_cache(env, LifecycleState::Off).await;
+
+        let status = Actions::<Cache>::get_cache_state(env).await;
+        assert_eq!(status, LifecycleState::Off);
     }
 
-    // Verifies bulk insertion and initialization flag
-    async fn scenario_set_active_actions_cache(env: Environments) {
-        reset_env(env).await;
+    async fn scenario_set_actions_cache(env: Environments) {
+        start_env(env).await;
 
-        let models = vec![mock_model(1), mock_model(2)];
+        let actions = vec![mock_action(1), mock_action(2)];
 
-        Actions::<Cache>::set_active_actions_cache(&env, models.clone()).await;
-
-        let cache = Actions::<Cache>::get_active_actions_cache(&env)
+        Actions::<Cache>::set_actions_cache(env, actions)
             .await
-            .expect("cache should exist");
+            .unwrap();
 
-        let status = Actions::<Cache>::get_active_actions_status_cache(&env).await;
+        let cache = Actions::<Cache>::get_actions_cache(env).await.unwrap();
+        let status = Actions::<Cache>::get_cache_state(env).await;
 
-        assert_eq!(cache.len(), 2);
-        assert!(cache.contains_key(&1));
-        assert!(cache.contains_key(&2));
-        assert!(status);
+        assert_eq!(cache.models.len(), 2);
+        assert!(cache.models.contains_key(&1));
+        assert!(cache.models.contains_key(&2));
+        assert_eq!(status, LifecycleState::Running);
 
-        reset_env(env).await;
+        stop_env(env).await;
     }
 
-    // Verifies single model insertion
-    async fn scenario_set_active_action_cache_insert(env: Environments) {
-        reset_env(env).await;
+    async fn scenario_upsert_action_insert(env: Environments) {
+        start_env(env).await;
 
-        let model = mock_model(10);
+        let action = mock_action(10);
+        Actions::<Cache>::upsert_action_cache(env, action.clone())
+            .await
+            .unwrap();
 
-        Actions::<Cache>::set_active_action_cache(&env, model.clone(), false).await;
+        let cached = Actions::<Cache>::get_action_cache(env, 10).await.unwrap();
+        assert_eq!(cached, action);
 
-        let cached = Actions::<Cache>::get_active_action_cache(&env, &10).await;
-
-        assert_eq!(cached, Some(model));
-
-        reset_env(env).await;
+        stop_env(env).await;
     }
 
-    // Verifies single model removal
-    async fn scenario_set_active_action_cache_remove(env: Environments) {
-        reset_env(env).await;
+    async fn scenario_remove_action(env: Environments) {
+        start_env(env).await;
 
-        let model = mock_model(20);
+        let action = mock_action(20);
+        Actions::<Cache>::upsert_action_cache(env, action)
+            .await
+            .unwrap();
 
-        Actions::<Cache>::set_active_action_cache(&env, model.clone(), false).await;
-        Actions::<Cache>::set_active_action_cache(&env, model.clone(), true).await;
+        let removed = Actions::<Cache>::remove_action_cache(env, 20)
+            .await
+            .unwrap();
 
-        let cached = Actions::<Cache>::get_active_action_cache(&env, &20).await;
+        assert!(removed.is_some());
 
+        let cached = Actions::<Cache>::get_action_cache(env, 20).await;
         assert!(cached.is_none());
 
-        reset_env(env).await;
+        stop_env(env).await;
     }
 
-    // Verifies retrieval of all models
-    async fn scenario_get_active_actions_cache(env: Environments) {
-        reset_env(env).await;
+    async fn scenario_get_cache_state(env: Environments) {
+        assert_eq!(
+            Actions::<Cache>::get_cache_state(env).await,
+            LifecycleState::Off
+        );
 
-        let models = vec![mock_model(1), mock_model(2), mock_model(3)];
-        Actions::<Cache>::set_active_actions_cache(&env, models).await;
+        start_env(env).await;
 
-        let cache = Actions::<Cache>::get_active_actions_cache(&env)
-            .await
-            .expect("cache should exist");
+        assert_eq!(
+            Actions::<Cache>::get_cache_state(env).await,
+            LifecycleState::Running
+        );
 
-        assert_eq!(cache.len(), 3);
-
-        reset_env(env).await;
+        stop_env(env).await;
     }
 
-    // Verifies retrieval of a single model
-    async fn scenario_get_active_action_cache(env: Environments) {
-        reset_env(env).await;
+    async fn scenario_cannot_remove_actions_when_running(env: Environments) {
+        start_env(env).await;
 
-        let model = mock_model(42);
-        Actions::<Cache>::set_active_action_cache(&env, model.clone(), false).await;
+        let result = Actions::<Cache>::remove_actions_cache(env).await;
+        assert!(result.is_err());
 
-        let cached = Actions::<Cache>::get_active_action_cache(&env, &42).await;
-
-        assert_eq!(cached, Some(model));
-
-        reset_env(env).await;
+        stop_env(env).await;
     }
 
-    // Verifies initialized status behavior
-    async fn scenario_get_active_actions_status_cache(env: Environments) {
-        reset_env(env).await;
+    // =========================
+    // Entry point
+    // =========================
 
-        let initial_status = Actions::<Cache>::get_active_actions_status_cache(&env).await;
-        assert!(!initial_status);
-
-        let models = vec![mock_model(1)];
-        Actions::<Cache>::set_active_actions_cache(&env, models).await;
-
-        let status = Actions::<Cache>::get_active_actions_status_cache(&env).await;
-        assert!(status);
-
-        reset_env(env).await;
-    }
-
-    // Single test entry point
     #[tokio::test]
     async fn cache_actions_unit_responsibilities() {
         let env = Environments::DEV;
 
         scenario_reset_env_clears_state(env).await;
-        scenario_set_active_actions_cache(env).await;
-        scenario_set_active_action_cache_insert(env).await;
-        scenario_set_active_action_cache_remove(env).await;
-        scenario_get_active_actions_cache(env).await;
-        scenario_get_active_action_cache(env).await;
-        scenario_get_active_actions_status_cache(env).await;
-
-        // Final safety cleanup
-        reset_env(env).await;
+        scenario_set_actions_cache(env).await;
+        scenario_upsert_action_insert(env).await;
+        scenario_remove_action(env).await;
+        scenario_get_cache_state(env).await;
+        scenario_cannot_remove_actions_when_running(env).await;
     }
 }

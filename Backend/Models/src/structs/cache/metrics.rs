@@ -14,7 +14,7 @@ pub struct CriticalMetric {
     pub max_execution_time: Duration,
 
     pub active_posting: u64,
-    pub max_active_posting: u64,
+    pub max_posting: u64,
 
     pub skipped_due_to_lock: u64,
 

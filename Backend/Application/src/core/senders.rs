@@ -4,7 +4,7 @@ use crate::{
 };
 
 impl Senders<Core> {
-    pub async fn get_active_senders_core() -> Senders {
-        Senders::<Cache>::get_active_senders_cache().await
+    pub async fn get_senders_core() -> Senders {
+        Senders::<Cache>::get_senders_cache().await
     }
 }

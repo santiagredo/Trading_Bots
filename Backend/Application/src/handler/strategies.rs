@@ -1,10 +1,12 @@
-use std::{collections::HashMap, marker::PhantomData};
+use std::marker::PhantomData;
 
 use chrono::NaiveDateTime;
 use models::{
     entities::strategies::Model,
-    structs::{CacheStrategy, Environments, StrategyRequest},
+    enums::LifecycleState,
+    structs::{CacheStrategies, CacheStrategy, Environments, StrategyRequest},
 };
+use tokio_util::sync::CancellationToken;
 
 use crate::utils::{Response, Types};
 
@@ -86,48 +88,58 @@ impl Strategies {
     }
 
     pub async fn insert_strategy(self) -> Result<Model, Response> {
-        self.insert_strategy_core().await
+        self.next_phase().insert_strategy_core().await
     }
 
     pub async fn select_strategy(self) -> Result<Option<Model>, Response> {
-        self.select_strategy_core().await
+        self.next_phase().select_strategy_core().await
     }
 
     pub async fn select_strategies(self) -> Result<Vec<Model>, Response> {
-        self.select_strategies_core().await
+        self.next_phase().select_strategies_core().await
     }
 
     pub async fn update_strategy(self) -> Result<Model, Response> {
-        self.update_strategy_core().await
+        self.next_phase().update_strategy_core().await
     }
 
     pub async fn delete_strategy(self) -> Result<u64, Response> {
-        self.delete_strategy_core().await
+        self.next_phase().delete_strategy_core().await
     }
 
     // cache
-    pub async fn get_active_strategies(self) -> Option<HashMap<i32, CacheStrategy>> {
-        self.get_active_strategies_core().await
+    pub async fn get_strategies(self) -> Option<CacheStrategies> {
+        self.next_phase().get_strategies_core().await
     }
 
-    pub async fn get_active_strategy(self) -> Option<CacheStrategy> {
-        self.get_active_strategy_core().await
+    pub async fn get_strategy(self) -> Option<CacheStrategy> {
+        self.next_phase().get_strategy_core().await
     }
 
-    pub async fn set_active_strategy(self, is_remove: bool, error: Option<String>) -> Model {
-        self.set_active_strategy_core(is_remove, error).await
+    pub async fn get_strategies_state(self) -> LifecycleState {
+        self.next_phase().get_strategies_state_core().await
     }
 
-    pub async fn set_active_strategy_posting(self, is_posting: bool) -> Result<(), String> {
-        self.set_active_strategy_posting_core(is_posting).await
+    pub async fn upsert_strategy(self) -> Result<(), String> {
+        self.next_phase().upsert_strategy_core().await
     }
 
-    pub async fn start_active_strategies(self) -> Result<(), Response> {
-        self.start_active_strategies_core().await
+    pub async fn set_strategy_posting(self, is_posting: bool) -> Result<(), String> {
+        self.next_phase()
+            .set_strategy_posting_core(is_posting)
+            .await
     }
 
-    pub async fn stop_active_strategies(self) {
-        self.stop_active_strategies_core().await
+    pub async fn start_strategies(self, token: &CancellationToken) -> Result<(), Response> {
+        self.next_phase().start_strategies_core(token).await
+    }
+
+    pub async fn stop_strategies(self) -> Result<(), Response> {
+        self.next_phase().stop_strategies_core().await
+    }
+
+    pub async fn reset_strategies(self) -> Result<(), Response> {
+        self.next_phase().reset_strategies_core().await
     }
 
     // misc
@@ -136,6 +148,7 @@ impl Strategies {
         last_exec: Option<NaiveDateTime>,
         cooldown: Option<i32>,
     ) -> bool {
-        self.evaluate_cooldown_core(last_exec, cooldown)
+        self.next_phase()
+            .evaluate_cooldown_core(last_exec, cooldown)
     }
 }

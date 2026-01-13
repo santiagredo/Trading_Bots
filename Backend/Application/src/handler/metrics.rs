@@ -45,28 +45,28 @@ impl Metrics {
     }
 
     // cache
-    pub async fn get_active_metric(self) -> Option<CriticalMetric> {
-        self.next_phase().get_active_metric_core().await
+    pub async fn get_metric(self) -> Option<CriticalMetric> {
+        self.next_phase().get_metric_core().await
     }
 
-    pub async fn set_active_execution_metrics(
+    pub async fn set_execution_metrics(
         environment: Environments,
         elapsed: Duration,
         success: bool,
     ) {
-        Metrics::<Core>::set_active_execution_metrics_core(environment, elapsed, success).await
+        Metrics::<Core>::set_execution_metrics_core(environment, elapsed, success).await
     }
 
-    pub async fn set_active_posting_metrics(environment: Environments, increase: bool) {
-        Metrics::<Core>::set_active_posting_metrics_core(environment, increase).await
+    pub async fn set_posting_metrics(environment: Environments, increase: bool) {
+        Metrics::<Core>::set_posting_metrics_core(environment, increase).await
     }
 
-    pub async fn set_active_skipped_metrics(environment: Environments) {
-        Metrics::<Core>::set_active_skipped_metrics_core(environment).await
+    pub async fn set_skipped_metrics(environment: Environments) {
+        Metrics::<Core>::set_skipped_metrics_core(environment).await
     }
 
-    pub async fn stop_active_metrics(self) {
-        self.next_phase().stop_active_metrics_core().await
+    pub async fn stop_metrics(self) {
+        self.next_phase().stop_metrics_core().await
     }
 
     // misc

@@ -84,13 +84,13 @@ pub async fn delete_indicator(
 
 // cache
 #[get("/{env}/memory")]
-pub async fn get_active_indicator(
+pub async fn get_indicator(
     env: web::Path<Environments>,
     query: web::Query<IndicatorRequest>,
 ) -> impl Responder {
     let active_indicator = Indicators::new(query.into_inner())
         .with_env(env.into_inner())
-        .get_active_indicator()
+        .get_indicator()
         .await;
 
     match active_indicator {
@@ -100,10 +100,10 @@ pub async fn get_active_indicator(
 }
 
 #[get("/{env}/memory/all")]
-pub async fn get_active_indicators(env: web::Path<Environments>) -> impl Responder {
+pub async fn get_indicators(env: web::Path<Environments>) -> impl Responder {
     let active_indicators = Indicators::default()
         .with_env(env.into_inner())
-        .get_active_indicators()
+        .get_indicators()
         .await;
 
     match active_indicators {
@@ -116,30 +116,8 @@ pub async fn get_active_indicators(env: web::Path<Environments>) -> impl Respond
 pub async fn get_subscribed_indicators(query: web::Path<Environments>) -> impl Responder {
     let request = SubscribedIndicators::new(query.into_inner());
 
-    match request.get_active_subscribed_indicators().await {
+    match request.get_subscribed_indicators().await {
         None => HttpResponse::NotFound().finish(),
         Some(val) => HttpResponse::Ok().json(val),
     }
-}
-
-#[post("/{env}/memory/start")]
-pub async fn start_active_indicators(env: web::Path<Environments>) -> impl Responder {
-    match Indicators::default()
-        .with_env(env.into_inner())
-        .start_active_indicators()
-        .await
-    {
-        Ok(val) => HttpResponse::Ok().json(val),
-        Err(err) => error_response(err),
-    }
-}
-
-#[post("/{env}/memory/stop")]
-pub async fn stop_active_indicators(env: web::Path<Environments>) -> impl Responder {
-    Indicators::default()
-        .with_env(env.into_inner())
-        .stop_active_indicators()
-        .await;
-
-    HttpResponse::Ok().finish()
 }

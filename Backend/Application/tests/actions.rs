@@ -1,11 +1,11 @@
 use application::{handler::Actions, utils::Cache};
-use models::{entities::actions::Model, structs::Environments};
+use models::{entities::actions::Model, enums::LifecycleState, structs::Environments};
 use sea_orm::prelude::Decimal;
 
-fn mock_model(strategy_id: i32) -> Model {
+fn mock_action(id: i32) -> Model {
     Model {
-        id: strategy_id,
-        strategy_id,
+        id,
+        strategy_id: id,
         is_active: true,
         is_sell: false,
         is_quote_asset: false,
@@ -17,39 +17,75 @@ fn mock_model(strategy_id: i32) -> Model {
 }
 
 #[tokio::test]
-async fn full_cache_flow_should_work_correctly() {
+async fn full_actions_cache_flow_should_work_correctly() {
     let env = Environments::DEV;
 
-    // Initial state
-    Actions::<Cache>::stop_active_actions_cache(&env).await;
-    assert!(!Actions::<Cache>::get_active_actions_status_cache(&env).await);
+    /* ===========================
+     * INITIAL STATE
+     * ===========================
+     */
 
-    // Load multiple models
-    let models = vec![mock_model(1), mock_model(2)];
-    Actions::<Cache>::set_active_actions_cache(&env, models.clone()).await;
+    let reset = Actions::<Cache>::reset_actions_cache(env).await;
+    assert!(reset.is_ok());
 
-    let cache = Actions::<Cache>::get_active_actions_cache(&env)
+    let off = Actions::<Cache>::set_status_cache(env, LifecycleState::Off).await;
+    assert!(off.is_err());
+
+    let status = Actions::get_cache_state(env).await;
+    assert_eq!(status, LifecycleState::Off);
+
+    let cache = Actions::<Cache>::get_actions_cache(env).await;
+    assert!(cache.is_some_and(|val| val.models.is_empty()));
+
+    /* ===========================
+     * LOAD MULTIPLE ACTIONS
+     * ===========================
+     */
+
+    let starting = Actions::<Cache>::set_status_cache(env, LifecycleState::Starting).await;
+    assert!(starting.is_ok());
+
+    let actions = vec![mock_action(1), mock_action(2)];
+
+    let running = Actions::<Cache>::set_status_cache(env, LifecycleState::Running).await;
+    assert!(running.is_ok());
+
+    Actions::<Cache>::set_actions_cache(env, actions)
         .await
         .unwrap();
-    assert_eq!(cache.len(), 2);
 
-    // Insert individual model
-    let extra = mock_model(3);
-    Actions::<Cache>::set_active_action_cache(&env, extra.clone(), false).await;
+    let cache = Actions::<Cache>::get_actions_cache(env).await.unwrap();
+    assert_eq!(cache.models.len(), 2);
+    assert_eq!(cache.status, LifecycleState::Running);
 
-    let single = Actions::<Cache>::get_active_action_cache(&env, &3).await;
-    assert_eq!(single, Some(extra));
+    /* ===========================
+     * INSERT INDIVIDUAL ACTION
+     * ===========================
+     */
 
-    // Status is true
-    assert!(Actions::<Cache>::get_active_actions_status_cache(&env).await);
-
-    // Stop
-    Actions::<Cache>::stop_active_actions_cache(&env).await;
-
-    let final_cache = Actions::<Cache>::get_active_actions_cache(&env)
+    let extra = mock_action(3);
+    Actions::<Cache>::upsert_action_cache(env, extra.clone())
         .await
         .unwrap();
 
-    assert!(final_cache.is_empty());
-    assert!(!Actions::<Cache>::get_active_actions_status_cache(&env).await);
+    let single = Actions::<Cache>::get_action_cache(env, 3).await.unwrap();
+    assert_eq!(single, extra);
+
+    /* ===========================
+     * STOP
+     * ===========================
+     */
+
+    Actions::<Cache>::set_status_cache(env, LifecycleState::Stopping)
+        .await
+        .unwrap();
+
+    Actions::<Cache>::remove_actions_cache(env).await.unwrap();
+
+    Actions::<Cache>::set_status_cache(env, LifecycleState::Off)
+        .await
+        .unwrap();
+
+    let final_cache = Actions::<Cache>::get_actions_cache(env).await;
+    assert!(final_cache.is_some_and(|val| val.models.is_empty()));
 }

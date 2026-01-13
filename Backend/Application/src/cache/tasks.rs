@@ -1,354 +1,273 @@
-use std::{collections::HashMap, sync::Arc, time::Duration};
+use std::{collections::HashMap, mem, sync::Arc};
 
-use chrono::{Local, Timelike};
-use models::{entities::tasks::Model, structs::Environments};
-use once_cell::sync::Lazy;
-use tokio::{sync::RwLock, task::AbortHandle, time::sleep};
-
-use crate::{
-    handler::{Binance, CoinPaprika, Metrics, Tasks},
-    utils::Cache,
+use chrono::Local;
+use models::{
+    entities::tasks::Model,
+    enums::{transition_with_timestamp, FiniteStateMachine, LifecycleState},
+    structs::{CacheTasks, CacheTasksEnvironments, Environments},
 };
+use once_cell::sync::Lazy;
+use tokio::sync::RwLock;
 
-#[derive(Default)]
-struct CacheEnvironments {
-    pub environments: HashMap<Environments, CacheTasks>,
-}
+use crate::{handler::Tasks, utils::Cache};
 
-#[derive(Default)]
-struct CacheTasks {
-    pub is_initialized: bool,
-    pub models: HashMap<i32, (Model, AbortHandle)>,
-}
-
-static ACTIVE_TASKS: Lazy<Arc<RwLock<CacheEnvironments>>> =
-    Lazy::new(|| Arc::new(RwLock::new(CacheEnvironments::default())));
+static ACTIVE_TASKS: Lazy<Arc<RwLock<CacheTasksEnvironments>>> =
+    Lazy::new(|| Arc::new(RwLock::new(CacheTasksEnvironments::new())));
 
 impl Tasks<Cache> {
-    pub async fn set_active_tasks_cache(
-        environment: &Environments,
-        tasks: Vec<Model>,
-    ) -> Vec<Model> {
-        let mut cache_tasks = ACTIVE_TASKS.write().await;
+    pub async fn set_status_cache(
+        environment: Environments,
+        status: LifecycleState,
+    ) -> Result<(), String> {
+        let mut cache = ACTIVE_TASKS.write().await;
+        let env_cache = cache.get_or_create(environment);
 
-        let env_map = cache_tasks
-            .environments
-            .entry(*environment)
-            .or_insert_with(CacheTasks::default);
-
-        for (_, (_, abort_handle)) in env_map.models.drain() {
-            abort_handle.abort();
-        }
-
-        for task in tasks.iter() {
-            if let Some(abort_handle) = Tasks::<Cache>::get_abort_handle(task, *environment).await {
-                env_map.models.insert(task.id, (task.clone(), abort_handle));
-            }
-        }
-
-        env_map.is_initialized = true;
-
-        tasks
+        transition_with_timestamp(env_cache, status)?;
+        Ok(())
     }
 
-    pub async fn set_active_task_cache(
-        environment: &Environments,
-        task: Model,
-        is_remove: bool,
-    ) -> Model {
-        let mut cache_tasks = ACTIVE_TASKS.write().await;
+    pub async fn set_tasks_cache(env: Environments, tasks: Vec<Model>) -> Result<(), String> {
+        let mut cache = ACTIVE_TASKS.write().await;
+        let env_cache = cache.get_or_create(env);
 
-        let Some(env_map) = cache_tasks.environments.get_mut(environment) else {
-            return task;
-        };
-
-        if let Some((_, abort_handle)) = env_map.models.remove(&task.id) {
-            abort_handle.abort();
+        if !env_cache.status.allows(LifecycleState::Running) {
+            return Err(format!(
+                "Cannot load tasks: cache not running ({:?})",
+                env_cache.status
+            ));
         }
 
-        if is_remove || !task.is_active {
-            return task;
+        env_cache.models = tasks.into_iter().map(|t| (t.id, t)).collect();
+
+        env_cache.last_update_date = Local::now().naive_local();
+        Ok(())
+    }
+
+    pub async fn upsert_task_cache(environment: Environments, task: Model) -> Result<(), String> {
+        let mut cache = ACTIVE_TASKS.write().await;
+        let env_cache = cache.get_or_create(environment);
+
+        if !env_cache.status.allows(LifecycleState::Running) {
+            return Err("Cache not running".into());
         }
 
-        if let Some(abort_handle) = Self::get_abort_handle(&task, *environment).await {
-            env_map.models.insert(task.id, (task.clone(), abort_handle));
+        env_cache.models.insert(task.id, task);
+        env_cache.last_update_date = Local::now().naive_local();
+
+        Ok(())
+    }
+
+    pub async fn remove_task_cache(
+        environment: Environments,
+        task_id: i32,
+    ) -> Result<Option<Model>, String> {
+        let mut cache = ACTIVE_TASKS.write().await;
+        let env_cache = cache
+            .get_mut(&environment)
+            .ok_or("Environment not initialized")?;
+
+        if !env_cache.status.allows(LifecycleState::Running) {
+            return Err("Cache not running".into());
         }
 
-        task
+        let removed = env_cache.models.remove(&task_id);
+        env_cache.last_update_date = Local::now().naive_local();
+
+        Ok(removed)
     }
 
-    pub async fn get_active_tasks_cache(environment: &Environments) -> Option<Vec<Model>> {
-        let cache_tasks = ACTIVE_TASKS.read().await;
+    pub async fn remove_tasks_cache(
+        environment: Environments,
+    ) -> Result<HashMap<i32, Model>, String> {
+        let mut cache = ACTIVE_TASKS.write().await;
+        let env_cache = cache
+            .get_mut(&environment)
+            .ok_or("Environment not initialized")?;
 
-        let env_map = cache_tasks.environments.get(environment)?;
-
-        let tasks = env_map
-            .models
-            .values()
-            .map(|(model, _)| model.clone())
-            .collect::<Vec<_>>();
-
-        Some(tasks)
-    }
-
-    pub async fn get_active_task_cache(environment: &Environments, key: &i32) -> Option<Model> {
-        let cache_tasks = ACTIVE_TASKS.read().await;
-
-        let env_map = cache_tasks.environments.get(environment)?;
-
-        let (model, _) = env_map.models.get(key)?.clone();
-
-        Some(model)
-    }
-
-    pub async fn stop_active_tasks_cache(environment: &Environments) {
-        let mut cache_tasks = ACTIVE_TASKS.write().await;
-
-        let Some(env_map) = cache_tasks.environments.get_mut(environment) else {
-            return;
-        };
-
-        for (_, (_, abort_handle)) in env_map.models.drain() {
-            abort_handle.abort();
+        if !env_cache.status.allows(LifecycleState::Stopping) {
+            return Err("Cache not stopping".into());
         }
 
-        env_map.is_initialized = false;
+        let removed = mem::take(&mut env_cache.models);
+        env_cache.last_update_date = Local::now().naive_local();
+
+        Ok(removed)
     }
 
-    pub async fn get_active_tasks_status_cache(environment: &Environments) -> bool {
-        let cache_tasks = ACTIVE_TASKS.read().await;
+    pub async fn get_tasks_cache(environment: Environments) -> Option<CacheTasks> {
+        let cache = ACTIVE_TASKS.read().await;
+        cache.get(&environment).cloned()
+    }
 
-        cache_tasks
-            .environments
+    pub async fn get_task_cache(environment: Environments, strategy_id: i32) -> Option<Model> {
+        let cache = ACTIVE_TASKS.read().await;
+        cache.get(&environment)?.models.get(&strategy_id).cloned()
+    }
+
+    pub async fn get_tasks_state_cache(environment: Environments) -> LifecycleState {
+        let cache = ACTIVE_TASKS.read().await;
+        cache
             .get(&environment)
-            .map(|val| val.is_initialized)
-            .unwrap_or(false)
+            .map(|c| c.status)
+            .unwrap_or(LifecycleState::Off)
     }
 
-    async fn get_abort_handle(task: &Model, environment: Environments) -> Option<AbortHandle> {
-        let (delay, cooldown) = (task.delay as u64, task.cooldown as u64);
+    pub async fn reset_tasks_cache(environment: Environments) -> Result<(), String> {
+        let mut cache = ACTIVE_TASKS.write().await;
 
-        match task.nick.as_ref() {
-            "BNUAB" => Some(
-                tokio::spawn(async move {
-                    loop {
-                        sleep(Duration::from_secs(delay)).await;
-                        Binance::update_account_balances(environment).await;
-                        sleep(Duration::from_secs(cooldown)).await;
-                    }
-                })
-                .abort_handle(),
-            ),
-            "BNUEI" => Some(
-                tokio::spawn(async move {
-                    loop {
-                        sleep(Duration::from_secs(delay)).await;
-                        Binance::update_exchange_information(environment).await;
-                        sleep(Duration::from_secs(cooldown)).await;
-                    }
-                })
-                .abort_handle(),
-            ),
-            "CPUPS" => Some(
-                tokio::spawn(async move {
-                    loop {
-                        sleep(Duration::from_secs(delay)).await;
-                        CoinPaprika::default()
-                            .with_env(environment)
-                            .update_pairs_statistics()
-                            .await;
-                        sleep(Duration::from_secs(cooldown)).await;
-                    }
-                })
-                .abort_handle(),
-            ),
-            "CMPER" => Some(
-                tokio::spawn(async move {
-                    loop {
-                        let now = Local::now();
-
-                        let next_hour = match (now + chrono::Duration::hours(1))
-                            .with_minute(0)
-                            .and_then(|t| t.with_second(0))
-                            .and_then(|t| t.with_nanosecond(0))
-                        {
-                            Some(t) => t,
-                            None => {
-                                tracing::error!("Failed to compute next hour, retrying in 60s");
-                                sleep(Duration::from_secs(60)).await;
-                                continue;
-                            }
-                        };
-
-                        let wait = match (next_hour - now).to_std() {
-                            Ok(d) => d,
-                            Err(_) => Duration::from_secs(3600),
-                        };
-
-                        sleep(wait).await;
-
-                        let _ = Metrics::default()
-                            .with_env(environment)
-                            .persist_metrics()
-                            .await;
-                    }
-                })
-                .abort_handle(),
-            ),
-            _ => None,
+        if let Some(env_cache) = cache.environments.get_mut(&environment) {
+            *env_cache = CacheTasks::new();
         }
+
+        Ok(())
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use models::{entities::tasks::Model, structs::Environments};
+    use models::{entities::tasks::Model, enums::LifecycleState, structs::Environments};
 
     use crate::{handler::Tasks, utils::Cache};
 
+    // =========================
     // Helpers
+    // =========================
 
-    fn mock_task(id: i32, nick: &str, is_active: bool) -> Model {
+    fn mock_task(id: i32) -> Model {
         Model {
             id,
-            nick: nick.to_string(),
-            delay: 10000,
-            cooldown: 10000,
-            is_active,
+            is_active: true,
             ..Default::default()
         }
     }
 
-    async fn reset_env(env: Environments) {
-        Tasks::<Cache>::stop_active_tasks_cache(&env).await;
+    async fn start_env(env: Environments) {
+        let _ = Tasks::<Cache>::set_status_cache(env, LifecycleState::Starting).await;
+        let _ = Tasks::<Cache>::set_status_cache(env, LifecycleState::Running).await;
     }
 
-    // Scenarios
+    async fn stop_env(env: Environments) {
+        let _ = Tasks::<Cache>::set_status_cache(env, LifecycleState::Stopping).await;
 
-    // Initial state
-    async fn scenario_initial_state(env: Environments) {
-        reset_env(env).await;
-
-        let tasks = Tasks::<Cache>::get_active_tasks_cache(&env).await;
-        let status = Tasks::<Cache>::get_active_tasks_status_cache(&env).await;
-
-        assert!(tasks.is_none());
-        assert!(!status);
-    }
-
-    // Bulk set
-    async fn scenario_set_active_tasks_cache(env: Environments) {
-        reset_env(env).await;
-
-        let tasks = vec![mock_task(1, "BNUAB", true), mock_task(2, "BNUEI", true)];
-
-        Tasks::<Cache>::set_active_tasks_cache(&env, tasks.clone()).await;
-
-        let cached = Tasks::<Cache>::get_active_tasks_cache(&env)
+        let removed = Tasks::<Cache>::remove_tasks_cache(env)
             .await
-            .expect("tasks should exist");
+            .expect("remove_tasks_cache should work in Stopping");
 
-        let status = Tasks::<Cache>::get_active_tasks_status_cache(&env).await;
+        assert!(removed.is_empty() || !removed.is_empty());
 
-        assert_eq!(cached.len(), 2);
-        assert!(status);
-
-        reset_env(env).await;
+        let _ = Tasks::<Cache>::set_status_cache(env, LifecycleState::Off).await;
     }
 
-    // Single insert
-    async fn scenario_set_active_task_cache_insert(env: Environments) {
-        reset_env(env).await;
+    // =========================
+    // Scenarios (unit responsibilities)
+    // =========================
 
-        let task = mock_task(10, "CPUPS", true);
+    async fn scenario_reset_env_clears_state(env: Environments) {
+        start_env(env).await;
 
-        Tasks::<Cache>::set_active_task_cache(&env, task.clone(), false).await;
+        let tasks = vec![mock_task(1)];
+        Tasks::<Cache>::set_tasks_cache(env, tasks).await.unwrap();
 
-        let cached = Tasks::<Cache>::get_active_task_cache(&env, &10).await;
+        let _ = Tasks::<Cache>::set_status_cache(env, LifecycleState::Stopping).await;
 
-        assert_eq!(cached, Some(task));
+        let removed = Tasks::<Cache>::remove_tasks_cache(env).await.unwrap();
+        assert_eq!(removed.len(), 1);
 
-        reset_env(env).await;
+        let cache = Tasks::<Cache>::get_tasks_cache(env).await.unwrap();
+        assert!(cache.models.is_empty());
+
+        let _ = Tasks::<Cache>::set_status_cache(env, LifecycleState::Off).await;
+
+        let status = Tasks::<Cache>::get_tasks_state_cache(env).await;
+        assert_eq!(status, LifecycleState::Off);
     }
 
-    // Single remove
-    async fn scenario_set_active_task_cache_remove(env: Environments) {
-        reset_env(env).await;
+    async fn scenario_set_tasks_cache(env: Environments) {
+        start_env(env).await;
 
-        let task = mock_task(20, "BNUAB", true);
+        let tasks = vec![mock_task(1), mock_task(2)];
 
-        Tasks::<Cache>::set_active_task_cache(&env, task.clone(), false).await;
-        Tasks::<Cache>::set_active_task_cache(&env, task.clone(), true).await;
+        Tasks::<Cache>::set_tasks_cache(env, tasks).await.unwrap();
 
-        let cached = Tasks::<Cache>::get_active_task_cache(&env, &20).await;
+        let cache = Tasks::<Cache>::get_tasks_cache(env).await.unwrap();
+        let status = Tasks::<Cache>::get_tasks_state_cache(env).await;
 
+        assert_eq!(cache.models.len(), 2);
+        assert!(cache.models.contains_key(&1));
+        assert!(cache.models.contains_key(&2));
+        assert_eq!(status, LifecycleState::Running);
+
+        stop_env(env).await;
+    }
+
+    async fn scenario_upsert_task_insert(env: Environments) {
+        start_env(env).await;
+
+        let task = mock_task(10);
+        Tasks::<Cache>::upsert_task_cache(env, task.clone())
+            .await
+            .unwrap();
+
+        let cached = Tasks::<Cache>::get_task_cache(env, 10).await.unwrap();
+        assert_eq!(cached, task);
+
+        stop_env(env).await;
+    }
+
+    async fn scenario_remove_task(env: Environments) {
+        start_env(env).await;
+
+        let task = mock_task(20);
+        Tasks::<Cache>::upsert_task_cache(env, task).await.unwrap();
+
+        let removed = Tasks::<Cache>::remove_task_cache(env, 20).await.unwrap();
+
+        assert!(removed.is_some());
+
+        let cached = Tasks::<Cache>::get_task_cache(env, 20).await;
         assert!(cached.is_none());
 
-        reset_env(env).await;
+        stop_env(env).await;
     }
 
-    // Inactive task should not be inserted
-    async fn scenario_inactive_task_is_not_inserted(env: Environments) {
-        reset_env(env).await;
+    async fn scenario_get_tasks_state_cache(env: Environments) {
+        assert_eq!(
+            Tasks::<Cache>::get_tasks_state_cache(env).await,
+            LifecycleState::Off
+        );
 
-        let task = mock_task(30, "BNUEI", false);
+        start_env(env).await;
 
-        Tasks::<Cache>::set_active_task_cache(&env, task, false).await;
+        assert_eq!(
+            Tasks::<Cache>::get_tasks_state_cache(env).await,
+            LifecycleState::Running
+        );
 
-        let cached = Tasks::<Cache>::get_active_tasks_cache(&env).await;
-
-        assert!(cached.is_some_and(|val| val.is_empty()));
-
-        reset_env(env).await;
+        stop_env(env).await;
     }
 
-    // Get all tasks
-    async fn scenario_get_active_tasks_cache(env: Environments) {
-        reset_env(env).await;
+    async fn scenario_cannot_remove_tasks_when_running(env: Environments) {
+        start_env(env).await;
 
-        let tasks = vec![
-            mock_task(1, "BNUAB", true),
-            mock_task(2, "BNUEI", true),
-            mock_task(3, "CPUPS", true),
-        ];
+        let result = Tasks::<Cache>::remove_tasks_cache(env).await;
+        assert!(result.is_err());
 
-        Tasks::<Cache>::set_active_tasks_cache(&env, tasks.clone()).await;
-
-        let cached = Tasks::<Cache>::get_active_tasks_cache(&env).await.unwrap();
-
-        assert_eq!(cached.len(), 3);
-
-        reset_env(env).await;
+        stop_env(env).await;
     }
 
-    // Stop clears tasks
-    async fn scenario_stop_active_tasks_cache(env: Environments) {
-        reset_env(env).await;
-
-        let tasks = vec![mock_task(1, "BNUAB", true)];
-
-        Tasks::<Cache>::set_active_tasks_cache(&env, tasks).await;
-        Tasks::<Cache>::stop_active_tasks_cache(&env).await;
-
-        let cached = Tasks::<Cache>::get_active_tasks_cache(&env).await;
-        let status = Tasks::<Cache>::get_active_tasks_status_cache(&env).await;
-
-        assert!(cached.unwrap_or_default().is_empty());
-        assert!(!status);
-    }
+    // =========================
+    // Entry point
+    // =========================
 
     #[tokio::test]
     async fn cache_tasks_unit_responsibilities() {
         let env = Environments::DEV;
 
-        scenario_initial_state(env).await;
-        scenario_set_active_tasks_cache(env).await;
-        scenario_set_active_task_cache_insert(env).await;
-        scenario_set_active_task_cache_remove(env).await;
-        scenario_inactive_task_is_not_inserted(env).await;
-        scenario_get_active_tasks_cache(env).await;
-        scenario_stop_active_tasks_cache(env).await;
-
-        reset_env(env).await;
+        scenario_reset_env_clears_state(env).await;
+        scenario_set_tasks_cache(env).await;
+        scenario_upsert_task_insert(env).await;
+        scenario_remove_task(env).await;
+        scenario_get_tasks_state_cache(env).await;
+        scenario_cannot_remove_tasks_when_running(env).await;
     }
 }

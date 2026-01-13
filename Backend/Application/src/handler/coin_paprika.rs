@@ -125,10 +125,10 @@ impl CoinPaprika {
                     Ok(val) => val,
                 };
 
-                Pairs::default()
+                let _ = Pairs::default()
                     .with_env(environment)
                     .from_model(model)
-                    .set_active_pair(false)
+                    .upsert_pair()
                     .await;
             }
         }

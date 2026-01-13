@@ -81,13 +81,13 @@ pub async fn delete_strategy(
 
 // cache
 #[get("/{env}/memory")]
-pub async fn get_active_strategy(
+pub async fn get_strategy(
     env: web::Path<Environments>,
     strategy: web::Query<StrategyRequest>,
 ) -> impl Responder {
     let active_strategy = Strategies::new(strategy.into_inner())
         .with_env(env.into_inner())
-        .get_active_strategy()
+        .get_strategy()
         .await;
 
     match active_strategy {
@@ -97,39 +97,17 @@ pub async fn get_active_strategy(
 }
 
 #[get("/{env}/memory/all")]
-pub async fn get_active_strategies(
+pub async fn get_strategies(
     env: web::Path<Environments>,
     strategy: web::Query<StrategyRequest>,
 ) -> impl Responder {
     let active_strategies = Strategies::new(strategy.into_inner())
         .with_env(env.into_inner())
-        .get_active_strategies()
+        .get_strategies()
         .await;
 
     match active_strategies {
         None => HttpResponse::NotFound().finish(),
         Some(val) => HttpResponse::Ok().json(val),
     }
-}
-
-#[post("/{env}/memory/start")]
-pub async fn start_active_strategies(env: web::Path<Environments>) -> impl Responder {
-    match Strategies::default()
-        .with_env(env.into_inner())
-        .start_active_strategies()
-        .await
-    {
-        Ok(val) => HttpResponse::Ok().json(val),
-        Err(err) => error_response(err),
-    }
-}
-
-#[post("/{env}/memory/stop")]
-pub async fn stop_active_strategies(env: web::Path<Environments>) -> impl Responder {
-    Strategies::default()
-        .with_env(env.into_inner())
-        .stop_active_strategies()
-        .await;
-
-    HttpResponse::Ok().finish()
 }

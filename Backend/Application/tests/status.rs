@@ -1,7 +1,11 @@
 use application::{handler::OrderStatus, utils::Cache};
-use models::{entities::status::Model, enums::Status, structs::Environments};
+use models::{
+    entities::status::Model,
+    enums::{LifecycleState, Status},
+    structs::Environments,
+};
 
-fn mock_model(id: i32, name: &str) -> Model {
+fn mock_status(id: i32, name: &str) -> Model {
     Model {
         id,
         name: name.to_string(),
@@ -12,39 +16,77 @@ fn mock_model(id: i32, name: &str) -> Model {
 async fn full_order_status_cache_flow_should_work_correctly() {
     let env = Environments::DEV;
 
-    // Initial state
-    OrderStatus::<Cache>::stop_active_status_cache(&env).await;
-    assert!(!OrderStatus::<Cache>::get_active_status_status_cache(&env).await);
+    /* ===========================
+     * INITIAL STATE
+     * ===========================
+     */
 
-    // Load multiple statuses
-    let models = vec![
-        mock_model(1, "OPEN"),
-        mock_model(2, "COMPLETED"),
-        mock_model(3, "ABORTED"),
+    let reset = OrderStatus::<Cache>::reset_status_cache(env).await;
+    assert!(reset.is_ok());
+
+    // Cannot transition to Off explicitly from reset
+    let off = OrderStatus::<Cache>::set_status_cache(env, LifecycleState::Off).await;
+    assert!(off.is_err());
+
+    let state = OrderStatus::<Cache>::get_cache_state(env).await;
+    assert_eq!(state, LifecycleState::Off);
+
+    let cache = OrderStatus::<Cache>::get_status_cache(env).await;
+    assert!(cache.is_some_and(|val| val.models.is_empty()));
+
+    /* ===========================
+     * LOAD MULTIPLE STATUSES
+     * ===========================
+     */
+
+    let starting = OrderStatus::<Cache>::set_status_cache(env, LifecycleState::Starting).await;
+    assert!(starting.is_ok());
+
+    let statuses = vec![
+        mock_status(1, "OPEN"),
+        mock_status(2, "COMPLETED"),
+        mock_status(3, "ABORTED"),
     ];
 
-    OrderStatus::<Cache>::set_active_status_cache(&env, models).await;
+    let running = OrderStatus::<Cache>::set_status_cache(env, LifecycleState::Running).await;
+    assert!(running.is_ok());
 
-    let cache = OrderStatus::<Cache>::get_active_status_cache(&env)
+    OrderStatus::<Cache>::set_statuses_cache(env, statuses)
         .await
         .unwrap();
 
-    assert_eq!(cache.len(), 3);
+    let cache = OrderStatus::<Cache>::get_status_cache(env).await.unwrap();
+    assert_eq!(cache.models.len(), 3);
+    assert_eq!(cache.status, LifecycleState::Running);
 
-    // Get single status
-    let completed = OrderStatus::<Cache>::get_active_status(&env, &Status::Completed).await;
-    assert_eq!(completed, Some(2));
+    /* ===========================
+     * GET SINGLE STATUS
+     * ===========================
+     */
 
-    // Status flag
-    assert!(OrderStatus::<Cache>::get_active_status_status_cache(&env).await);
-
-    // Stop
-    OrderStatus::<Cache>::stop_active_status_cache(&env).await;
-
-    let final_cache = OrderStatus::<Cache>::get_active_status_cache(&env)
+    let completed = OrderStatus::<Cache>::get_status_by_enum(env, Status::Completed)
         .await
         .unwrap();
 
-    assert!(final_cache.is_empty());
-    assert!(!OrderStatus::<Cache>::get_active_status_status_cache(&env).await);
+    assert_eq!(completed.id, 2);
+
+    /* ===========================
+     * STOP
+     * ===========================
+     */
+
+    OrderStatus::<Cache>::set_status_cache(env, LifecycleState::Stopping)
+        .await
+        .unwrap();
+
+    OrderStatus::<Cache>::remove_statuses_cache(env)
+        .await
+        .unwrap();
+
+    OrderStatus::<Cache>::set_status_cache(env, LifecycleState::Off)
+        .await
+        .unwrap();
+
+    let final_cache = OrderStatus::<Cache>::get_status_cache(env).await;
+    assert!(final_cache.is_some_and(|val| val.models.is_empty()));
 }

@@ -50,7 +50,7 @@ impl Metrics<Data> {
                 self.model.active_posting.try_into().unwrap_or_default(),
             ),
             max_active_posting: ActiveValue::Set(
-                self.model.max_active_posting.try_into().unwrap_or_default(),
+                self.model.max_posting.try_into().unwrap_or_default(),
             ),
             skipped_due_to_lock: ActiveValue::Set(
                 self.model

@@ -17,10 +17,10 @@ pub async fn select_metrics(env: web::Path<Environments>) -> impl Responder {
 }
 
 #[get("/{env}/memory")]
-pub async fn get_active_metric(env: web::Path<Environments>) -> impl Responder {
+pub async fn get_metric(env: web::Path<Environments>) -> impl Responder {
     let metrics = Metrics::default()
         .with_env(env.into_inner())
-        .get_active_metric()
+        .get_metric()
         .await;
 
     HttpResponse::Ok().json(metrics)

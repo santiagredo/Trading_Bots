@@ -5,6 +5,7 @@ use models::{
         indicators::{self, Model},
         pairs,
     },
+    enums::LifecycleState,
     structs::Ticker,
 };
 
@@ -14,7 +15,11 @@ use crate::{
 };
 
 impl Indicators<Core> {
-    // db
+    /* ===========================
+     * DB
+     * ===========================
+     */
+
     pub async fn insert_indicator_core(self) -> Result<Model, Response> {
         let env = self.environment;
 
@@ -64,58 +69,169 @@ impl Indicators<Core> {
             .await
     }
 
-    // cache
-    pub async fn get_active_indicators_core(self) -> Option<HashMap<i32, Model>> {
-        Indicators::<Cache>::get_active_indicators_cache(&self.environment).await
+    /* ===========================
+     * CACHE (READ)
+     * ===========================
+     */
+
+    pub async fn get_indicators_core(self) -> Option<HashMap<i32, Model>> {
+        Indicators::<Cache>::get_indicators_cache(self.environment)
+            .await
+            .map(|c| c.models)
     }
 
-    pub async fn get_active_indicator_core(self) -> Option<Model> {
+    pub async fn get_indicator_core(self) -> Option<Model> {
+        let id = self.model.id.or(self.model.strategy_id).unwrap_or_default();
+
+        Indicators::<Cache>::get_indicator_cache(self.environment, id).await
+    }
+
+    pub async fn get_indicators_state_core(self) -> LifecycleState {
+        Indicators::<Cache>::get_cache_state(self.environment).await
+    }
+
+    /* ===========================
+     * CACHE (WRITE)
+     * ===========================
+     */
+
+    pub async fn upsert_indicator_core(self) -> Result<(), Response> {
+        let env = self.environment;
+        let model = Indicators::into_model(self.model);
+
+        Indicators::<Cache>::upsert_indicator_cache(env, model)
+            .await
+            .map_err(|err| Response {
+                code: 500,
+                message: err,
+            })
+    }
+
+    pub async fn remove_indicator_core(self) -> Result<Option<Model>, Response> {
+        let env = self.environment;
+        let id = self.model.strategy_id.unwrap_or_default();
+
+        Indicators::<Cache>::remove_indicator_cache(env, id)
+            .await
+            .map_err(|err| Response {
+                code: 500,
+                message: err,
+            })
+    }
+
+    /* ===========================
+     * START ACTIVE INDICATORS
+     * ===========================
+     */
+
+    pub async fn start_indicators_core(self) -> Result<(), Response> {
         let env = self.environment;
 
-        let id = if self.model.id.is_some() {
-            self.model.id.unwrap_or_default()
-        } else {
-            self.model.strategy_id.unwrap_or_default()
+        // STARTING
+        if let Err(err) = Indicators::<Cache>::set_status_cache(env, LifecycleState::Starting).await
+        {
+            return Err(Response {
+                code: 500,
+                message: err,
+            });
+        }
+
+        // Load active strategies
+        let mut strategies_request = Strategies::default().with_env(env);
+        strategies_request.model.is_active = Some(true);
+
+        let active_strategies = strategies_request
+            .get_strategies()
+            .await
+            .unwrap_or_default();
+
+        // Load indicators from DB
+        let mut indicators_request = Indicators::default().with_env(env);
+        indicators_request.model.is_active = Some(true);
+
+        let indicators = match indicators_request.select_indicators().await {
+            Ok(i) => i
+                .into_iter()
+                .filter(|ind| active_strategies.models.contains_key(&ind.strategy_id))
+                .collect::<Vec<_>>(),
+            Err(err) => {
+                let _ = Indicators::<Cache>::reset_indicators_cache(env).await;
+                return Err(err);
+            }
         };
 
-        Indicators::<Cache>::get_active_indicator_cache(&env, &id).await
-    }
+        // RUNNING
+        if let Err(err) = Indicators::<Cache>::set_status_cache(env, LifecycleState::Running).await
+        {
+            let _ = Indicators::<Cache>::reset_indicators_cache(env).await;
+            return Err(Response {
+                code: 500,
+                message: err,
+            });
+        }
 
-    pub async fn start_active_indicators_core(self) -> Result<(), Response> {
-        let env = self.environment;
-
-        if !Indicators::<Cache>::get_active_indicators_status_cache(&env).await {
-            let mut strategies_request = Strategies::default();
-            strategies_request.environment = env;
-
-            let active_strategies = strategies_request
-                .get_active_strategies()
-                .await
-                .unwrap_or_default();
-
-            let mut indicators_request = Indicators::default();
-            indicators_request.model.is_active = Some(true);
-
-            let active_indicators = indicators_request
-                .select_indicators()
-                .await?
-                .into_iter()
-                .filter(|act_ind| active_strategies.contains_key(&act_ind.strategy_id))
-                .collect::<Vec<_>>();
-
-            Indicators::<Cache>::set_active_indicators_cache(&env, active_indicators).await;
+        // Populate cache
+        if let Err(err) = Indicators::<Cache>::set_indicators_cache(env, indicators).await {
+            let _ = Indicators::<Cache>::reset_indicators_cache(env).await;
+            return Err(Response {
+                code: 500,
+                message: err,
+            });
         }
 
         Ok(())
     }
 
-    pub async fn stop_active_indicators_core(self) {
+    /* ===========================
+     * STOP ACTIVE INDICATORS
+     * ===========================
+     */
+
+    pub async fn stop_indicators_core(self) -> Result<(), Response> {
         let env = self.environment;
 
-        Indicators::<Cache>::stop_active_indicators_cache(&env).await
+        // STOPPING
+        if let Err(err) = Indicators::<Cache>::set_status_cache(env, LifecycleState::Stopping).await
+        {
+            let _ = Indicators::<Cache>::reset_indicators_cache(env).await;
+            return Err(Response {
+                code: 500,
+                message: err,
+            });
+        }
+
+        // Remove indicators
+        if let Err(err) = Indicators::<Cache>::remove_indicators_cache(env).await {
+            let _ = Indicators::<Cache>::reset_indicators_cache(env).await;
+            return Err(Response {
+                code: 500,
+                message: err,
+            });
+        }
+
+        // OFF
+        if let Err(err) = Indicators::<Cache>::set_status_cache(env, LifecycleState::Off).await {
+            let _ = Indicators::<Cache>::reset_indicators_cache(env).await;
+            return Err(Response {
+                code: 500,
+                message: err,
+            });
+        }
+
+        Ok(())
     }
 
-    // misc
+    pub async fn reset_indicators_core(self) -> Result<(), Response> {
+        Indicators::<Cache>::reset_indicators_cache(self.environment)
+            .await
+            .map_err(Response::server_error)
+    }
+
+    /* ===========================
+     * MISC
+     * ===========================
+     */
+
     pub fn evaluate_indicator_core(
         self,
         indicator: &indicators::Model,

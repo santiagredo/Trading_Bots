@@ -289,7 +289,7 @@ impl UserCommands {
             .await
         {
             errors.push(StopError {
-                step: StartupStep::Assets,
+                step: StartupStep::Runtimes,
                 response: Some(e),
             });
         }

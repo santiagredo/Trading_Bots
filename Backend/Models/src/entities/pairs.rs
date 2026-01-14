@@ -59,6 +59,7 @@ pub struct Model {
     pub notional_avg_price_mins: i32,
     pub max_num_orders: i32,
     pub max_num_algo_orders: i32,
+    pub last_price: Decimal,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveColumn)]
@@ -106,6 +107,7 @@ pub enum Column {
     NotionalAvgPriceMins,
     MaxNumOrders,
     MaxNumAlgoOrders,
+    LastPrice,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DerivePrimaryKey)]
@@ -174,6 +176,7 @@ impl ColumnTrait for Column {
             Self::NotionalAvgPriceMins => ColumnType::Integer.def(),
             Self::MaxNumOrders => ColumnType::Integer.def(),
             Self::MaxNumAlgoOrders => ColumnType::Integer.def(),
+            Self::LastPrice => ColumnType::Decimal(None).def(),
         }
     }
 }

@@ -5,7 +5,10 @@ use models::structs::{CoinPaprikaTicker, Environments, Quote};
 use sea_orm::prelude::Decimal;
 use tracing::error_span;
 
-use crate::{handler::Pairs, utils::Types};
+use crate::{
+    handler::{Pairs, Tickers},
+    utils::Types,
+};
 
 pub struct CoinPaprika<Phase = Types> {
     phase: PhantomData<Phase>,
@@ -114,6 +117,10 @@ impl CoinPaprika {
 
                 pair.year_price_percent_change =
                     Decimal::from_f64_retain(quote.percent_change_1_y).unwrap_or_default();
+
+                if let Some(ticker) = Tickers::get_ticker(pair.symbol.clone()).await {
+                    pair.last_price = ticker.last_price
+                }
 
                 let model = match Pairs::default()
                     .with_env(environment)

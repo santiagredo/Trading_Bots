@@ -173,6 +173,10 @@ impl Pairs<Data> {
             active_model_pair.symbol = ActiveValue::Set(val);
         }
 
+        if let Some(val) = self.model.last_price {
+            active_model_pair.last_price = ActiveValue::Set(val);
+        }
+
         if let Some(val) = self.model.all_time_high_price {
             active_model_pair.all_time_high_price = ActiveValue::Set(val);
         }

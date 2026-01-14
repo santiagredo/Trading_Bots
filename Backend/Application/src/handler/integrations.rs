@@ -3,7 +3,7 @@ use std::marker::PhantomData;
 use models::{
     entities::integrations::Model,
     enums::LifecycleState,
-    structs::{CacheIntegrations, Environments, IntegrationRequest},
+    structs::{CacheIntegrations, Environments, IntegrationRequest, QueryOptions},
 };
 
 use crate::utils::{Response, Types};
@@ -52,8 +52,11 @@ impl Integrations {
         }
     }
 
-    pub async fn select_integrations(self) -> Result<Vec<Model>, Response> {
-        self.next_phase().select_integrations_core().await
+    pub async fn select_integrations(
+        self,
+        query: Option<QueryOptions>,
+    ) -> Result<Vec<Model>, Response> {
+        self.next_phase().select_integrations_core(query).await
     }
 
     pub async fn update_integration(self) -> Result<Model, Response> {

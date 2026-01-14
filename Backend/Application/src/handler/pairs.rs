@@ -3,7 +3,7 @@ use std::{collections::HashMap, marker::PhantomData};
 use models::{
     entities::pairs::Model,
     enums::LifecycleState,
-    structs::{Environments, PairRequest},
+    structs::{Environments, PairRequest, QueryOptions},
 };
 
 use crate::utils::{Core, Response, Types};
@@ -209,8 +209,8 @@ impl Pairs {
         self.next_phase::<Core>().select_pair_core().await
     }
 
-    pub async fn select_pairs(self) -> Result<Vec<Model>, Response> {
-        self.next_phase::<Core>().select_pairs_core().await
+    pub async fn select_pairs(self, query: Option<QueryOptions>) -> Result<Vec<Model>, Response> {
+        self.next_phase::<Core>().select_pairs_core(query).await
     }
 
     pub async fn update_pair(self) -> Result<Model, Response> {

@@ -2,9 +2,13 @@ use chrono::Local;
 use function_name::named;
 use models::{
     entities::pairs::{ActiveModel, Column, Entity, Model},
-    structs::ErrorLogRequest,
+    enums::OrderDirection,
+    structs::{ErrorLogRequest, QueryOptions},
 };
-use sea_orm::{ActiveValue, ColumnTrait, Condition, DatabaseConnection, EntityTrait, QueryFilter};
+use sea_orm::{
+    ActiveValue, ColumnTrait, Condition, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder,
+    QuerySelect,
+};
 
 use crate::{
     handler::{ErrorLogs, Pairs},
@@ -70,7 +74,11 @@ impl Pairs<Data> {
     }
 
     #[named]
-    pub async fn select_pairs_data(self, db: &DatabaseConnection) -> Result<Vec<Model>, Response> {
+    pub async fn select_pairs_data(
+        self,
+        db: &DatabaseConnection,
+        query: Option<QueryOptions>,
+    ) -> Result<Vec<Model>, Response> {
         let mut condition = Condition::all();
 
         if self.model.id.is_some_and(|id| id > 0) {
@@ -97,9 +105,49 @@ impl Pairs<Data> {
                 condition.add(Column::Symbol.eq(self.model.symbol.clone().unwrap_or_default()));
         }
 
-        match Entity::find().filter(condition).all(db).await {
+        let mut stmt = Entity::find().filter(condition);
+
+        stmt = stmt.order_by(Column::Id, sea_orm::Order::Asc);
+
+        if let Some(q) = query {
+            if let Some(limit) = q.limit {
+                stmt = stmt.limit(limit);
+            }
+
+            if let Some(offset) = q.offset {
+                stmt = stmt.offset(offset);
+            }
+
+            if let Some(order_by) = q.order_by.as_deref().and_then(Self::parse_order_column) {
+                let direction = match q.order_direction.unwrap_or(OrderDirection::Desc) {
+                    OrderDirection::Asc => sea_orm::Order::Asc,
+                    OrderDirection::Desc => sea_orm::Order::Desc,
+                };
+
+                stmt = stmt.order_by(order_by, direction);
+            }
+        }
+
+        match stmt.all(db).await {
             Err(err) => log_db_error!(self, err),
             Ok(val) => Ok(val),
+        }
+    }
+
+    fn parse_order_column(value: &str) -> Option<Column> {
+        match value {
+            "id" => Some(Column::Id),
+            "base_asset_id" => Some(Column::BaseAssetId),
+            "quote_asset_id" => Some(Column::QuoteAssetId),
+            "symbol" => Some(Column::Symbol),
+            "update_date" => Some(Column::UpdateDate),
+            "all_time_high_price" => Some(Column::AllTimeHighPrice),
+            "percent_from_all_time_high" => Some(Column::PercentFromAllTimeHigh),
+            "day_price_percent_change" => Some(Column::DayPricePercentChange),
+            "week_price_percent_change" => Some(Column::WeekPricePercentChange),
+            "month_price_percent_change" => Some(Column::MonthPricePercentChange),
+            "year_price_percent_change" => Some(Column::YearPricePercentChange),
+            _ => None,
         }
     }
 

@@ -1,5 +1,5 @@
 use actix_web::{get, patch, post, web, HttpResponse, Responder};
-use models::structs::{Environments, TaskRequest};
+use models::structs::{Environments, QueryOptions, TaskRequest};
 
 use crate::{handler::Tasks, utils::error_response};
 
@@ -8,10 +8,11 @@ use crate::{handler::Tasks, utils::error_response};
 pub async fn select_tasks(
     env: web::Path<Environments>,
     task: web::Query<TaskRequest>,
+    query: web::Query<QueryOptions>,
 ) -> impl Responder {
     match Tasks::new(task.into_inner())
         .with_env(env.into_inner())
-        .select_tasks()
+        .select_tasks(Some(query.into_inner()))
         .await
     {
         Ok(val) => HttpResponse::Ok().json(val),

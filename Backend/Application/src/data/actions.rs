@@ -2,11 +2,12 @@ use chrono::Local;
 use function_name::named;
 use models::{
     entities::actions::{ActiveModel, Column, Entity, Model},
-    structs::ErrorLogRequest,
+    enums::OrderDirection,
+    structs::{ErrorLogRequest, QueryOptions},
 };
 use sea_orm::{
     ActiveModelTrait, ActiveValue, ColumnTrait, Condition, DatabaseConnection, EntityTrait,
-    QueryFilter,
+    QueryFilter, QueryOrder, QuerySelect,
 };
 
 use crate::{
@@ -71,29 +72,65 @@ impl Actions<Data> {
     pub async fn select_actions_data(
         self,
         db: &DatabaseConnection,
+        query: Option<QueryOptions>,
     ) -> Result<Vec<Model>, Response> {
         let mut condition = Condition::all();
 
-        if self.model.id.is_some() {
-            condition = condition.add(Column::Id.eq(self.model.id.unwrap_or_default()))
+        if let Some(id) = self.model.id {
+            condition = condition.add(Column::Id.eq(id));
         }
 
-        if self.model.strategy_id.is_some() {
-            condition =
-                condition.add(Column::StrategyId.eq(self.model.strategy_id.unwrap_or_default()))
+        if let Some(strategy_id) = self.model.strategy_id {
+            condition = condition.add(Column::StrategyId.eq(strategy_id));
         }
 
-        if self.model.is_active.is_some() {
-            condition = condition.add(Column::IsActive.eq(self.model.is_active.unwrap_or_default()))
+        if let Some(is_active) = self.model.is_active {
+            condition = condition.add(Column::IsActive.eq(is_active));
         }
 
-        if self.model.pair_id.is_some() {
-            condition = condition.add(Column::PairId.eq(self.model.pair_id.unwrap_or_default()))
+        if let Some(pair_id) = self.model.pair_id {
+            condition = condition.add(Column::PairId.eq(pair_id));
         }
 
-        match Entity::find().filter(condition).all(db).await {
+        let mut stmt = Entity::find().filter(condition);
+
+        if let Some(q) = query {
+            if let Some(limit) = q.limit {
+                stmt = stmt.limit(limit);
+            }
+
+            if let Some(offset) = q.offset {
+                stmt = stmt.offset(offset);
+            }
+
+            if let Some(order_by) = q.order_by.and_then(|c| Self::parse_order_column(&c)) {
+                let direction = match q.order_direction.unwrap_or(OrderDirection::Asc) {
+                    OrderDirection::Asc => sea_orm::Order::Asc,
+                    OrderDirection::Desc => sea_orm::Order::Desc,
+                };
+
+                stmt = stmt.order_by(order_by, direction);
+            }
+        }
+
+        match stmt.all(db).await {
             Err(err) => log_db_error!(self, err),
             Ok(val) => Ok(val),
+        }
+    }
+
+    fn parse_order_column(value: &str) -> Option<Column> {
+        match value {
+            "id" => Some(Column::Id),
+            "strategy_id" => Some(Column::StrategyId),
+            "is_active" => Some(Column::IsActive),
+            "is_sell" => Some(Column::IsSell),
+            "is_quote_asset" => Some(Column::IsQuoteAsset),
+            "is_percentage" => Some(Column::IsPercentage),
+            "value" => Some(Column::Value),
+            "pair_id" => Some(Column::PairId),
+            "last_update" => Some(Column::LastUpdate),
+            _ => None,
         }
     }
 

@@ -1,6 +1,10 @@
 use std::collections::HashMap;
 
-use models::{entities::pairs::Model, enums::LifecycleState, structs::AssetRequest};
+use models::{
+    entities::pairs::Model,
+    enums::LifecycleState,
+    structs::{AssetRequest, QueryOptions},
+};
 
 use crate::{
     handler::{Assets, Pairs, DBC},
@@ -48,11 +52,14 @@ impl Pairs<Core> {
             .await
     }
 
-    pub async fn select_pairs_core(self) -> Result<Vec<Model>, Response> {
+    pub async fn select_pairs_core(
+        self,
+        query: Option<QueryOptions>,
+    ) -> Result<Vec<Model>, Response> {
         let env = self.environment;
 
         self.next_phase::<Data>()
-            .select_pairs_data(&DBC::db(&env).await?)
+            .select_pairs_data(&DBC::db(&env).await?, query)
             .await
     }
 
@@ -151,7 +158,7 @@ impl Pairs<Core> {
         // Load active pairs from DB
         let pairs_request = Pairs::default().with_env(env);
 
-        let pairs = match pairs_request.select_pairs().await {
+        let pairs = match pairs_request.select_pairs(None).await {
             Ok(p) => p,
             Err(err) => {
                 let _ = Pairs::<Cache>::reset_pairs_cache(env).await;

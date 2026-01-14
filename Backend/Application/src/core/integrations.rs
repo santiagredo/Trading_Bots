@@ -1,4 +1,8 @@
-use models::{entities::integrations::Model, enums::LifecycleState, structs::CacheIntegrations};
+use models::{
+    entities::integrations::Model,
+    enums::LifecycleState,
+    structs::{CacheIntegrations, QueryOptions},
+};
 
 use crate::{
     handler::{Integrations, DBC},
@@ -11,11 +15,14 @@ impl Integrations<Core> {
      * ===========================
      */
 
-    pub async fn select_integrations_core(self) -> Result<Vec<Model>, Response> {
+    pub async fn select_integrations_core(
+        self,
+        query: Option<QueryOptions>,
+    ) -> Result<Vec<Model>, Response> {
         let env = self.environment;
 
         self.next_phase::<Data>()
-            .select_integrations_data(&DBC::db(&env).await?)
+            .select_integrations_data(&DBC::db(&env).await?, query)
             .await
     }
 
@@ -65,7 +72,7 @@ impl Integrations<Core> {
         let mut integrations_request = Integrations::default().with_env(env);
         integrations_request.model.is_enabled = Some(true);
 
-        let integrations = match integrations_request.select_integrations().await {
+        let integrations = match integrations_request.select_integrations(None).await {
             Ok(i) => i,
             Err(err) => {
                 let _ = Integrations::<Cache>::reset_integrations_cache(env).await;

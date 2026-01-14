@@ -3,7 +3,7 @@ use std::marker::PhantomData;
 use models::{
     entities::assets::Model,
     enums::LifecycleState,
-    structs::{AssetRequest, CacheAssets, Environments},
+    structs::{AssetRequest, CacheAssets, Environments, QueryOptions},
 };
 use sea_orm::prelude::Decimal;
 use tokio_util::sync::CancellationToken;
@@ -96,8 +96,8 @@ impl Assets {
         self.next_phase().select_asset_core().await
     }
 
-    pub async fn select_assets(self) -> Result<Vec<Model>, Response> {
-        self.next_phase().select_assets_core().await
+    pub async fn select_assets(self, query: Option<QueryOptions>) -> Result<Vec<Model>, Response> {
+        self.next_phase().select_assets_core(query).await
     }
 
     pub async fn update_asset(self) -> Result<Model, Response> {

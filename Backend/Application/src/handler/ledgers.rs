@@ -2,7 +2,7 @@ use std::marker::PhantomData;
 
 use models::{
     entities::ledgers::Model,
-    structs::{Environments, LedgerRequest},
+    structs::{Environments, LedgerRequest, QueryOptions},
 };
 
 use crate::utils::{Response, Types};
@@ -59,7 +59,7 @@ impl Ledgers {
         self.next_phase().select_ledger_core().await
     }
 
-    pub async fn select_ledgers(self) -> Result<Vec<Model>, Response> {
-        self.next_phase().select_ledgers_core().await
+    pub async fn select_ledgers(self, query: Option<QueryOptions>) -> Result<Vec<Model>, Response> {
+        self.next_phase().select_ledgers_core(query).await
     }
 }

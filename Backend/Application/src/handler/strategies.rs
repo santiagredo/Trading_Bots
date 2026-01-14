@@ -4,7 +4,7 @@ use chrono::NaiveDateTime;
 use models::{
     entities::strategies::Model,
     enums::{LifecycleState, TradingState},
-    structs::{CacheStrategies, CacheStrategy, Environments, StrategyRequest},
+    structs::{CacheStrategies, CacheStrategy, Environments, QueryOptions, StrategyRequest},
 };
 use tokio_util::sync::CancellationToken;
 
@@ -95,8 +95,11 @@ impl Strategies {
         self.next_phase().select_strategy_core().await
     }
 
-    pub async fn select_strategies(self) -> Result<Vec<Model>, Response> {
-        self.next_phase().select_strategies_core().await
+    pub async fn select_strategies(
+        self,
+        query: Option<QueryOptions>,
+    ) -> Result<Vec<Model>, Response> {
+        self.next_phase().select_strategies_core(query).await
     }
 
     pub async fn update_strategy(self) -> Result<Model, Response> {

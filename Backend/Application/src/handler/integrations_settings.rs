@@ -3,7 +3,7 @@ use std::{collections::HashMap, marker::PhantomData};
 use models::{
     entities::{self, integration_settings::Model},
     enums::LifecycleState,
-    structs::{CacheIntegrationsSettings, Environments, IntegrationSettingRequest},
+    structs::{CacheIntegrationsSettings, Environments, IntegrationSettingRequest, QueryOptions},
 };
 
 use crate::utils::{Core, Response, Types};
@@ -52,8 +52,13 @@ impl IntegrationsSettings {
         }
     }
 
-    pub async fn select_integrations_settings(self) -> Result<Vec<Model>, Response> {
-        self.next_phase().select_integrations_settings_core().await
+    pub async fn select_integrations_settings(
+        self,
+        query: Option<QueryOptions>,
+    ) -> Result<Vec<Model>, Response> {
+        self.next_phase()
+            .select_integrations_settings_core(query)
+            .await
     }
 
     pub async fn update_integration_setting(self) -> Result<Model, Response> {

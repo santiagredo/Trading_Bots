@@ -1,5 +1,5 @@
 use actix_web::{delete, get, patch, post, web, HttpResponse, Responder};
-use models::structs::{Environments, IndicatorRequest};
+use models::structs::{Environments, IndicatorRequest, QueryOptions};
 
 use crate::{
     handler::{Indicators, SubscribedIndicators},
@@ -40,11 +40,12 @@ pub async fn select_indicator(
 #[get("/{env}/all")]
 pub async fn select_indicators(
     env: web::Path<Environments>,
-    query: web::Query<IndicatorRequest>,
+    indicator: web::Query<IndicatorRequest>,
+    query: web::Query<QueryOptions>,
 ) -> impl Responder {
-    match Indicators::new(query.into_inner())
+    match Indicators::new(indicator.into_inner())
         .with_env(env.into_inner())
-        .select_indicators()
+        .select_indicators(Some(query.into_inner()))
         .await
     {
         Ok(val) => HttpResponse::Ok().json(val),

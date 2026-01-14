@@ -6,7 +6,7 @@ use models::{
         orders::{self, Model},
         pairs, strategies,
     },
-    structs::{request::OrderRequest, Environments, Ticker},
+    structs::{request::OrderRequest, Environments, QueryOptions, Ticker},
 };
 
 use crate::utils::{Response, Types};
@@ -139,8 +139,8 @@ impl Orders {
         self.next_phase().select_order_core().await
     }
 
-    pub async fn select_orders(self) -> Result<Vec<Model>, Response> {
-        self.next_phase().select_orders_core().await
+    pub async fn select_orders(self, query: Option<QueryOptions>) -> Result<Vec<Model>, Response> {
+        self.next_phase().select_orders_core(query).await
     }
 
     pub async fn update_order(self) -> Result<Model, Response> {

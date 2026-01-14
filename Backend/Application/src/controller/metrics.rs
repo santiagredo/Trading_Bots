@@ -1,13 +1,16 @@
 use actix_web::{get, web, HttpResponse, Responder};
-use models::structs::Environments;
+use models::structs::{Environments, QueryOptions};
 
 use crate::{handler::Metrics, utils::error_response};
 
 #[get("/{env}")]
-pub async fn select_metrics(env: web::Path<Environments>) -> impl Responder {
+pub async fn select_metrics(
+    env: web::Path<Environments>,
+    query: web::Query<QueryOptions>,
+) -> impl Responder {
     let metrics = Metrics::default()
         .with_env(env.into_inner())
-        .select_metrics()
+        .select_metrics(Some(query.into_inner()))
         .await;
 
     match metrics {

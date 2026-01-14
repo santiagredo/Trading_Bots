@@ -2,11 +2,12 @@ use chrono::Local;
 use function_name::named;
 use models::{
     entities::assets::{self, ActiveModel, Column, Entity, Model},
-    structs::ErrorLogRequest,
+    enums::OrderDirection,
+    structs::{ErrorLogRequest, QueryOptions},
 };
 use sea_orm::{
     ActiveModelTrait, ActiveValue, ColumnTrait, Condition, DatabaseConnection, EntityTrait,
-    QueryFilter,
+    QueryFilter, QueryOrder, QuerySelect,
 };
 
 use crate::{
@@ -62,24 +63,63 @@ impl Assets<Data> {
     }
 
     #[named]
-    pub async fn select_assets_data(self, db: &DatabaseConnection) -> Result<Vec<Model>, Response> {
+    pub async fn select_assets_data(
+        self,
+        db: &DatabaseConnection,
+        query: Option<QueryOptions>,
+    ) -> Result<Vec<Model>, Response> {
         let mut condition = Condition::all();
 
         if let Some(id) = self.model.id {
-            condition = condition.add(Column::Id.eq(id))
+            condition = condition.add(Column::Id.eq(id));
         }
 
         if let Some(name) = self.model.name.clone() {
-            condition = condition.add(Column::Name.eq(name))
+            condition = condition.add(Column::Name.eq(name));
         }
 
         if let Some(ticker) = self.model.ticker.clone() {
-            condition = condition.add(Column::Name.eq(ticker))
+            condition = condition.add(Column::Ticker.eq(ticker));
         }
 
-        match Entity::find().filter(condition).all(db).await {
+        let mut stmt = Entity::find().filter(condition);
+
+        stmt = stmt.order_by(Column::Name, sea_orm::Order::Asc);
+
+        if let Some(q) = query {
+            if let Some(limit) = q.limit {
+                stmt = stmt.limit(limit);
+            }
+
+            if let Some(offset) = q.offset {
+                stmt = stmt.offset(offset);
+            }
+
+            if let Some(order_by) = q.order_by.and_then(|c| Self::parse_order_column(&c)) {
+                let direction = match q.order_direction.unwrap_or(OrderDirection::Asc) {
+                    OrderDirection::Asc => sea_orm::Order::Asc,
+                    OrderDirection::Desc => sea_orm::Order::Desc,
+                };
+
+                stmt = stmt.order_by(order_by, direction);
+            }
+        }
+
+        match stmt.all(db).await {
             Err(err) => log_db_error!(self, err),
             Ok(val) => Ok(val),
+        }
+    }
+
+    fn parse_order_column(value: &str) -> Option<Column> {
+        match value {
+            "id" => Some(Column::Id),
+            "name" => Some(Column::Name),
+            "ticker" => Some(Column::Ticker),
+            "free" => Some(Column::Free),
+            "locked" => Some(Column::Locked),
+            "last_update" => Some(Column::LastUpdate),
+            _ => None,
         }
     }
 

@@ -1,5 +1,5 @@
 use actix_web::{delete, get, patch, post, web, HttpResponse, Responder};
-use models::structs::{ActionRequest, Environments};
+use models::structs::{ActionRequest, Environments, QueryOptions};
 
 use crate::{handler::Actions, utils::error_response};
 
@@ -38,10 +38,11 @@ pub async fn select_action(
 pub async fn select_actions(
     env: web::Path<Environments>,
     action: web::Query<ActionRequest>,
+    query: web::Query<QueryOptions>,
 ) -> impl Responder {
     match Actions::new(action.into_inner())
         .with_env(env.into_inner())
-        .select_actions()
+        .select_actions(Some(query.into_inner()))
         .await
     {
         Ok(val) => HttpResponse::Ok().json(val),

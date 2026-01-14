@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use models::{
     entities::{self, integration_settings::Model},
     enums::{FiniteStateMachine, LifecycleState},
-    structs::CacheIntegrationsSettings,
+    structs::{CacheIntegrationsSettings, QueryOptions},
 };
 
 use crate::{
@@ -17,11 +17,14 @@ impl IntegrationsSettings<Core> {
      * ===========================
      */
 
-    pub async fn select_integrations_settings_core(self) -> Result<Vec<Model>, Response> {
+    pub async fn select_integrations_settings_core(
+        self,
+        query: Option<QueryOptions>,
+    ) -> Result<Vec<Model>, Response> {
         let env = self.environment;
 
         self.next_phase::<Data>()
-            .select_integrations_settings_data(&DBC::db(&env).await?)
+            .select_integrations_settings_data(&DBC::db(&env).await?, query)
             .await
     }
 
@@ -109,7 +112,7 @@ impl IntegrationsSettings<Core> {
          */
         let settings_request = IntegrationsSettings::default().with_env(env);
 
-        let settings = match settings_request.select_integrations_settings().await {
+        let settings = match settings_request.select_integrations_settings(None).await {
             Ok(s) => s
                 .into_iter()
                 .filter(|s| active_integration_ids.contains(&s.integration_id))
@@ -203,7 +206,7 @@ impl IntegrationsSettings<Core> {
 
         match cache_settings {
             Some(val) => Ok(val.values().cloned().collect()),
-            None => req.select_integrations_settings().await,
+            None => req.select_integrations_settings(None).await,
         }
     }
 

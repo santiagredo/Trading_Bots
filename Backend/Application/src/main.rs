@@ -20,9 +20,9 @@ async fn main() -> std::io::Result<()> {
         _ = cancel_token.cancelled() => {
             dbg!("Shutdown requested");
             handle.stop(true).await;
+            dbg!("Engine stopped cleanly");
         }
     }
 
-    dbg!("Engine stopped cleanly");
     Ok(())
 }

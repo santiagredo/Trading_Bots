@@ -1,7 +1,7 @@
 use models::{
     entities::tasks::Model,
     enums::LifecycleState,
-    structs::{CacheTask, CacheTasks},
+    structs::{CacheTask, CacheTasks, QueryOptions},
 };
 use tokio_util::sync::CancellationToken;
 
@@ -16,11 +16,14 @@ impl Tasks<Core> {
      * ===========================
      */
 
-    pub async fn select_tasks_core(self) -> Result<Vec<Model>, Response> {
+    pub async fn select_tasks_core(
+        self,
+        query: Option<QueryOptions>,
+    ) -> Result<Vec<Model>, Response> {
         let env = self.environment;
 
         self.next_phase()
-            .select_tasks_data(&DBC::db(&env).await?)
+            .select_tasks_data(&DBC::db(&env).await?, query)
             .await
     }
 
@@ -100,7 +103,10 @@ impl Tasks<Core> {
             });
         }
 
-        let tasks = match Tasks::default().with_env(env).select_tasks().await {
+        let mut tasks_request = Tasks::default().with_env(env);
+        tasks_request.model.is_active = Some(true);
+
+        let tasks = match tasks_request.select_tasks(None).await {
             Ok(t) => t,
             Err(err) => {
                 let _ = Tasks::<Cache>::reset_tasks_cache(env).await;

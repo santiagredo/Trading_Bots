@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use models::{
     entities::critical_metrics::Model,
-    structs::{CriticalMetric, Environments},
+    structs::{CriticalMetric, Environments, QueryOptions},
 };
 
 use crate::{
@@ -20,11 +20,14 @@ impl Metrics<Core> {
             .await
     }
 
-    pub async fn select_metrics_core(self) -> Result<Vec<Model>, Response> {
+    pub async fn select_metrics_core(
+        self,
+        query: Option<QueryOptions>,
+    ) -> Result<Vec<Model>, Response> {
         let env = self.environment;
 
         self.next_phase()
-            .select_metrics_data(&DBC::db(&env).await?)
+            .select_metrics_data(&DBC::db(&env).await?, query)
             .await
     }
 

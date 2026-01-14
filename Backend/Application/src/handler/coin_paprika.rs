@@ -31,7 +31,11 @@ impl CoinPaprika {
         // let start = Instant::now();
         let environment = self.environment;
 
-        let mut stored_pairs = match Pairs::default().with_env(environment).select_pairs().await {
+        let mut stored_pairs = match Pairs::default()
+            .with_env(environment)
+            .select_pairs(None)
+            .await
+        {
             Ok(pairs) if !pairs.is_empty() => pairs,
             _ => return,
         };

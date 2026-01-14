@@ -2,11 +2,12 @@ use chrono::Local;
 use function_name::named;
 use models::{
     entities::orders::{ActiveModel, Column, Entity, Model},
-    structs::ErrorLogRequest,
+    enums::OrderDirection,
+    structs::{ErrorLogRequest, QueryOptions},
 };
 use sea_orm::{
     ActiveModelTrait, ActiveValue, ColumnTrait, Condition, DatabaseConnection, EntityTrait,
-    QueryFilter,
+    QueryFilter, QueryOrder, QuerySelect,
 };
 
 use crate::{
@@ -58,7 +59,11 @@ impl Orders<Data> {
     }
 
     #[named]
-    pub async fn select_orders_data(self, db: &DatabaseConnection) -> Result<Vec<Model>, Response> {
+    pub async fn select_orders_data(
+        self,
+        db: &DatabaseConnection,
+        query: Option<QueryOptions>,
+    ) -> Result<Vec<Model>, Response> {
         let mut condition = Condition::all();
 
         if let Some(id) = self.model.id {
@@ -93,9 +98,51 @@ impl Orders<Data> {
             condition = condition.add(Column::UpdateDate.eq(update_date));
         }
 
-        match Entity::find().filter(condition).all(db).await {
+        let mut stmt = Entity::find().filter(condition);
+
+        stmt = stmt.order_by(Column::Id, sea_orm::Order::Desc);
+
+        if let Some(q) = query {
+            if let Some(limit) = q.limit {
+                stmt = stmt.limit(limit);
+            }
+
+            if let Some(offset) = q.offset {
+                stmt = stmt.offset(offset);
+            }
+
+            if let Some(order_by) = q.order_by.as_deref().and_then(Self::parse_order_column) {
+                let direction = match q.order_direction.unwrap_or(OrderDirection::Desc) {
+                    OrderDirection::Asc => sea_orm::Order::Asc,
+                    OrderDirection::Desc => sea_orm::Order::Desc,
+                };
+
+                stmt = stmt.order_by(order_by, direction);
+            }
+        }
+
+        match stmt.all(db).await {
             Err(err) => log_db_error!(self, err),
             Ok(val) => Ok(val),
+        }
+    }
+
+    fn parse_order_column(value: &str) -> Option<Column> {
+        match value {
+            "id" => Some(Column::Id),
+            "status_id" => Some(Column::StatusId),
+            "creation_date" => Some(Column::CreationDate),
+            "update_date" => Some(Column::UpdateDate),
+            "is_sell" => Some(Column::IsSell),
+            "strategy_id" => Some(Column::StrategyId),
+            "base_asset_id" => Some(Column::BaseAssetId),
+            "base_asset_amount" => Some(Column::BaseAssetAmount),
+            "quote_asset_id" => Some(Column::QuoteAssetId),
+            "quote_asset_amount" => Some(Column::QuoteAssetAmount),
+            "price_entry" => Some(Column::PriceEntry),
+            "price_target" => Some(Column::PriceTarget),
+            "price_abort" => Some(Column::PriceAbort),
+            _ => None,
         }
     }
 

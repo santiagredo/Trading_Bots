@@ -2,7 +2,8 @@ use chrono::Local;
 use function_name::named;
 use models::{
     entities::integration_log::{ActiveModel, Column, Entity, Model},
-    structs::ErrorLogRequest,
+    enums::OrderDirection,
+    structs::{ErrorLogRequest, QueryOptions},
 };
 use sea_orm::{ActiveValue, DatabaseConnection, EntityTrait, QueryOrder, QuerySelect};
 use tracing::error_span;
@@ -59,15 +60,53 @@ impl IntegrationLogs<Data> {
     }
 
     #[named]
-    pub async fn select_logs_data(self, db: &DatabaseConnection) -> Result<Vec<Model>, Response> {
-        match Entity::find()
-            .limit(10)
-            .order_by_desc(Column::Id)
-            .all(db)
-            .await
-        {
+    pub async fn select_logs_data(
+        self,
+        db: &DatabaseConnection,
+        query: Option<QueryOptions>,
+    ) -> Result<Vec<Model>, Response> {
+        let mut stmt = Entity::find();
+
+        stmt = stmt.limit(20).order_by(Column::Id, sea_orm::Order::Desc);
+
+        if let Some(q) = query {
+            if let Some(limit) = q.limit {
+                stmt = stmt.limit(limit);
+            }
+
+            if let Some(offset) = q.offset {
+                stmt = stmt.offset(offset);
+            }
+
+            if let Some(order_by) = q.order_by.and_then(|c| Self::parse_order_column(&c)) {
+                let direction = match q.order_direction.unwrap_or(OrderDirection::Desc) {
+                    OrderDirection::Asc => sea_orm::Order::Asc,
+                    OrderDirection::Desc => sea_orm::Order::Desc,
+                };
+
+                stmt = stmt.order_by(order_by, direction);
+            }
+        }
+
+        match stmt.all(db).await {
             Err(err) => log_db_error!(self, err),
             Ok(val) => Ok(val),
+        }
+    }
+
+    fn parse_order_column(value: &str) -> Option<Column> {
+        match value {
+            "id" => Some(Column::Id),
+            "creation_date" => Some(Column::CreationDate),
+            "integration_name" => Some(Column::IntegrationName),
+            "function_name" => Some(Column::FunctionName),
+            "url" => Some(Column::Url),
+            "request" => Some(Column::Request),
+            "response" => Some(Column::Response),
+            "status_code" => Some(Column::StatusCode),
+            "error_message" => Some(Column::ErrorMessage),
+            "execution_time_ms" => Some(Column::ExecutionTimeMs),
+            _ => None,
         }
     }
 }

@@ -1,4 +1,4 @@
-use models::entities::integration_log::Model;
+use models::{entities::integration_log::Model, structs::QueryOptions};
 
 use crate::{
     handler::{IntegrationLogs, DBC},
@@ -14,11 +14,14 @@ impl IntegrationLogs<Core> {
             .await
     }
 
-    pub async fn select_logs_core(self) -> Result<Vec<Model>, Response> {
+    pub async fn select_logs_core(
+        self,
+        query: Option<QueryOptions>,
+    ) -> Result<Vec<Model>, Response> {
         let env = self.environment;
 
         self.next_phase()
-            .select_logs_data(&DBC::db(&env).await?)
+            .select_logs_data(&DBC::db(&env).await?, query)
             .await
     }
 }

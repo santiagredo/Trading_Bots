@@ -1,7 +1,14 @@
 use chrono::Local;
 use function_name::named;
-use models::entities::critical_metrics::{ActiveModel, Column, Entity, Model};
-use sea_orm::{ActiveValue, ColumnTrait, Condition, DatabaseConnection, EntityTrait, QueryFilter};
+use models::{
+    entities::critical_metrics::{ActiveModel, Column, Entity, Model},
+    enums::OrderDirection,
+    structs::QueryOptions,
+};
+use sea_orm::{
+    ActiveValue, ColumnTrait, Condition, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder,
+    QuerySelect,
+};
 
 use models::structs::ErrorLogRequest;
 
@@ -78,16 +85,59 @@ impl Metrics<Data> {
     pub async fn select_metrics_data(
         self,
         db: &DatabaseConnection,
+        query: Option<QueryOptions>,
     ) -> Result<Vec<Model>, Response> {
         let mut condition = Condition::all();
 
         if self.model.id > 0 {
-            condition = condition.add(Column::Id.eq(self.model.id))
+            condition = condition.add(Column::Id.eq(self.model.id));
         }
 
-        match Entity::find().filter(condition).all(db).await {
+        let mut stmt = Entity::find().filter(condition);
+
+        stmt = stmt.order_by(Column::Id, sea_orm::Order::Desc);
+
+        if let Some(q) = query {
+            if let Some(limit) = q.limit {
+                stmt = stmt.limit(limit);
+            }
+
+            if let Some(offset) = q.offset {
+                stmt = stmt.offset(offset);
+            }
+
+            if let Some(order_by) = q.order_by.as_deref().and_then(Self::parse_order_column) {
+                let direction = match q.order_direction.unwrap_or(OrderDirection::Desc) {
+                    OrderDirection::Asc => sea_orm::Order::Asc,
+                    OrderDirection::Desc => sea_orm::Order::Desc,
+                };
+
+                stmt = stmt.order_by(order_by, direction);
+            }
+        }
+
+        match stmt.all(db).await {
             Err(err) => log_db_error!(self, err),
             Ok(val) => Ok(val),
+        }
+    }
+
+    fn parse_order_column(value: &str) -> Option<Column> {
+        match value {
+            "id" => Some(Column::Id),
+            "creation_date" => Some(Column::CreationDate),
+            "executions_ok" => Some(Column::ExecutionsOk),
+            "executions_err" => Some(Column::ExecutionsErr),
+            "total_execution_time" => Some(Column::TotalExecutionTime),
+            "max_execution_time" => Some(Column::MaxExecutionTime),
+            "slowest_duration" => Some(Column::SlowestDuration),
+            "active_posting" => Some(Column::ActivePosting),
+            "max_active_posting" => Some(Column::MaxActivePosting),
+            "skipped_due_to_lock" => Some(Column::SkippedDueToLock),
+            "last_success" => Some(Column::LastSuccess),
+            "last_error" => Some(Column::LastError),
+            "consecutive_errors" => Some(Column::ConsecutiveErrors),
+            _ => None,
         }
     }
 }

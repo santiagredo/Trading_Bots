@@ -2,7 +2,7 @@ use chrono::NaiveDateTime;
 use models::{
     entities::strategies::Model,
     enums::{LifecycleState, TradingState},
-    structs::{CacheStrategies, CacheStrategy, Environments, StrategyOverview},
+    structs::{CacheStrategies, CacheStrategy, Environments, QueryOptions, StrategyOverview},
 };
 use tokio_util::sync::CancellationToken;
 
@@ -39,11 +39,14 @@ impl Strategies<Core> {
             .await
     }
 
-    pub async fn select_strategies_core(self) -> Result<Vec<Model>, Response> {
+    pub async fn select_strategies_core(
+        self,
+        query: Option<QueryOptions>,
+    ) -> Result<Vec<Model>, Response> {
         let env = self.environment;
 
         self.next_phase::<Data>()
-            .select_strategies_data(&DBC::db(&env).await?)
+            .select_strategies_data(&DBC::db(&env).await?, query)
             .await
     }
 
@@ -141,11 +144,10 @@ impl Strategies<Core> {
             })?;
 
         // Load from DB
-        let models = match Strategies::default()
-            .with_env(env)
-            .select_strategies()
-            .await
-        {
+        let mut strategies_request = Strategies::default().with_env(env);
+        strategies_request.model.is_active = Some(true);
+
+        let models = match strategies_request.select_strategies(None).await {
             Ok(m) => m.into_iter().filter(|s| s.is_active).collect(),
             Err(err) => {
                 let _ = Strategies::<Cache>::reset_strategies_cache(env).await;

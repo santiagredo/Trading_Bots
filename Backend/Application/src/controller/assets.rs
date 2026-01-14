@@ -1,5 +1,5 @@
 use actix_web::{delete, get, patch, post, web, HttpResponse, Responder};
-use models::structs::{AssetRequest, Environments};
+use models::structs::{AssetRequest, Environments, QueryOptions};
 
 use crate::{handler::Assets, utils::error_response};
 
@@ -38,10 +38,11 @@ pub async fn select_asset(
 pub async fn select_assets(
     env: web::Path<Environments>,
     asset: web::Query<AssetRequest>,
+    query: web::Query<QueryOptions>,
 ) -> impl Responder {
     match Assets::new(asset.into_inner())
         .with_env(env.into_inner())
-        .select_assets()
+        .select_assets(Some(query.into_inner()))
         .await
     {
         Ok(val) => HttpResponse::Ok().json(val),

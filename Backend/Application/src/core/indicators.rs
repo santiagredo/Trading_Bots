@@ -6,7 +6,7 @@ use models::{
         pairs,
     },
     enums::LifecycleState,
-    structs::Ticker,
+    structs::{QueryOptions, Ticker},
 };
 
 use crate::{
@@ -39,11 +39,14 @@ impl Indicators<Core> {
             .await
     }
 
-    pub async fn select_indicators_core(self) -> Result<Vec<Model>, Response> {
+    pub async fn select_indicators_core(
+        self,
+        query: Option<QueryOptions>,
+    ) -> Result<Vec<Model>, Response> {
         let env = self.environment;
 
         self.next_phase::<Data>()
-            .select_indicators_data(&DBC::db(&env).await?)
+            .select_indicators_data(&DBC::db(&env).await?, query)
             .await
     }
 
@@ -149,7 +152,7 @@ impl Indicators<Core> {
         let mut indicators_request = Indicators::default().with_env(env);
         indicators_request.model.is_active = Some(true);
 
-        let indicators = match indicators_request.select_indicators().await {
+        let indicators = match indicators_request.select_indicators(None).await {
             Ok(i) => i
                 .into_iter()
                 .filter(|ind| active_strategies.models.contains_key(&ind.strategy_id))

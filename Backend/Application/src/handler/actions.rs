@@ -3,7 +3,7 @@ use std::{collections::HashMap, marker::PhantomData};
 use models::{
     entities::{actions::Model, assets, pairs},
     enums::LifecycleState,
-    structs::{ActionRequest, Environments, Ticker},
+    structs::{ActionRequest, Environments, QueryOptions, Ticker},
 };
 
 use crate::utils::{Core, Response, Types};
@@ -75,8 +75,8 @@ impl Actions {
         self.next_phase().select_action_core().await
     }
 
-    pub async fn select_actions(self) -> Result<Vec<Model>, Response> {
-        self.next_phase().select_actions_core().await
+    pub async fn select_actions(self, query: Option<QueryOptions>) -> Result<Vec<Model>, Response> {
+        self.next_phase().select_actions_core(query).await
     }
 
     pub async fn update_action(self) -> Result<Model, Response> {

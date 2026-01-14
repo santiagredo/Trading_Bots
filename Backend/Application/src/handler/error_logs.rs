@@ -2,7 +2,7 @@ use std::marker::PhantomData;
 
 use models::{
     entities::error_log::Model,
-    structs::{Environments, ErrorLogRequest},
+    structs::{Environments, ErrorLogRequest, QueryOptions},
 };
 
 use crate::utils::{Response, Types};
@@ -55,7 +55,7 @@ impl ErrorLogs {
         self.next_phase().insert_log_core().await
     }
 
-    pub async fn select_logs(self) -> Result<Vec<Model>, Response> {
-        self.next_phase().select_logs_core().await
+    pub async fn select_logs(self, query: Option<QueryOptions>) -> Result<Vec<Model>, Response> {
+        self.next_phase().select_logs_core(query).await
     }
 }

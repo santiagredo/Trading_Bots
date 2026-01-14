@@ -1,4 +1,4 @@
-use models::entities::orders::Model;
+use models::{entities::orders::Model, structs::QueryOptions};
 
 use crate::{
     handler::{Orders, DBC},
@@ -34,11 +34,14 @@ impl Orders<Core> {
             .await
     }
 
-    pub async fn select_orders_core(self) -> Result<Vec<Model>, Response> {
+    pub async fn select_orders_core(
+        self,
+        query: Option<QueryOptions>,
+    ) -> Result<Vec<Model>, Response> {
         let env = self.environment;
 
         self.next_phase::<Data>()
-            .select_orders_data(&DBC::db(&env).await?)
+            .select_orders_data(&DBC::db(&env).await?, query)
             .await
     }
 

@@ -1,5 +1,5 @@
 use actix_web::{get, post, web, HttpResponse, Responder};
-use models::structs::{Environments, LedgerRequest};
+use models::structs::{Environments, LedgerRequest, QueryOptions};
 
 use crate::{handler::Ledgers, utils::error_response};
 
@@ -36,11 +36,12 @@ pub async fn select_ledger(
 #[get("/{env}/all")]
 pub async fn select_ledgers(
     env: web::Path<Environments>,
-    query: web::Query<LedgerRequest>,
+    ledger: web::Query<LedgerRequest>,
+    query: web::Query<QueryOptions>,
 ) -> impl Responder {
-    match Ledgers::new(query.into_inner())
+    match Ledgers::new(ledger.into_inner())
         .with_env(env.into_inner())
-        .select_ledgers()
+        .select_ledgers(Some(query.into_inner()))
         .await
     {
         Ok(val) => HttpResponse::Ok().json(val),

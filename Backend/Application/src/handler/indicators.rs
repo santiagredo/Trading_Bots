@@ -6,7 +6,7 @@ use models::{
         pairs,
     },
     enums::LifecycleState,
-    structs::{Environments, IndicatorRequest, Ticker},
+    structs::{Environments, IndicatorRequest, QueryOptions, Ticker},
 };
 
 use crate::utils::{Response, Types};
@@ -78,8 +78,11 @@ impl Indicators {
         self.next_phase().select_indicator_core().await
     }
 
-    pub async fn select_indicators(self) -> Result<Vec<Model>, Response> {
-        self.next_phase().select_indicators_core().await
+    pub async fn select_indicators(
+        self,
+        query: Option<QueryOptions>,
+    ) -> Result<Vec<Model>, Response> {
+        self.next_phase().select_indicators_core(query).await
     }
 
     pub async fn update_indicator(self) -> Result<Model, Response> {

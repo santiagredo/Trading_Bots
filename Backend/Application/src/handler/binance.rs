@@ -92,7 +92,7 @@ impl Binance {
 
         let assets = Assets::default()
             .with_env(environment)
-            .select_assets()
+            .select_assets(None)
             .await
             .unwrap_or_default();
 
@@ -161,7 +161,7 @@ impl Binance {
     pub async fn update_exchange_information(environment: Environments) {
         // let start = Instant::now();
 
-        let mut stored_pairs = match Pairs::default().with_env(environment).select_pairs().await {
+        let mut stored_pairs = match Pairs::default().with_env(environment).select_pairs(None).await {
             Ok(pairs) if !pairs.is_empty() => pairs,
             _ => return,
         };

@@ -1,5 +1,5 @@
 use actix_web::{get, patch, web, HttpResponse, Responder};
-use models::structs::{Environments, IntegrationRequest};
+use models::structs::{Environments, IntegrationRequest, QueryOptions};
 
 use crate::{handler::Integrations, utils::error_response};
 
@@ -7,10 +7,11 @@ use crate::{handler::Integrations, utils::error_response};
 pub async fn select_integrations(
     env: web::Path<Environments>,
     integration: web::Query<IntegrationRequest>,
+    query: web::Query<QueryOptions>,
 ) -> impl Responder {
     match Integrations::new(integration.into_inner())
         .with_env(env.into_inner())
-        .select_integrations()
+        .select_integrations(Some(query.into_inner()))
         .await
     {
         Ok(val) => HttpResponse::Ok().json(val),

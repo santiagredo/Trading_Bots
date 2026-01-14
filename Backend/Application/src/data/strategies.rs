@@ -2,11 +2,12 @@ use chrono::Local;
 use function_name::named;
 use models::{
     entities::strategies::{self, ActiveModel, Column, Entity, Model},
-    structs::ErrorLogRequest,
+    enums::OrderDirection,
+    structs::{ErrorLogRequest, QueryOptions},
 };
 use sea_orm::{
     ActiveModelTrait, ActiveValue, ColumnTrait, Condition, DatabaseConnection, EntityTrait,
-    QueryFilter,
+    QueryFilter, QueryOrder, QuerySelect,
 };
 
 use crate::{
@@ -61,48 +62,86 @@ impl Strategies<Data> {
     pub async fn select_strategies_data(
         self,
         db: &DatabaseConnection,
+        query: Option<QueryOptions>,
     ) -> Result<Vec<Model>, Response> {
         let mut condition = Condition::all();
 
         if let Some(id) = self.model.id {
-            condition = condition.add(Column::Id.eq(id))
+            condition = condition.add(Column::Id.eq(id));
         }
 
         if let Some(name) = self.model.name.as_ref() {
-            condition = condition.add(Column::Name.eq(name.clone()))
+            condition = condition.add(Column::Name.eq(name.clone()));
         }
 
         if let Some(is_active) = self.model.is_active {
-            condition = condition.add(Column::IsActive.eq(is_active))
+            condition = condition.add(Column::IsActive.eq(is_active));
         }
 
         if let Some(can_trade) = self.model.can_trade {
-            condition = condition.add(Column::CanTrade.eq(can_trade))
+            condition = condition.add(Column::CanTrade.eq(can_trade));
         }
 
         if let Some(description) = self.model.description.as_ref() {
-            condition = condition.add(Column::Description.eq(description.clone()))
+            condition = condition.add(Column::Description.eq(description.clone()));
         }
 
         if let Some(last_execution) = self.model.last_execution {
-            condition = condition.add(Column::LastExecution.eq(last_execution))
+            condition = condition.add(Column::LastExecution.eq(last_execution));
         }
 
         if let Some(cooldown) = self.model.cooldown {
-            condition = condition.add(Column::Cooldown.eq(cooldown))
+            condition = condition.add(Column::Cooldown.eq(cooldown));
         }
 
         if let Some(error_cooldown) = self.model.error_cooldown {
-            condition = condition.add(Column::ErrorCooldown.eq(error_cooldown))
+            condition = condition.add(Column::ErrorCooldown.eq(error_cooldown));
         }
 
         if let Some(error_last_date) = self.model.error_last_date {
-            condition = condition.add(Column::ErrorLastDate.eq(error_last_date))
+            condition = condition.add(Column::ErrorLastDate.eq(error_last_date));
         }
 
-        match Entity::find().filter(condition).all(db).await {
+        let mut stmt = Entity::find().filter(condition);
+
+        stmt = stmt.order_by(Column::Id, sea_orm::Order::Asc);
+
+        if let Some(q) = query {
+            if let Some(limit) = q.limit {
+                stmt = stmt.limit(limit);
+            }
+
+            if let Some(offset) = q.offset {
+                stmt = stmt.offset(offset);
+            }
+
+            if let Some(order_by) = q.order_by.as_deref().and_then(Self::parse_order_column) {
+                let direction = match q.order_direction.unwrap_or(OrderDirection::Desc) {
+                    OrderDirection::Asc => sea_orm::Order::Asc,
+                    OrderDirection::Desc => sea_orm::Order::Desc,
+                };
+
+                stmt = stmt.order_by(order_by, direction);
+            }
+        }
+
+        match stmt.all(db).await {
             Err(err) => log_db_error!(self, err),
             Ok(val) => Ok(val),
+        }
+    }
+
+    fn parse_order_column(value: &str) -> Option<Column> {
+        match value {
+            "id" => Some(Column::Id),
+            "name" => Some(Column::Name),
+            "is_active" => Some(Column::IsActive),
+            "can_trade" => Some(Column::CanTrade),
+            "last_execution" => Some(Column::LastExecution),
+            "last_update" => Some(Column::LastUpdate),
+            "cooldown" => Some(Column::Cooldown),
+            "error_last_date" => Some(Column::ErrorLastDate),
+            _ => None,
         }
     }
 

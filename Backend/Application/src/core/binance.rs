@@ -354,7 +354,7 @@ impl Binance<Core> {
                 let mut req = Integrations::default().with_env(self.environment);
                 req.model.code = Some("BINANCE".to_string());
 
-                let db_integrations = req.select_integrations().await?;
+                let db_integrations = req.select_integrations(None).await?;
 
                 db_integrations
                     .into_iter()

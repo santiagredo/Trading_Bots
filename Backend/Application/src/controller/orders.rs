@@ -1,5 +1,5 @@
 use actix_web::{get, patch, post, web, HttpResponse, Responder};
-use models::structs::{Environments, OrderRequest};
+use models::structs::{Environments, OrderRequest, QueryOptions};
 
 use crate::{handler::Orders, utils::error_response};
 
@@ -36,11 +36,12 @@ pub async fn select_order(
 #[get("/{env}/all")]
 pub async fn select_orders(
     env: web::Path<Environments>,
-    query: web::Query<OrderRequest>,
+    order: web::Query<OrderRequest>,
+    query: web::Query<QueryOptions>,
 ) -> impl Responder {
-    match Orders::new(query.into_inner())
+    match Orders::new(order.into_inner())
         .with_env(env.into_inner())
-        .select_orders()
+        .select_orders(Some(query.into_inner()))
         .await
     {
         Ok(val) => HttpResponse::Ok().json(val),

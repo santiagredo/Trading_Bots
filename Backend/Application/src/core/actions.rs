@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use models::{
     entities::{actions::Model, assets, pairs},
     enums::LifecycleState,
-    structs::Ticker,
+    structs::{QueryOptions, Ticker},
 };
 
 use crate::{
@@ -36,11 +36,14 @@ impl Actions<Core> {
             .await
     }
 
-    pub async fn select_actions_core(self) -> Result<Vec<Model>, Response> {
+    pub async fn select_actions_core(
+        self,
+        query: Option<QueryOptions>,
+    ) -> Result<Vec<Model>, Response> {
         let env = self.environment;
 
         self.next_phase::<Data>()
-            .select_actions_data(&DBC::db(&env).await?)
+            .select_actions_data(&DBC::db(&env).await?, query)
             .await
     }
 
@@ -145,7 +148,7 @@ impl Actions<Core> {
         let mut actions_request = Actions::default().with_env(env);
         actions_request.model.is_active = Some(true);
 
-        let actions = match actions_request.select_actions().await {
+        let actions = match actions_request.select_actions(None).await {
             Ok(a) => a
                 .into_iter()
                 .filter(|act| active_strategies.models.contains_key(&act.strategy_id))

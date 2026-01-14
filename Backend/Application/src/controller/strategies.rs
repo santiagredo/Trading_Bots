@@ -1,5 +1,5 @@
 use actix_web::{delete, get, patch, post, web, HttpResponse, Responder};
-use models::structs::{Environments, StrategyRequest};
+use models::structs::{Environments, QueryOptions, StrategyRequest};
 
 use crate::{handler::Strategies, utils::error_response};
 
@@ -38,10 +38,11 @@ pub async fn select_strategy(
 pub async fn select_strategies(
     env: web::Path<Environments>,
     strategy: web::Query<StrategyRequest>,
+    query: web::Query<QueryOptions>,
 ) -> impl Responder {
     match Strategies::new(strategy.into_inner())
         .with_env(env.into_inner())
-        .select_strategies()
+        .select_strategies(Some(query.into_inner()))
         .await
     {
         Ok(val) => HttpResponse::Ok().json(val),

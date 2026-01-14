@@ -3,7 +3,7 @@ use std::marker::PhantomData;
 use models::{
     entities::tasks::Model,
     enums::LifecycleState,
-    structs::{CacheTask, CacheTasks, Environments, TaskRequest},
+    structs::{CacheTask, CacheTasks, Environments, QueryOptions, TaskRequest},
 };
 use tokio_util::sync::CancellationToken;
 
@@ -57,8 +57,8 @@ impl Tasks {
     }
 
     // db
-    pub async fn select_tasks(self) -> Result<Vec<Model>, Response> {
-        self.next_phase().select_tasks_core().await
+    pub async fn select_tasks(self, query: Option<QueryOptions>) -> Result<Vec<Model>, Response> {
+        self.next_phase().select_tasks_core(query).await
     }
 
     pub async fn update_task(self) -> Result<Model, Response> {

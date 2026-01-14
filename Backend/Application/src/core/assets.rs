@@ -1,7 +1,7 @@
 use models::{
     entities::assets::Model,
     enums::LifecycleState,
-    structs::{AssetRequest, CacheAssets, LedgerRequest},
+    structs::{AssetRequest, CacheAssets, LedgerRequest, QueryOptions},
 };
 use sea_orm::prelude::Decimal;
 use tokio_util::sync::CancellationToken;
@@ -36,11 +36,14 @@ impl Assets<Core> {
             .await
     }
 
-    pub async fn select_assets_core(self) -> Result<Vec<Model>, Response> {
+    pub async fn select_assets_core(
+        self,
+        query: Option<QueryOptions>,
+    ) -> Result<Vec<Model>, Response> {
         let env = self.environment;
 
         self.next_phase::<Data>()
-            .select_assets_data(&DBC::db(&env).await?)
+            .select_assets_data(&DBC::db(&env).await?, query)
             .await
     }
 
@@ -145,7 +148,7 @@ impl Assets<Core> {
         }
 
         // Load from DB
-        let models = match Assets::default().with_env(env).select_assets().await {
+        let models = match Assets::default().with_env(env).select_assets(None).await {
             Ok(m) => m,
             Err(err) => {
                 let _ = Assets::<Cache>::reset_assets_cache(env).await;

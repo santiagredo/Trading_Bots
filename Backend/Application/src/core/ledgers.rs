@@ -1,4 +1,4 @@
-use models::entities::ledgers::Model;
+use models::{entities::ledgers::Model, structs::QueryOptions};
 
 use crate::{
     handler::{Ledgers, DBC},
@@ -27,11 +27,14 @@ impl Ledgers<Core> {
             .await
     }
 
-    pub async fn select_ledgers_core(self) -> Result<Vec<Model>, Response> {
+    pub async fn select_ledgers_core(
+        self,
+        query: Option<QueryOptions>,
+    ) -> Result<Vec<Model>, Response> {
         let env = self.environment;
 
         self.next_phase()
-            .select_ledgers_data(&DBC::db(&env).await?)
+            .select_ledgers_data(&DBC::db(&env).await?, query)
             .await
     }
 }

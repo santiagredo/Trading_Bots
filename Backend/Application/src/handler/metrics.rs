@@ -1,7 +1,7 @@
 use crate::utils::{Core, Response, Types};
 use models::{
     entities::critical_metrics::Model,
-    structs::{CriticalMetric, Environments},
+    structs::{CriticalMetric, Environments, QueryOptions},
 };
 use std::{marker::PhantomData, time::Duration};
 
@@ -40,8 +40,8 @@ impl Metrics {
     }
 
     // db
-    pub async fn select_metrics(self) -> Result<Vec<Model>, Response> {
-        self.next_phase().select_metrics_core().await
+    pub async fn select_metrics(self, query: Option<QueryOptions>) -> Result<Vec<Model>, Response> {
+        self.next_phase().select_metrics_core(query).await
     }
 
     // cache

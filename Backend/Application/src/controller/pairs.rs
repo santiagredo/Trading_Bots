@@ -1,5 +1,5 @@
 use actix_web::{get, patch, post, web, HttpResponse, Responder};
-use models::structs::{Environments, PairRequest};
+use models::structs::{Environments, PairRequest, QueryOptions};
 
 use crate::{handler::Pairs, utils::error_response};
 
@@ -38,10 +38,11 @@ pub async fn select_pair(
 pub async fn select_pairs(
     env: web::Path<Environments>,
     pair: web::Query<PairRequest>,
+    query: web::Query<QueryOptions>,
 ) -> impl Responder {
     match Pairs::new(pair.into_inner())
         .with_env(env.into_inner())
-        .select_pairs()
+        .select_pairs(Some(query.into_inner()))
         .await
     {
         Ok(val) => HttpResponse::Ok().json(val),

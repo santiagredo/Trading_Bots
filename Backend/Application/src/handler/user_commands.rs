@@ -17,6 +17,7 @@ use crate::{
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum StartupStep {
+    Runtimes,
     Assets,
     Pairs,
     Tasks,
@@ -73,6 +74,8 @@ impl StartupStep {
         runtime_token: &CancellationToken,
     ) -> Result<(), Response> {
         match self {
+            StartupStep::Runtimes => Ok(()),
+
             StartupStep::Assets => {
                 Assets::default()
                     .with_env(environment)
@@ -133,6 +136,7 @@ impl StartupStep {
 
     async fn stop(self, environment: Environments) -> Result<(), Response> {
         match self {
+            StartupStep::Runtimes => Ok(()),
             StartupStep::Assets => Assets::default().with_env(environment).stop_assets().await,
 
             StartupStep::Pairs => Pairs::default().with_env(environment).stop_pairs().await,
@@ -202,7 +206,7 @@ impl UserCommands {
             .set_runtime_status(environment)
             .await
             .map_err(|e| StartupError {
-                step: StartupStep::Assets, // pre-start
+                step: StartupStep::Runtimes, // pre-start
                 response: e,
                 reset_result: None,
             })?;
@@ -257,10 +261,14 @@ impl UserCommands {
             .await
         {
             errors.push(StopError {
-                step: StartupStep::Assets,
+                step: StartupStep::Runtimes,
                 response: Some(e),
             });
         }
+
+        if let Some(runtime_token) = Cancellations::new(environment).get_runtime_token().await {
+            runtime_token.cancel();
+        };
 
         for step in STOP_SEQUENCE {
             if let Err(err) = step.stop(environment).await {

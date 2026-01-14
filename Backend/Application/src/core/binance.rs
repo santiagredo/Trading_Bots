@@ -184,8 +184,11 @@ impl Binance<Core> {
         let outcome: Result<String, String> = match result {
             Ok(response) => {
                 let body = response.text().await.unwrap_or_default();
-                log.response = Some(body.clone());
-                Ok(body)
+
+                // Store truncated response ONLY for logging
+                log.response = Some(Self::truncate_utf8(&body, 1000));
+
+                Ok(body) // full body preserved for parsing
             }
             Err(err) => {
                 log.error_message = Some(err.to_string());
@@ -316,5 +319,20 @@ impl Binance<Core> {
             }
         }
         .await
+    }
+
+    fn truncate_utf8(s: &str, max_chars: usize) -> String {
+        let mut end = s.len();
+        let mut count = 0;
+
+        for (idx, _) in s.char_indices() {
+            if count == max_chars {
+                end = idx;
+                break;
+            }
+            count += 1;
+        }
+
+        s[..end].to_string()
     }
 }

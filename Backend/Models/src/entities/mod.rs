@@ -8,6 +8,8 @@ pub mod critical_metrics;
 pub mod error_log;
 pub mod indicators;
 pub mod integration_log;
+pub mod integration_settings;
+pub mod integrations;
 pub mod ledgers;
 pub mod orders;
 pub mod pairs;

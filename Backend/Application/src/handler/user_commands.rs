@@ -9,8 +9,9 @@ use tokio_util::sync::CancellationToken;
 
 use crate::{
     handler::{
-        Actions, Assets, Cancellations, Indicators, Metrics, OrderStatus, Pairs, Runtimes, Senders,
-        Strategies, SubscribedIndicators, Tasks, WebsocketStreams,
+        Actions, Assets, Cancellations, Indicators, Integrations, IntegrationsSettings, Metrics,
+        OrderStatus, Pairs, Runtimes, Senders, Strategies, SubscribedIndicators, Tasks,
+        WebsocketStreams,
     },
     utils::{Response, Types},
 };
@@ -28,9 +29,13 @@ pub enum StartupStep {
     Actions,
     Websocket,
     Metrics,
+    Integrations,
+    IntegrationsSettings,
 }
 
 const STARTUP_SEQUENCE: &[StartupStep] = &[
+    StartupStep::Integrations,
+    StartupStep::IntegrationsSettings,
     StartupStep::Assets,
     StartupStep::Pairs,
     StartupStep::Tasks,
@@ -44,6 +49,8 @@ const STARTUP_SEQUENCE: &[StartupStep] = &[
 
 const STOP_SEQUENCE: &[StartupStep] = &[
     StartupStep::Websocket,
+    StartupStep::IntegrationsSettings,
+    StartupStep::Integrations,
     StartupStep::Actions,
     StartupStep::SubscribedIndicators,
     StartupStep::Indicators,
@@ -131,6 +138,20 @@ impl StartupStep {
                 .map_err(Response::server_error),
 
             StartupStep::Metrics => Ok(()),
+
+            StartupStep::Integrations => {
+                Integrations::default()
+                    .with_env(environment)
+                    .start_integrations()
+                    .await
+            }
+
+            StartupStep::IntegrationsSettings => {
+                IntegrationsSettings::default()
+                    .with_env(environment)
+                    .start_integrations_settings()
+                    .await
+            }
         }
     }
 
@@ -188,6 +209,20 @@ impl StartupStep {
                     .stop_metrics()
                     .await;
                 Ok(())
+            }
+
+            StartupStep::Integrations => {
+                Integrations::default()
+                    .with_env(environment)
+                    .stop_integrations()
+                    .await
+            }
+
+            StartupStep::IntegrationsSettings => {
+                IntegrationsSettings::default()
+                    .with_env(environment)
+                    .stop_integrations_settings()
+                    .await
             }
         }
     }

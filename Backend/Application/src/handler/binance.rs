@@ -1,16 +1,19 @@
 use std::marker::PhantomData;
 
 use chrono::Local;
-use models::structs::{
-    AccountInformation, AssetRequest, Environments, ExchangeInformation, LedgerRequest,
-    OrderRequest,
+use models::{
+    entities,
+    structs::{
+        AccountInformation, AssetRequest, Environments, ExchangeInformation, LedgerRequest,
+        OrderRequest,
+    },
 };
 use sea_orm::prelude::Decimal;
 use std::str::FromStr;
 use tracing::error_span;
 
 use crate::{
-    handler::{Assets, Ledgers, Pairs},
+    handler::{Assets, Integrations, IntegrationsSettings, Ledgers, Pairs},
     utils::{Response, Types},
 };
 
@@ -20,6 +23,13 @@ pub struct Binance<Phase = Types> {
 }
 
 impl Binance {
+    pub fn with_env(self, environment: Environments) -> Self {
+        Self {
+            phase: self.phase,
+            environment,
+        }
+    }
+
     pub fn default() -> Self {
         Self {
             phase: PhantomData::<Types>,
@@ -28,7 +38,57 @@ impl Binance {
     }
 
     pub async fn update_account_balances(environment: Environments) {
-        let account = Self::default().get_account().await.unwrap_or_default();
+        let Some(integration) = Integrations::default()
+            .with_env(environment)
+            .get_integrations()
+            .await
+        else {
+            return;
+        };
+
+        let Some(binance_integration) = integration
+            .models
+            .values()
+            .find(|val| val.code == "BINANCE")
+        else {
+            return;
+        };
+
+        let mut integration_settings_request =
+            IntegrationsSettings::default().with_env(environment);
+        integration_settings_request.model.integration_id = Some(binance_integration.id);
+
+        let integration_settings = match integration_settings_request
+            .get_integration_settings()
+            .await
+        {
+            None => return,
+            Some(val) => val
+                .values()
+                .map(|val| val.to_owned())
+                .collect::<Vec<entities::integration_settings::Model>>(),
+        };
+
+        let Some(api_key) = integration_settings
+            .iter()
+            .find(|val| val.nick == "api_key")
+            .to_owned()
+        else {
+            return;
+        };
+
+        let Some(secret_pass) = integration_settings
+            .iter()
+            .find(|val| val.nick == "secret_pass")
+            .to_owned()
+        else {
+            return;
+        };
+
+        let account = Self::default()
+            .get_account(api_key.value.clone(), secret_pass.value.clone())
+            .await
+            .unwrap_or_default();
 
         let assets = Assets::default()
             .with_env(environment)
@@ -309,8 +369,18 @@ impl<Phase> Binance<Phase> {
 }
 
 impl Binance<Types> {
-    pub async fn get_account(self) -> Result<AccountInformation, Response> {
-        self.next_phase().get_account_core().await
+    pub async fn get_account(
+        self,
+        api_key: String,
+        secret_pass: String,
+    ) -> Result<AccountInformation, Response> {
+        self.next_phase()
+            .get_account_core(api_key, secret_pass)
+            .await
+    }
+
+    pub async fn get_account_manually(self) -> Result<AccountInformation, Response> {
+        self.next_phase().get_account_manually_core().await
     }
 
     pub async fn get_exchange_information(self) -> Option<ExchangeInformation> {
@@ -321,7 +391,21 @@ impl Binance<Types> {
         self,
         symbol: String,
         order: &mut OrderRequest,
-    ) -> Result<(), String> {
-        self.next_phase().post_new_order_core(symbol, order).await
+        api_key: String,
+        secret_pass: String,
+    ) -> Result<(), Response> {
+        self.next_phase()
+            .post_new_order_core(symbol, order, api_key, secret_pass)
+            .await
+    }
+
+    pub async fn resolve_binance_integration(
+        self,
+    ) -> Result<entities::integrations::Model, Response> {
+        self.next_phase().resolve_binance_integration_core().await
+    }
+
+    pub async fn resolve_binance_credentials(self) -> Result<(String, String), Response> {
+        self.next_phase().resolve_binance_credentials_core().await
     }
 }

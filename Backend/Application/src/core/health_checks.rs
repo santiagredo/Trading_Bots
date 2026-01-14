@@ -4,8 +4,9 @@ use models::structs::Environments;
 
 use crate::{
     handler::{
-        Actions, Assets, Configurations, HealthCheck, Indicators, Metrics, OrderStatus, Pairs,
-        Strategies, SubscribedIndicators, Tasks, DBC,
+        Actions, Assets, Configurations, HealthCheck, Indicators, Integrations,
+        IntegrationsSettings, Metrics, OrderStatus, Pairs, Strategies, SubscribedIndicators, Tasks,
+        DBC,
     },
     utils::{Core, Response},
 };
@@ -89,6 +90,46 @@ impl HealthCheck<Core> {
         health_map.insert(
             "cache_indicators_prod_status".to_string(),
             cache_indicators_prod_status.to_string(),
+        );
+
+        // Integrations
+        let cache_integrations_dev_status = Integrations::default()
+            .with_env(Environments::DEV)
+            .get_integrations_state()
+            .await;
+        health_map.insert(
+            "cache_integrations_dev_status".to_string(),
+            cache_integrations_dev_status.to_string(),
+        );
+
+        let cache_integrations_prod_status = Integrations::default()
+            .with_env(Environments::PROD)
+            .get_integrations_state()
+            .await;
+        health_map.insert(
+            "cache_integrations_prod_status".to_string(),
+            cache_integrations_prod_status.to_string(),
+        );
+
+        // Integrations Settings
+        let cache_integrations_settings_dev_status = IntegrationsSettings::default()
+            .with_env(Environments::DEV)
+            .get_integrations_settings_state()
+            .await;
+
+        health_map.insert(
+            "cache_integrations_settings_dev_status".to_string(),
+            cache_integrations_settings_dev_status.to_string(),
+        );
+
+        let cache_integrations_settings_prod_status = IntegrationsSettings::default()
+            .with_env(Environments::PROD)
+            .get_integrations_settings_state()
+            .await;
+
+        health_map.insert(
+            "cache_integrations_settings_prod_status".to_string(),
+            cache_integrations_settings_prod_status.to_string(),
         );
 
         // Metrics

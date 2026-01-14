@@ -50,7 +50,6 @@ mod tests {
         reset_config().await;
 
         let config = Configuration {
-            api_key: "Test".to_string(),
             ..Default::default()
         };
 

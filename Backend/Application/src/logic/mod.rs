@@ -1,7 +1,9 @@
 pub mod actions;
 pub mod assets;
 pub mod binance;
+pub mod configurations;
 pub mod indicators;
+pub mod integrations_settings;
 pub mod ledgers;
 pub mod orders;
 pub mod pairs;
@@ -9,4 +11,3 @@ pub mod record_types;
 pub mod strategies;
 pub mod strategies_overview;
 pub mod tasks;
-pub mod configurations;

@@ -2,7 +2,7 @@ use std::marker::PhantomData;
 
 use models::structs::{Configuration, ConfigurationRequest};
 
-use crate::utils::{Response, Types};
+use crate::utils::Types;
 
 #[derive(Debug, Default)]
 pub struct Configurations<Phase = Types> {
@@ -34,10 +34,6 @@ impl Configurations {
                 ..Default::default()
             },
         }
-    }
-
-    pub async fn insert_configuration(self) -> Result<Configuration, Response> {
-        self.next_phase().insert_configuration_core().await
     }
 
     pub async fn select_configuration(self) -> Configuration {

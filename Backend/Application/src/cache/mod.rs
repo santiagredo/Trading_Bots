@@ -6,6 +6,8 @@ pub mod database_connections;
 pub mod engines;
 pub mod health_checks;
 pub mod indicators;
+pub mod integrations;
+pub mod integrations_settings;
 pub mod metrics;
 pub mod pairs;
 pub mod runtimes;

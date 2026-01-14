@@ -297,12 +297,31 @@ impl Strategies<Core> {
         }
 
         if strategy_overview.strategy.can_trade {
+            let (api_key, secret_pass) = match Binance::default()
+                .with_env(environment)
+                .resolve_binance_credentials()
+                .await
+            {
+                Ok(val) => val,
+                Err(err) => {
+                    // TRADING -> READY
+                    let _ = guard.ext_err(err.message).await;
+
+                    return;
+                }
+            };
+
             if let Err(err) = Binance::default()
-                .post_new_order(strategy_overview.ticker.symbol.clone(), &mut order.model)
+                .post_new_order(
+                    strategy_overview.ticker.symbol.clone(),
+                    &mut order.model,
+                    api_key,
+                    secret_pass,
+                )
                 .await
             {
                 // TRADING -> READY
-                let _ = guard.ext_err(err).await;
+                let _ = guard.ext_err(err.message).await;
 
                 return;
             }

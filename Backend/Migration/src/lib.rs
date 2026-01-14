@@ -16,6 +16,8 @@ mod m20251222_234655_create_metrics_table;
 mod m20260113_191430_update_assets_add_last_update;
 mod m20260113_191948_update_tasks_add_last_update;
 mod m20260113_194125_update_tasks_add_last_execution;
+mod m20260114_021737_create_integrations_table;
+mod m20260114_021950_create_integrations_settings_table;
 
 pub struct Migrator;
 
@@ -39,6 +41,8 @@ impl MigratorTrait for Migrator {
             Box::new(m20260113_191430_update_assets_add_last_update::Migration),
             Box::new(m20260113_191948_update_tasks_add_last_update::Migration),
             Box::new(m20260113_194125_update_tasks_add_last_execution::Migration),
+            Box::new(m20260114_021737_create_integrations_table::Migration),
+            Box::new(m20260114_021950_create_integrations_settings_table::Migration),
         ]
     }
 }

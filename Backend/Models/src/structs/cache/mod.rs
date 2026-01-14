@@ -42,3 +42,9 @@ pub use subscribed_indicators::*;
 
 pub mod tasks;
 pub use tasks::*;
+
+pub mod integrations;
+pub use integrations::*;
+
+pub mod integrations_settings;
+pub use integrations_settings::*;

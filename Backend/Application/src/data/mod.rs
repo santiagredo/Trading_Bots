@@ -5,6 +5,8 @@ pub mod database_connections;
 pub mod error_logs;
 pub mod indicators;
 pub mod integration_logs;
+pub mod integrations;
+pub mod integrations_settings;
 pub mod ledgers;
 pub mod metrics;
 pub mod orders;

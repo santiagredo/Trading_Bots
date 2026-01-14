@@ -3,7 +3,7 @@ use std::marker::PhantomData;
 use chrono::NaiveDateTime;
 use models::{
     entities::strategies::Model,
-    enums::LifecycleState,
+    enums::{LifecycleState, TradingState},
     structs::{CacheStrategies, CacheStrategy, Environments, StrategyRequest},
 };
 use tokio_util::sync::CancellationToken;
@@ -124,10 +124,12 @@ impl Strategies {
         self.next_phase().upsert_strategy_core().await
     }
 
-    pub async fn set_strategy_posting(self, is_posting: bool) -> Result<(), String> {
-        self.next_phase()
-            .set_strategy_posting_core(is_posting)
-            .await
+    pub async fn set_strategy_error(self, error: Option<String>) -> Result<(), String> {
+        self.next_phase().set_strategy_error_core(error).await
+    }
+
+    pub async fn set_strategy_state(self, state: TradingState) -> Result<(), String> {
+        self.next_phase().set_strategy_state_core(state).await
     }
 
     pub async fn start_strategies(self, token: &CancellationToken) -> Result<(), Response> {

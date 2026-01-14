@@ -5,16 +5,28 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     entities::strategies::Model,
-    enums::{LifecycleState, TimestampedState},
+    enums::{LifecycleState, TimestampedState, TradingState},
     structs::Environments,
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct CacheStrategy {
-    pub is_posting: bool,
     pub model: Model,
-    pub last_error_date: Option<NaiveDateTime>,
+    pub state: TradingState,
+    pub last_update_date: NaiveDateTime,
     pub last_error_message: Option<String>,
+}
+
+impl TimestampedState for CacheStrategy {
+    type State = TradingState;
+
+    fn state_mut(&mut self) -> &mut Self::State {
+        &mut self.state
+    }
+
+    fn last_update_mut(&mut self) -> &mut NaiveDateTime {
+        &mut self.last_update_date
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

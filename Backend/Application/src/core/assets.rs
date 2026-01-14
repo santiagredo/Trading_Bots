@@ -259,6 +259,8 @@ impl Assets<Core> {
                             .with_env(environment)
                             .insert_ledger()
                             .await;
+
+                        // READY
                     }
                 }
             }

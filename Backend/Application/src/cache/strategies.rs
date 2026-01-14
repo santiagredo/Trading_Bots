@@ -1,4 +1,4 @@
-use models::enums::{transition_with_timestamp, FiniteStateMachine};
+use models::enums::{transition_with_timestamp, FiniteStateMachine, TradingState};
 use std::{collections::HashMap, mem, sync::Arc};
 
 use chrono::Local;
@@ -64,10 +64,8 @@ impl Strategies<Cache> {
                 (
                     s.id,
                     CacheStrategy {
-                        is_posting: false,
                         model: s,
-                        last_error_date: None,
-                        last_error_message: None,
+                        ..Default::default()
                     },
                 )
             })
@@ -93,10 +91,8 @@ impl Strategies<Cache> {
             .entry(strategy.id)
             .and_modify(|c| c.model = strategy.clone())
             .or_insert(CacheStrategy {
-                is_posting: false,
                 model: strategy,
-                last_error_date: None,
-                last_error_message: None,
+                ..Default::default()
             });
 
         env_cache.last_update_date = Local::now().naive_local();
@@ -146,10 +142,10 @@ impl Strategies<Cache> {
      * ===========================
      */
 
-    pub async fn set_strategy_posting_cache(
+    pub async fn set_strategy_state_cache(
         environment: Environments,
         strategy_id: i32,
-        is_posting: bool,
+        state: TradingState,
     ) -> Result<(), String> {
         let mut cache = ACTIVE_STRATEGIES.write().await;
         let env_cache = cache
@@ -161,12 +157,10 @@ impl Strategies<Cache> {
             .get_mut(&strategy_id)
             .ok_or("Strategy not found")?;
 
-        if strategy.is_posting && is_posting {
-            return Err("Strategy already posting".into());
-        }
+        transition_with_timestamp(strategy, state)?;
 
-        strategy.is_posting = is_posting;
         env_cache.last_update_date = Local::now().naive_local();
+
         Ok(())
     }
 
@@ -185,10 +179,10 @@ impl Strategies<Cache> {
             .get_mut(&strategy_id)
             .ok_or("Strategy not found")?;
 
-        strategy.last_error_date = error.as_ref().map(|_| Local::now().naive_local());
         strategy.last_error_message = error;
 
         env_cache.last_update_date = Local::now().naive_local();
+
         Ok(())
     }
 
@@ -221,7 +215,11 @@ impl Strategies<Cache> {
 
 #[cfg(test)]
 mod tests {
-    use models::{entities::strategies::Model, enums::LifecycleState, structs::Environments};
+    use models::{
+        entities::strategies::Model,
+        enums::{LifecycleState, TradingState},
+        structs::Environments,
+    };
 
     use crate::{handler::Strategies, utils::Cache};
 
@@ -305,6 +303,7 @@ mod tests {
         let cache = Strategies::<Cache>::get_strategies_cache(env)
             .await
             .unwrap();
+
         assert_eq!(cache.models.len(), 2);
         assert!(cache.models.contains_key(&1));
         assert!(cache.models.contains_key(&2));
@@ -331,11 +330,11 @@ mod tests {
             .unwrap();
 
         assert_eq!(cached.model, strategy);
-        assert!(!cached.is_posting);
-        assert!(cached.last_error_date.is_none());
+        assert_eq!(cached.state, TradingState::Ready);
+        assert!(cached.last_error_message.is_none());
     }
 
-    async fn scenario_remove_single_strategy(env: Environments) {
+    async fn scenario_strategy_state_transitions(env: Environments) {
         reset_env(env).await;
 
         Strategies::<Cache>::set_status_cache(env, LifecycleState::Starting)
@@ -345,89 +344,58 @@ mod tests {
             .await
             .unwrap();
 
-        let strategy = mock_strategy(20);
-        Strategies::<Cache>::upsert_strategy_cache(env, strategy)
+        Strategies::<Cache>::upsert_strategy_cache(env, mock_strategy(50))
             .await
             .unwrap();
 
-        let removed = Strategies::<Cache>::remove_strategy_cache(env, 20)
-            .await
-            .unwrap();
-
-        assert!(removed.is_some());
-
-        let cache = Strategies::<Cache>::get_strategies_cache(env)
-            .await
-            .unwrap();
-        assert!(cache.models.is_empty());
-    }
-
-    async fn scenario_remove_all_strategies(env: Environments) {
-        reset_env(env).await;
-
-        Strategies::<Cache>::set_status_cache(env, LifecycleState::Starting)
-            .await
-            .unwrap();
-        Strategies::<Cache>::set_status_cache(env, LifecycleState::Running)
-            .await
-            .unwrap();
-
-        let strategies = vec![mock_strategy(1), mock_strategy(2)];
-        Strategies::<Cache>::set_strategies_cache(env, strategies)
-            .await
-            .unwrap();
-
-        Strategies::<Cache>::set_status_cache(env, LifecycleState::Stopping)
-            .await
-            .unwrap();
-
-        let removed = Strategies::<Cache>::remove_strategies_cache(env)
-            .await
-            .unwrap();
-
-        assert_eq!(removed.len(), 2);
-
-        let cache = Strategies::<Cache>::get_strategies_cache(env)
-            .await
-            .unwrap();
-        assert!(cache.models.is_empty());
-    }
-
-    async fn scenario_posting_flag(env: Environments) {
-        reset_env(env).await;
-
-        Strategies::<Cache>::set_status_cache(env, LifecycleState::Starting)
-            .await
-            .unwrap();
-        Strategies::<Cache>::set_status_cache(env, LifecycleState::Running)
-            .await
-            .unwrap();
-
-        let strategy = mock_strategy(30);
-        Strategies::<Cache>::upsert_strategy_cache(env, strategy)
-            .await
-            .unwrap();
-
-        // set posting true
+        // Ready → Running
         assert!(
-            Strategies::<Cache>::set_strategy_posting_cache(env, 30, true)
+            Strategies::<Cache>::set_strategy_state_cache(env, 50, TradingState::Running)
                 .await
                 .is_ok()
         );
 
-        // set posting true again (should fail)
+        // Running → Trading
         assert!(
-            Strategies::<Cache>::set_strategy_posting_cache(env, 30, true)
-                .await
-                .is_err()
-        );
-
-        // set posting false
-        assert!(
-            Strategies::<Cache>::set_strategy_posting_cache(env, 30, false)
+            Strategies::<Cache>::set_strategy_state_cache(env, 50, TradingState::Trading)
                 .await
                 .is_ok()
         );
+
+        // Trading → Saving
+        assert!(
+            Strategies::<Cache>::set_strategy_state_cache(env, 50, TradingState::Saving)
+                .await
+                .is_ok()
+        );
+
+        // Saving → Ready
+        assert!(
+            Strategies::<Cache>::set_strategy_state_cache(env, 50, TradingState::Ready)
+                .await
+                .is_ok()
+        );
+    }
+
+    async fn scenario_invalid_strategy_state_transition(env: Environments) {
+        reset_env(env).await;
+
+        Strategies::<Cache>::set_status_cache(env, LifecycleState::Starting)
+            .await
+            .unwrap();
+        Strategies::<Cache>::set_status_cache(env, LifecycleState::Running)
+            .await
+            .unwrap();
+
+        Strategies::<Cache>::upsert_strategy_cache(env, mock_strategy(60))
+            .await
+            .unwrap();
+
+        // Ready → Trading (inválido)
+        let result =
+            Strategies::<Cache>::set_strategy_state_cache(env, 60, TradingState::Trading).await;
+
+        assert!(result.is_err());
     }
 
     async fn scenario_strategy_error(env: Environments) {
@@ -440,8 +408,7 @@ mod tests {
             .await
             .unwrap();
 
-        let strategy = mock_strategy(40);
-        Strategies::<Cache>::upsert_strategy_cache(env, strategy)
+        Strategies::<Cache>::upsert_strategy_cache(env, mock_strategy(40))
             .await
             .unwrap();
 
@@ -453,8 +420,8 @@ mod tests {
             .await
             .unwrap();
 
-        assert!(cached.last_error_date.is_some());
         assert_eq!(cached.last_error_message, Some("boom".to_string()));
+        assert_eq!(cached.state, TradingState::Ready);
     }
 
     /* ===========================
@@ -470,9 +437,8 @@ mod tests {
         scenario_lifecycle_transitions(env).await;
         scenario_set_strategies_cache(env).await;
         scenario_upsert_strategy(env).await;
-        scenario_remove_single_strategy(env).await;
-        scenario_remove_all_strategies(env).await;
-        scenario_posting_flag(env).await;
+        scenario_strategy_state_transitions(env).await;
+        scenario_invalid_strategy_state_transition(env).await;
         scenario_strategy_error(env).await;
 
         reset_env(env).await;

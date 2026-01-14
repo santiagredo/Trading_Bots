@@ -1,5 +1,5 @@
 use models::{
-    enums::Status,
+    enums::{Status, TradingState},
     structs::{Environments, StrategyOverview, StrategyRequest},
 };
 
@@ -38,7 +38,7 @@ impl StrategiesOverview<Core> {
         let strategy = match strategy_request.get_strategy().await {
             None => return None,
             Some(val) => {
-                if val.is_posting {
+                if val.state != TradingState::Ready {
                     LockSkipGuard::hit(environment);
                     return None;
                 }

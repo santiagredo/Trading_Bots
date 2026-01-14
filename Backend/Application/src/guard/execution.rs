@@ -1,7 +1,10 @@
 use std::time::Instant;
 
 use chrono::Local;
-use models::structs::{Environments, StrategyRequest};
+use models::{
+    enums::TradingState,
+    structs::{Environments, StrategyRequest},
+};
 
 use crate::handler::{Metrics, Strategies};
 
@@ -9,30 +12,88 @@ use crate::handler::{Metrics, Strategies};
 pub struct StrategiesExecutionGuard {
     pub environment: Environments,
     pub start: Instant,
-    pub success: Option<bool>,
+    pub success: bool,
     pub model: StrategyRequest,
 }
 
 impl StrategiesExecutionGuard {
-    pub fn new(environment: Environments, model: StrategyRequest) -> StrategiesExecutionGuard {
-        StrategiesExecutionGuard {
+    pub async fn new(
+        environment: Environments,
+        model: StrategyRequest,
+    ) -> Result<StrategiesExecutionGuard, String> {
+        let start = Instant::now();
+
+        Strategies::new(model.clone())
+            .with_env(environment)
+            .set_strategy_state(TradingState::Running)
+            .await?;
+
+        Ok(StrategiesExecutionGuard {
             environment,
-            start: Instant::now(),
-            success: None,
+            start,
+            success: false,
             model,
-        }
+        })
     }
 
     pub fn ok(&mut self) {
-        self.success = Some(true);
+        self.success = true;
     }
 
-    pub fn err(&mut self) {
-        self.success = Some(false);
+    pub async fn err(&mut self, error: String) -> Result<(), String> {
+        self.success = false;
+
+        let strategy = self.model.clone();
+
+        Strategies::new(strategy)
+            .with_env(self.environment)
+            .set_strategy_error(Some(error))
+            .await?;
+
+        Strategies::new(self.model.clone())
+            .with_env(self.environment)
+            .set_strategy_state(TradingState::Ready)
+            .await
     }
 
-    pub fn none(&mut self) {
-        self.success = None;
+    // External integration error (exchange, network, etc)
+    // Updates error_last_date and persists to DB to enable cooldown logic
+    pub async fn ext_err(&mut self, error: String) -> Result<(), String> {
+        self.success = false;
+
+        self.model.error_last_date = Some(Local::now().naive_local());
+
+        let strategy = self.model.clone();
+
+        Strategies::new(strategy.clone())
+            .with_env(self.environment)
+            .set_strategy_error(Some(error))
+            .await?;
+
+        Strategies::new(strategy.clone())
+            .with_env(self.environment)
+            .upsert_strategy()
+            .await?;
+
+        Strategies::new(strategy.clone())
+            .with_env(self.environment)
+            .update_strategy()
+            .await
+            .map_err(|response| response.message)?;
+
+        Strategies::new(strategy)
+            .with_env(self.environment)
+            .set_strategy_state(TradingState::Ready)
+            .await
+    }
+
+    pub async fn saving(&mut self) -> Result<(), String> {
+        let strategy = self.model.clone();
+
+        Strategies::new(strategy)
+            .with_env(self.environment)
+            .set_strategy_state(TradingState::Saving)
+            .await
     }
 
     pub async fn lock(&self) -> Result<(), String> {
@@ -40,7 +101,7 @@ impl StrategiesExecutionGuard {
 
         Strategies::new(strategy)
             .with_env(self.environment)
-            .set_strategy_posting(true)
+            .set_strategy_state(TradingState::Trading)
             .await
     }
 }
@@ -49,52 +110,38 @@ impl Drop for StrategiesExecutionGuard {
     fn drop(&mut self) {
         let environment = self.environment;
         let elapsed = self.start.elapsed();
+        let success = self.success;
         let mut strategy_request = self.model.clone();
         let now = Local::now().naive_local();
-
-        let success = match self.success {
-            // save failure for execution metrics
-            None => false,
-
-            // save execution error and last error date
-            Some(false) => {
-                strategy_request.error_last_date = Some(now);
-
-                false
-            }
-
-            // save success and last execution date
-            Some(true) => {
-                strategy_request.last_execution = Some(now);
-
-                true
-            }
-        };
 
         tokio::spawn(async move {
             Metrics::set_execution_metrics(environment, elapsed, success).await;
 
-            // update posting in cache
-            let _ = Strategies::new(strategy_request.clone())
-                .with_env(environment)
-                .set_strategy_posting(false)
-                .await;
+            if success {
+                strategy_request.last_execution = Some(now);
 
-            // update last exec and error date in cache
-            let _ = Strategies::new(strategy_request.clone())
-                .with_env(environment)
-                .upsert_strategy()
-                .await;
+                // update last exec
+                let _ = Strategies::new(strategy_request.clone())
+                    .with_env(environment)
+                    .upsert_strategy()
+                    .await;
 
-            // update last exec and error date in db
-            if let Err(err) = Strategies::new(strategy_request)
-                .with_env(environment)
-                .update_strategy()
-                .await
-            {
-                dbg!(eprintln!("{}", err.message));
-                return;
-            };
+                // update last exec in db
+                if let Err(err) = Strategies::new(strategy_request.clone())
+                    .with_env(environment)
+                    .update_strategy()
+                    .await
+                {
+                    dbg!(eprintln!("{}", err.message));
+                    return;
+                };
+
+                // update trading state in cache
+                let _ = Strategies::new(strategy_request.clone())
+                    .with_env(environment)
+                    .set_strategy_state(TradingState::Ready)
+                    .await;
+            }
         });
     }
 }

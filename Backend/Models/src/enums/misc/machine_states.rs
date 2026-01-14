@@ -106,29 +106,29 @@ impl FiniteStateMachine for LoadState {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum TradingMode {
+pub enum TradingState {
     Ready,
     Running,
     Trading,
     Saving,
 }
 
-impl Default for TradingMode {
+impl Default for TradingState {
     fn default() -> Self {
-        TradingMode::Ready
+        TradingState::Ready
     }
 }
 
-impl FiniteStateMachine for TradingMode {
+impl FiniteStateMachine for TradingState {
     fn can_transition(self, next: Self) -> bool {
-        use TradingMode::*;
+        use TradingState::*;
 
         matches!(
             (self, next),
             (Ready, Running)
                 | (Running, Trading)
                 | (Trading, Saving)
-                | (Saving, Running)
+                | (Trading, Ready)
                 | (Running, Ready)
                 | (Saving, Ready)
         )

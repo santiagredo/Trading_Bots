@@ -1,7 +1,7 @@
 use chrono::NaiveDateTime;
 use models::{
     entities::strategies::Model,
-    enums::LifecycleState,
+    enums::{LifecycleState, TradingState},
     structs::{CacheStrategies, CacheStrategy, Environments, StrategyOverview},
 };
 use tokio_util::sync::CancellationToken;
@@ -106,11 +106,20 @@ impl Strategies<Core> {
         Strategies::<Cache>::remove_strategy_cache(env, id).await
     }
 
-    pub async fn set_strategy_posting_core(self, is_posting: bool) -> Result<(), String> {
-        Strategies::<Cache>::set_strategy_posting_cache(
+    pub async fn set_strategy_error_core(self, error: Option<String>) -> Result<(), String> {
+        Strategies::<Cache>::set_strategy_error_cache(
             self.environment,
             self.model.id.unwrap_or_default(),
-            is_posting,
+            error,
+        )
+        .await
+    }
+
+    pub async fn set_strategy_state_core(self, state: TradingState) -> Result<(), String> {
+        Strategies::<Cache>::set_strategy_state_cache(
+            self.environment,
+            self.model.id.unwrap_or_default(),
+            state,
         )
         .await
     }
@@ -253,54 +262,68 @@ impl Strategies<Core> {
      */
 
     async fn evaluate_strategy(strategy_overview: StrategyOverview, environment: Environments) {
-        let mut guard = StrategiesExecutionGuard::new(
+        // READY -> RUNNING
+        let mut guard = match StrategiesExecutionGuard::new(
             environment,
             Strategies::default()
                 .into_request(strategy_overview.strategy.clone())
                 .model,
-        );
-
-        guard.err();
+        )
+        .await
+        {
+            Err(err) => {
+                dbg!(err);
+                return;
+            }
+            Ok(val) => val,
+        };
 
         let mut order = match StrategiesOverview::evaluate_strategy_overview(&strategy_overview) {
             Ok(o) => o,
             Err(err) => {
-                let _ = Strategies::<Cache>::set_strategy_error_cache(
-                    environment,
-                    strategy_overview.strategy.id,
-                    Some(err),
-                )
-                .await;
-                guard.none();
+                // RUNNING -> READY
+                let _ = guard.err(err).await;
+
                 return;
             }
         };
 
+        // RUNNING -> TRADING
         if let Err(err) = guard.lock().await {
-            let _ = Strategies::<Cache>::set_strategy_error_cache(
-                environment,
-                strategy_overview.strategy.id,
-                Some(err),
-            )
-            .await;
+            // RUNNING -> READY
+            let _ = guard.err(err).await;
+
             return;
         }
 
         if strategy_overview.strategy.can_trade {
-            if Binance::default()
+            if let Err(err) = Binance::default()
                 .post_new_order(strategy_overview.ticker.symbol.clone(), &mut order.model)
                 .await
-                .is_err()
             {
+                // TRADING -> READY
+                let _ = guard.ext_err(err).await;
+
                 return;
             }
         }
 
-        if let Ok(order) = order.insert_order().await {
-            let senders = Senders::get_senders().await;
-            let _ = senders.order_sender.send((environment, order));
-        }
+        // TRADING -> SAVING
+        let _ = guard.saving().await;
 
+        match order.insert_order().await {
+            Err(err) => {
+                let _ = guard.err(err.message).await;
+
+                return;
+            }
+            Ok(order) => {
+                let senders = Senders::get_senders().await;
+                let _ = senders.order_sender.send((environment, order));
+            }
+        };
+
+        // DROP: SAVING -> READY
         guard.ok();
     }
 

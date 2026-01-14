@@ -301,9 +301,7 @@ impl UserCommands {
             });
         }
 
-        if let Some(runtime_token) = Cancellations::new(environment).get_runtime_token().await {
-            runtime_token.cancel();
-        };
+        Cancellations::new(environment).stop_runtime().await;
 
         for step in STOP_SEQUENCE {
             if let Err(err) = step.stop(environment).await {

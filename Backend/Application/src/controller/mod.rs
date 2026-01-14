@@ -63,3 +63,6 @@ pub use integrations::*;
 
 pub mod integrations_settings;
 pub use integrations_settings::*;
+
+pub mod websocket_streams;
+pub use websocket_streams::*;

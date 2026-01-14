@@ -1,6 +1,9 @@
-use chrono::{Local, NaiveDateTime};
+use std::fmt::Display;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+use chrono::{Local, NaiveDateTime};
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SocketState {
     Disconnected,
     Connecting,
@@ -10,7 +13,22 @@ pub enum SocketState {
     Closed,
 }
 
-#[derive(Debug, Clone)]
+impl Display for SocketState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
+            SocketState::Disconnected => "disconnected",
+            SocketState::Connecting => "connecting",
+            SocketState::Connected => "connected",
+            SocketState::Reconnecting => "reconnecting",
+            SocketState::ShuttingDown => "shutting down",
+            SocketState::Closed => "closed",
+        };
+
+        write!(f, "{s}")
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SocketStatus {
     pub state: SocketState,
     pub startup_date: NaiveDateTime,

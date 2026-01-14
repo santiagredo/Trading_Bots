@@ -6,7 +6,7 @@ use crate::{
     handler::{
         Actions, Assets, Configurations, HealthCheck, Indicators, Integrations,
         IntegrationsSettings, Metrics, OrderStatus, Pairs, Strategies, SubscribedIndicators, Tasks,
-        DBC,
+        WebsocketStreams, DBC,
     },
     utils::{Core, Response},
 };
@@ -242,6 +242,13 @@ impl HealthCheck<Core> {
         health_map.insert(
             "cache_tasks_prod_status".to_string(),
             cache_tasks_prod_status.to_string(),
+        );
+
+        // Websocket streams
+        let cache_websocket_status = WebsocketStreams::default().get_status().await;
+        health_map.insert(
+            "cache_websocket_status".to_string(),
+            cache_websocket_status.state.to_string(),
         );
 
         Ok(health_map)

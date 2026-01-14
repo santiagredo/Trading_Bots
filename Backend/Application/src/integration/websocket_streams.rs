@@ -96,7 +96,7 @@ impl WebsocketStreams<Integration> {
             'reconnect: loop {
                 // Check cancellation
                 if cancellation_token.is_cancelled() {
-                    info!("WebSocket cancelled before connection");
+                    dbg!("WebSocket cancelled before connection");
                     Self::update_state(SocketState::Closed).await;
                     break;
                 }
@@ -108,7 +108,7 @@ impl WebsocketStreams<Integration> {
                     Ok(stream) => stream,
                     Err(err) => {
                         Self::update_state(SocketState::Closed).await;
-                        error!("Failed to connect: {err}");
+                        dbg!("Failed to connect: {}", err);
                         break;
                     }
                 };
@@ -190,7 +190,7 @@ impl WebsocketStreams<Integration> {
             }
 
             Self::update_state(SocketState::Closed).await;
-            info!("WebSocket task ended");
+            dbg!("WebSocket task ended");
         })
     }
 

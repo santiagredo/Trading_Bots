@@ -1,4 +1,4 @@
-use application::{handler::Actions, utils::Cache};
+use application::{handler::Actions, utils::EntityCache};
 use models::{entities::actions::Model, enums::LifecycleState, structs::Environments};
 use sea_orm::prelude::Decimal;
 
@@ -19,42 +19,50 @@ fn mock_action(id: i32) -> Model {
 #[tokio::test]
 async fn full_actions_cache_flow_should_work_correctly() {
     let env = Environments::DEV;
+    let service = Actions::blank();
 
     /* ===========================
      * INITIAL STATE
      * ===========================
      */
 
-    let reset = Actions::<Cache>::reset_actions_cache(env).await;
-    assert!(reset.is_ok());
+    service.reset(env).await.unwrap();
 
-    let off = Actions::<Cache>::set_status_cache(env, LifecycleState::Off).await;
-    assert!(off.is_err());
-
-    let status = Actions::get_cache_state(env).await;
+    let status = service.state(env).await;
     assert_eq!(status, LifecycleState::Off);
 
-    let cache = Actions::<Cache>::get_actions_cache(env).await;
-    assert!(cache.is_some_and(|val| val.models.is_empty()));
+    let cache = service.get_all(env).await;
+    assert!(cache.is_none());
+
+    /* ===========================
+     * START ACTIONS
+     * ===========================
+     */
+
+    service
+        .set_state(env, LifecycleState::Starting)
+        .await
+        .unwrap();
+
+    service
+        .set_state(env, LifecycleState::Running)
+        .await
+        .unwrap();
+
+    let cache = service.get_all(env).await.unwrap();
+    assert_eq!(cache.status, LifecycleState::Running);
+    assert!(cache.models.is_empty());
 
     /* ===========================
      * LOAD MULTIPLE ACTIONS
      * ===========================
      */
 
-    let starting = Actions::<Cache>::set_status_cache(env, LifecycleState::Starting).await;
-    assert!(starting.is_ok());
-
     let actions = vec![mock_action(1), mock_action(2)];
 
-    let running = Actions::<Cache>::set_status_cache(env, LifecycleState::Running).await;
-    assert!(running.is_ok());
+    service.set_all(env, actions).await.unwrap();
 
-    Actions::<Cache>::set_actions_cache(env, actions)
-        .await
-        .unwrap();
-
-    let cache = Actions::<Cache>::get_actions_cache(env).await.unwrap();
+    let cache = service.get_all(env).await.unwrap();
     assert_eq!(cache.models.len(), 2);
     assert_eq!(cache.status, LifecycleState::Running);
 
@@ -64,11 +72,9 @@ async fn full_actions_cache_flow_should_work_correctly() {
      */
 
     let extra = mock_action(3);
-    Actions::<Cache>::upsert_action_cache(env, extra.clone())
-        .await
-        .unwrap();
+    service.upsert(env, 3, extra.clone()).await.unwrap();
 
-    let single = Actions::<Cache>::get_action_cache(env, 3).await.unwrap();
+    let single = service.get(env, 3).await.unwrap();
     assert_eq!(single, extra);
 
     /* ===========================
@@ -76,16 +82,8 @@ async fn full_actions_cache_flow_should_work_correctly() {
      * ===========================
      */
 
-    Actions::<Cache>::set_status_cache(env, LifecycleState::Stopping)
-        .await
-        .unwrap();
+    service.stop(env).await.unwrap();
 
-    Actions::<Cache>::remove_actions_cache(env).await.unwrap();
-
-    Actions::<Cache>::set_status_cache(env, LifecycleState::Off)
-        .await
-        .unwrap();
-
-    let final_cache = Actions::<Cache>::get_actions_cache(env).await;
-    assert!(final_cache.is_some_and(|val| val.models.is_empty()));
+    let final_cache = service.get_all(env).await;
+    assert!(final_cache.is_none());
 }

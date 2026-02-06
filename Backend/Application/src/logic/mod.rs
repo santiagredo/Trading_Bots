@@ -3,6 +3,8 @@ pub mod assets;
 pub mod binance;
 pub mod configurations;
 pub mod indicators;
+pub mod integration_logs;
+pub mod integrations;
 pub mod integrations_settings;
 pub mod ledgers;
 pub mod orders;

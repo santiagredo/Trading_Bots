@@ -1,3 +1,3 @@
-use crate::{handler::HealthCheck, utils::Cache};
+use crate::handler::HealthCheck;
 
-impl HealthCheck<Cache> {}
+impl HealthCheck {}

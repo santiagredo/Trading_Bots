@@ -1,4 +1,4 @@
-use application::{handler::Integrations, utils::Cache};
+use application::{handler::Integrations, utils::EntityCache};
 use models::{entities::integrations::Model, enums::LifecycleState, structs::Environments};
 
 fn mock_integration(id: i32) -> Model {
@@ -12,43 +12,44 @@ fn mock_integration(id: i32) -> Model {
 async fn full_integrations_cache_flow_should_work_correctly() {
     let env = Environments::DEV;
 
+    let service = Integrations::blank();
+
     /* ===========================
      * INITIAL STATE
      * ===========================
      */
 
-    let reset = Integrations::<Cache>::reset_integrations_cache(env).await;
-    assert!(reset.is_ok());
+    service.reset(env).await.unwrap();
 
-    let off = Integrations::<Cache>::set_status_cache(env, LifecycleState::Off).await;
+    let off = service.set_state(env, LifecycleState::Off).await;
     assert!(off.is_err());
 
-    let status = Integrations::<Cache>::get_cache_state(env).await;
+    let status = service.state(env).await;
     assert_eq!(status, LifecycleState::Off);
 
-    let cache = Integrations::<Cache>::get_integrations_cache(env).await;
-    assert!(cache.is_some_and(|val| val.models.is_empty()));
+    let cache = service.get_all(env).await;
+    assert!(cache.is_none());
 
     /* ===========================
      * LOAD MULTIPLE INTEGRATIONS
      * ===========================
      */
 
-    let starting = Integrations::<Cache>::set_status_cache(env, LifecycleState::Starting).await;
-    assert!(starting.is_ok());
+    service
+        .set_state(env, LifecycleState::Starting)
+        .await
+        .unwrap();
 
     let integrations = vec![mock_integration(1), mock_integration(2)];
 
-    let running = Integrations::<Cache>::set_status_cache(env, LifecycleState::Running).await;
-    assert!(running.is_ok());
-
-    Integrations::<Cache>::set_integrations_cache(env, integrations)
+    service
+        .set_state(env, LifecycleState::Running)
         .await
         .unwrap();
 
-    let cache = Integrations::<Cache>::get_integrations_cache(env)
-        .await
-        .unwrap();
+    service.set_all(env, integrations).await.unwrap();
+
+    let cache = service.get_all(env).await.unwrap();
     assert_eq!(cache.models.len(), 2);
     assert_eq!(cache.status, LifecycleState::Running);
 
@@ -58,13 +59,11 @@ async fn full_integrations_cache_flow_should_work_correctly() {
      */
 
     let extra = mock_integration(3);
-    Integrations::<Cache>::upsert_integration_cache(env, extra.clone())
-        .await
-        .unwrap();
 
-    let single = Integrations::<Cache>::get_integration_cache(env, 3)
-        .await
-        .unwrap();
+    service.upsert(env, extra.id, extra.clone()).await.unwrap();
+
+    let single = service.get(env, 3).await.unwrap();
+
     assert_eq!(single, extra);
 
     /* ===========================
@@ -72,18 +71,8 @@ async fn full_integrations_cache_flow_should_work_correctly() {
      * ===========================
      */
 
-    Integrations::<Cache>::set_status_cache(env, LifecycleState::Stopping)
-        .await
-        .unwrap();
+    service.stop(env).await.unwrap();
 
-    Integrations::<Cache>::remove_integrations_cache(env)
-        .await
-        .unwrap();
-
-    Integrations::<Cache>::set_status_cache(env, LifecycleState::Off)
-        .await
-        .unwrap();
-
-    let final_cache = Integrations::<Cache>::get_integrations_cache(env).await;
-    assert!(final_cache.is_some_and(|val| val.models.is_empty()));
+    let final_cache = service.get_all(env).await;
+    assert!(final_cache.is_none());
 }

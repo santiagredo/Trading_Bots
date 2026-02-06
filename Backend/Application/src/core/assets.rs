@@ -1,190 +1,105 @@
+use crate::{
+    handler::{Assets, Ledgers, Senders},
+    logic,
+    utils::{handle_user_err, EntityCache, RepoFactory, Repository, Response},
+};
 use models::{
-    entities::assets::Model,
+    entities::{assets::Model, ledgers},
     enums::LifecycleState,
-    structs::{AssetRequest, CacheAssets, LedgerRequest, QueryOptions},
+    structs::{AssetRequest, Environments, LedgerRequest, QueryOptions},
 };
 use sea_orm::prelude::Decimal;
 use tokio_util::sync::CancellationToken;
 
-use crate::{
-    handler::{Assets, Ledgers, Senders, DBC},
-    utils::{handle_user_err, Cache, Core, Data, Logic, Response},
-};
+/* ======================================================
+ * CRUD / DB
+ * ======================================================
+ */
 
-impl Assets<Core> {
-    /* ===========================
-     * DB
-     * ===========================
-     */
-
-    pub async fn insert_asset_core(self) -> Result<Model, Response> {
-        let env = self.environment;
-
-        self.next_phase::<Logic>()
-            .insert_asset_logic()
-            .map_err(handle_user_err)?
-            .next_phase::<Data>()
-            .insert_asset_data(&DBC::db(&env).await?)
-            .await
+impl<R> Assets<R>
+where
+    R: Repository<AssetRequest, Model>,
+{
+    pub async fn insert(&self, req: AssetRequest) -> Result<Model, Response> {
+        logic::assets::validate_insert(&req).map_err(handle_user_err)?;
+        self.repo.insert(req).await
     }
 
-    pub async fn select_asset_core(self) -> Result<Option<Model>, Response> {
-        let env = self.environment;
-
-        self.next_phase::<Data>()
-            .select_asset_data(&DBC::db(&env).await?)
-            .await
+    pub async fn select(&self, req: AssetRequest) -> Result<Option<Model>, Response> {
+        self.repo.select(req).await
     }
 
-    pub async fn select_assets_core(
-        self,
+    pub async fn select_many(
+        &self,
+        req: AssetRequest,
         query: Option<QueryOptions>,
     ) -> Result<Vec<Model>, Response> {
-        let env = self.environment;
-
-        self.next_phase::<Data>()
-            .select_assets_data(&DBC::db(&env).await?, query)
-            .await
+        self.repo.select_many(req, query).await
     }
 
-    pub async fn update_asset_core(self) -> Result<Model, Response> {
-        let env = self.environment;
-
-        self.next_phase::<Logic>()
-            .update_asset_logic()
-            .map_err(handle_user_err)?
-            .next_phase::<Data>()
-            .update_asset_data(&DBC::db(&env).await?)
-            .await
+    pub async fn update(&self, req: AssetRequest) -> Result<Model, Response> {
+        logic::assets::validate_update(&req).map_err(handle_user_err)?;
+        self.repo.update(req).await
     }
 
-    pub async fn delete_asset_core(self) -> Result<u64, Response> {
-        let env = self.environment;
-
-        self.next_phase::<Logic>()
-            .delete_asset_logic()
-            .map_err(handle_user_err)?
-            .next_phase::<Data>()
-            .delete_asset_data(&DBC::db(&env).await?)
-            .await
+    pub async fn delete(&self, req: AssetRequest) -> Result<u64, Response> {
+        logic::assets::validate_delete(&req).map_err(handle_user_err)?;
+        self.repo.delete(req).await
     }
+}
 
-    /* ===========================
-     * CACHE (READ)
-     * ===========================
-     */
+/* ======================================================
+ * START / LOAD CACHE
+ * ======================================================
+ */
 
-    pub async fn get_assets_core(self) -> Option<CacheAssets> {
-        Assets::<Cache>::get_assets_cache(self.environment).await
-    }
-
-    pub async fn get_asset_core(self) -> Option<Model> {
-        Assets::<Cache>::get_asset_cache(self.environment, self.model.id.unwrap_or_default()).await
-    }
-
-    pub async fn get_assets_state_core(self) -> LifecycleState {
-        Assets::<Cache>::get_assets_state_cache(self.environment).await
-    }
-
-    /* ===========================
-     * CACHE (WRITE)
-     * ===========================
-     */
-
-    pub async fn upsert_asset_core(self) -> Result<(), String> {
-        let env = self.environment;
-        let model = Assets::into_model(self.model);
-
-        Assets::<Cache>::upsert_asset_cache(env, model).await
-    }
-
-    pub async fn remove_asset_core(self) -> Result<Option<Model>, String> {
-        let env = self.environment;
-        let id = self.model.id.unwrap_or_default();
-
-        Assets::<Cache>::remove_asset_cache(env, id).await
-    }
-
-    pub async fn set_asset_value_core(
-        self,
-        value: Decimal,
-        is_locked: bool,
-        is_sell: bool,
-    ) -> Result<(Model, Decimal), Response> {
-        let Ok(result) = Assets::<Cache>::update_asset_balance_cache(
-            self.environment,
-            self.model.id.unwrap_or_default(),
-            value,
-            is_locked,
-            is_sell,
-        )
-        .await
-        else {
-            return Err(Response {
-                code: 404,
-                message: "Memory asset not found".into(),
-            });
-        };
-
-        Ok(result)
-    }
-
-    /* ===========================
-     * START ACTIVE ASSETS
-     * ===========================
-     */
-
-    pub async fn start_assets_core(self, token: &CancellationToken) -> Result<(), Response> {
-        let env = self.environment;
-
+impl<R> Assets<R>
+where
+    R: Repository<AssetRequest, Model> + Clone + Send + Sync + 'static,
+    Self: EntityCache<Environments, Value = Model>,
+{
+    pub async fn start(
+        &self,
+        factory: RepoFactory,
+        env: Environments,
+        token: &CancellationToken,
+        senders: Senders,
+    ) -> Result<(), Response> {
         // STARTING
-        if let Err(err) =
-            Assets::<Cache>::set_status_cache(env, models::enums::LifecycleState::Starting).await
-        {
-            return Err(Response {
-                code: 500,
-                message: err,
-            });
-        }
+        self.set_state(env, LifecycleState::Starting)
+            .await
+            .map_err(Response::server_error)?;
 
         // Load from DB
-        let models = match Assets::default().with_env(env).select_assets(None).await {
-            Ok(m) => m,
+        let assets = match self.repo.select_many(AssetRequest::default(), None).await {
+            Ok(v) => v,
             Err(err) => {
-                let _ = Assets::<Cache>::reset_assets_cache(env).await;
-                return Err(Response {
-                    code: 500,
-                    message: err.message,
-                });
+                let _ = self.reset(env).await;
+                return Err(err);
             }
         };
 
         // RUNNING
-        if let Err(err) =
-            Assets::<Cache>::set_status_cache(env, models::enums::LifecycleState::Running).await
-        {
-            let _ = Assets::<Cache>::reset_assets_cache(env).await;
-            return Err(Response {
-                code: 500,
-                message: err,
-            });
-        }
+        self.set_state(env, LifecycleState::Running)
+            .await
+            .map_err(Response::server_error)?;
 
-        // Set assets
-        if let Err(err) = Assets::<Cache>::set_assets_cache(env, models).await {
-            let _ = Assets::<Cache>::reset_assets_cache(env).await;
-            return Err(Response {
-                code: 500,
-                message: err,
-            });
+        if let Err(err) = self.set_all(env, assets).await {
+            let _ = self.reset(env).await;
+            return Err(Response::server_error(err));
         }
 
         // Runtime
-        let senders = Senders::get_senders().await;
         let mut orders_receiver = senders.order_sender.subscribe();
         let cancellation_token = token.clone();
+        let repo = self.repo.clone();
 
         tokio::spawn(async move {
+            // Create a blank Assets instance without repo for cache access
+            let service = Assets::new(repo);
+
+            let ledgers_repo = factory.repo::<LedgerRequest, ledgers::Model>();
+
             loop {
                 tokio::select! {
                     _ = cancellation_token.cancelled() => break,
@@ -192,11 +107,10 @@ impl Assets<Core> {
                         let Ok((environment, order)) = msg else { continue };
 
                         // BASE ASSET
-                        let mut base_asset = Assets::default().with_env(environment);
-                        base_asset.model.id = Some(order.base_asset_id);
-
-                        let Ok((base_model, base_prev)) = base_asset
-                            .set_asset_value(
+                        let Ok((base_model, base_prev)) = service
+                            .set_asset_balance(
+                                environment,
+                                order.base_asset_id,
                                 order.base_asset_amount,
                                 false,
                                 order.is_sell,
@@ -213,26 +127,17 @@ impl Assets<Core> {
                                 base_req.free.unwrap_or_default(),
                             );
 
-                        if Assets::from_request(base_req)
-                            .with_env(environment)
-                            .update_asset()
-                            .await
-                            .is_err()
-                        {
+                        if service.update(base_req).await.is_err() {
                             continue;
                         }
 
-                        let _ = Ledgers::new(base_ledger)
-                            .with_env(environment)
-                            .insert_ledger()
-                            .await;
+                        let _ = Ledgers::new(ledgers_repo.clone()).insert(base_ledger).await;
 
                         // QUOTE ASSET
-                        let mut quote_asset = Assets::default().with_env(environment);
-                        quote_asset.model.id = Some(order.quote_asset_id);
-
-                        let Ok((quote_model, quote_prev)) = quote_asset
-                            .set_asset_value(
+                        let Ok((quote_model, quote_prev)) = service
+                            .set_asset_balance(
+                                environment,
+                                order.quote_asset_id,
                                 order.quote_asset_amount,
                                 false,
                                 !order.is_sell,
@@ -249,21 +154,11 @@ impl Assets<Core> {
                                 quote_req.free.unwrap_or_default(),
                             );
 
-                        if Assets::from_request(quote_req)
-                            .with_env(environment)
-                            .update_asset()
-                            .await
-                            .is_err()
-                        {
+                        if service.update(quote_req).await.is_err() {
                             continue;
                         }
 
-                        let _ = Ledgers::new(quote_ledger)
-                            .with_env(environment)
-                            .insert_ledger()
-                            .await;
-
-                        // READY
+                        let _ = Ledgers::new(ledgers_repo.clone()).insert(quote_ledger).await;
                     }
                 }
             }
@@ -271,59 +166,102 @@ impl Assets<Core> {
 
         Ok(())
     }
+}
 
-    /* ===========================
-     * STOP ACTIVE ASSETS
-     * ===========================
-     */
+/* ======================================================
+ * CACHE (READ / WRITE)
+ * ======================================================
+ */
 
-    pub async fn stop_assets_core(self) -> Result<(), Response> {
-        let env = self.environment;
+impl<R> Assets<R>
+where
+    Self: EntityCache<Environments, Key = i32, Value = Model>,
+{
+    pub async fn update_asset_balance_cache(
+        &self,
+        env: Environments,
+        asset_id: i32,
+        value: Decimal,
+        locked: bool,
+        sell: bool,
+    ) -> Result<(Model, Decimal), Response> {
+        let mut asset = self
+            .get(env, asset_id)
+            .await
+            .ok_or(Response::not_found("Asset not found".into()))?;
 
-        // STOPPING
-        if let Err(err) =
-            Assets::<Cache>::set_status_cache(env, models::enums::LifecycleState::Stopping).await
-        {
-            let _ = Assets::<Cache>::reset_assets_cache(env).await;
-            return Err(Response {
-                code: 500,
-                message: err,
-            });
+        let target = if locked {
+            &mut asset.locked
+        } else {
+            &mut asset.free
+        };
+
+        let previous = target.clone();
+
+        if sell {
+            *target -= value;
+        } else {
+            *target += value;
         }
 
-        // Remove assets
-        if let Err(err) = Assets::<Cache>::remove_assets_cache(env).await {
-            let _ = Assets::<Cache>::reset_assets_cache(env).await;
-            return Err(Response {
-                code: 500,
-                message: err,
-            });
-        }
+        self.upsert(env, asset_id, asset.clone())
+            .await
+            .map_err(Response::server_error)?;
 
-        // OFF
-        if let Err(err) =
-            Assets::<Cache>::set_status_cache(env, models::enums::LifecycleState::Off).await
-        {
-            let _ = Assets::<Cache>::reset_assets_cache(env).await;
-            return Err(Response {
-                code: 500,
-                message: err,
-            });
-        }
+        Ok((asset, previous))
+    }
+}
+
+/* ======================================================
+ * STOP / RESET
+ * ======================================================
+ */
+
+impl<R> Assets<R>
+where
+    Self: EntityCache<Environments>,
+{
+    pub async fn stop(&self, env: Environments) -> Result<(), Response> {
+        self.set_state(env, LifecycleState::Stopping)
+            .await
+            .map_err(Response::server_error)?;
+
+        self.remove_all(env).await.map_err(Response::server_error)?;
+
+        self.set_state(env, LifecycleState::Off)
+            .await
+            .map_err(Response::server_error)?;
 
         Ok(())
     }
+}
 
-    pub async fn reset_assets_core(self) -> Result<(), Response> {
-        let environment = self.environment;
+/* ======================================================
+ * TESTS
+ * ======================================================
+ */
 
-        if let Err(err) = Assets::<Cache>::reset_assets_cache(environment).await {
-            return Err(Response {
-                code: 500,
-                message: err,
-            });
+#[cfg(test)]
+mod core_tests {
+    use models::structs::AssetRequest;
+
+    use crate::{handler::Assets, utils::MockRepo};
+
+    #[tokio::test]
+    async fn insert_asset_ok() {
+        let repo = MockRepo::new();
+        let service = Assets::new(repo);
+
+        let req = AssetRequest {
+            id: Some(1),
+            name: Some("BITCOIN".into()),
+            ticker: Some("BTC".into()),
+            ..Default::default()
         };
 
-        Ok(())
+        let result = service.insert(req).await;
+
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().id, 1);
     }
 }

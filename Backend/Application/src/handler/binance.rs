@@ -1,73 +1,59 @@
-use std::marker::PhantomData;
-
+use crate::{
+    handler::{Assets, Integrations, IntegrationsSettings, Ledgers, Pairs},
+    utils::{EntityCache, RepoFactory, Update},
+};
 use chrono::Local;
 use models::{
-    entities,
-    structs::{
-        AccountInformation, AssetRequest, Environments, ExchangeInformation, LedgerRequest,
-        OrderRequest,
+    entities::{
+        assets, ledgers,
+        pairs::{self, Model},
     },
+    structs::{AssetRequest, Environments, LedgerRequest, PairRequest},
 };
 use sea_orm::prelude::Decimal;
 use std::str::FromStr;
-use tracing::error_span;
 
-use crate::{
-    handler::{Assets, Integrations, IntegrationsSettings, Ledgers, Pairs},
-    utils::{Response, Types},
-};
-
-pub struct Binance<Phase = Types> {
-    phase: PhantomData<Phase>,
-    pub environment: Environments,
+#[derive(Debug, Clone)]
+pub struct Binance<R> {
+    pub repo: R,
 }
 
-impl Binance {
-    pub fn with_env(self, environment: Environments) -> Self {
-        Self {
-            phase: self.phase,
-            environment,
-        }
+impl<R> Binance<R> {
+    pub fn new(repo: R) -> Self {
+        Self { repo }
+    }
+}
+
+impl Binance<()> {
+    pub fn blank() -> Binance<()> {
+        Self { repo: () }
     }
 
-    pub fn default() -> Self {
-        Self {
-            phase: PhantomData::<Types>,
-            environment: Environments::DEV,
-        }
-    }
-
-    pub async fn update_account_balances(environment: Environments) {
-        let Some(integration) = Integrations::default()
-            .with_env(environment)
-            .get_integrations()
-            .await
+    pub async fn update_account_balances(factory: RepoFactory, environment: Environments) {
+        let Some(binance_integration) =
+            Integrations::blank()
+                .get_all(environment)
+                .await
+                .and_then(|cache| {
+                    cache
+                        .models
+                        .into_iter()
+                        .find(|(_, i)| i.code == "BINANCE")
+                        .map(|(_, i)| i)
+                })
         else {
             return;
         };
 
-        let Some(binance_integration) = integration
-            .models
-            .values()
-            .find(|val| val.code == "BINANCE")
-        else {
+        let Some(cache) = IntegrationsSettings::blank().get_all(environment).await else {
             return;
         };
 
-        let mut integration_settings_request =
-            IntegrationsSettings::default().with_env(environment);
-        integration_settings_request.model.integration_id = Some(binance_integration.id);
-
-        let integration_settings = match integration_settings_request
-            .get_integration_settings()
-            .await
-        {
-            None => return,
-            Some(val) => val
-                .values()
-                .map(|val| val.to_owned())
-                .collect::<Vec<entities::integration_settings::Model>>(),
+        let Some(binance_map) = cache.integrations_map.get(&binance_integration.id) else {
+            return;
         };
+
+        let integration_settings = binance_map.models.values().cloned().collect::<Vec<_>>();
 
         let Some(api_key) = integration_settings
             .iter()
@@ -85,21 +71,30 @@ impl Binance {
             return;
         };
 
-        let account = Self::default()
-            .get_account(api_key.value.clone(), secret_pass.value.clone())
+        let Ok(account) = Binance::blank()
+            .get_account(
+                api_key.value.clone(),
+                secret_pass.value.clone(),
+                factory.clone(),
+            )
+            .await
+        else {
+            return;
+        };
+
+        let assets = Assets::blank()
+            .get_all(environment)
             .await
             .unwrap_or_default();
 
-        let assets = Assets::default()
-            .with_env(environment)
-            .select_assets(None)
-            .await
-            .unwrap_or_default();
+        let assets_repo = factory.repo::<AssetRequest, assets::Model>();
+        let ledgers_repo = factory.repo::<LedgerRequest, ledgers::Model>();
 
         for balance in account.balances {
-            let Some(asset) = assets
+            let Some((_, asset)) = assets
+                .models
                 .iter()
-                .find(|val| val.ticker.to_uppercase() == balance.asset.to_uppercase())
+                .find(|(_, val)| val.ticker.to_uppercase() == balance.asset.to_uppercase())
             else {
                 continue;
             };
@@ -117,18 +112,19 @@ impl Binance {
                 last_update: Some(Local::now().naive_local()),
             };
 
-            let _ = Assets::from_request(asset_request.clone())
-                .with_env(environment)
-                .upsert_asset()
-                .await;
+            let asset_model = Assets::into_model(asset_request.clone());
 
-            let stored_model = match Assets::from_request(asset_request)
-                .with_env(environment)
-                .update_asset()
+            if let Err(err) = Assets::blank()
+                .upsert(environment, asset_model.id, asset_model)
                 .await
             {
+                dbg!(err);
+                continue;
+            };
+
+            let stored_model = match Assets::new(assets_repo.clone()).update(asset_request).await {
                 Err(err) => {
-                    eprint!("{}", err.message);
+                    dbg!("{}", err.message);
                     continue;
                 }
                 Ok(val) => val,
@@ -148,9 +144,8 @@ impl Binance {
                 locked_new_balance: Some(balance.locked),
             };
 
-            if let Err(err) = Ledgers::new(ledger_request)
-                .with_env(environment)
-                .insert_ledger()
+            if let Err(err) = Ledgers::new(ledgers_repo.clone())
+                .insert(ledger_request)
                 .await
             {
                 dbg!(eprint!("{}", err.message));
@@ -158,18 +153,28 @@ impl Binance {
         }
     }
 
-    pub async fn update_exchange_information(environment: Environments) {
-        // let start = Instant::now();
-
-        let mut stored_pairs = match Pairs::default().with_env(environment).select_pairs(None).await {
-            Ok(pairs) if !pairs.is_empty() => pairs,
-            _ => return,
-        };
-
-        let mut updates = match Self::default().get_exchange_information().await {
+    pub async fn update_exchange_information(factory: RepoFactory, environment: Environments) {
+        let mut stored_pairs = match Pairs::blank().get_all(environment).await {
             None => return,
-            Some(val) => val,
+            Some(val) => val
+                .models
+                .into_iter()
+                .map(|(_, model)| model)
+                .collect::<Vec<Model>>(),
         };
+
+        let mut updates = match Binance::blank()
+            .get_exchange_information(factory.clone())
+            .await
+        {
+            Err(err) => {
+                dbg!(err);
+                return;
+            }
+            Ok(val) => val,
+        };
+
+        let pairs_repo = factory.repo::<PairRequest, pairs::Model>();
 
         for pair in stored_pairs.iter_mut() {
             if let Some(exchange_pair) = updates
@@ -323,89 +328,33 @@ impl Binance {
                 }
             }
 
-            let mut pair_request = Pairs::default()
-                .with_env(environment)
-                .from_model(pair.clone());
+            let mut pair_request = Pairs::into_request(pair.clone());
 
             // Prevent update from overwritting existing values
-            pair_request.model.all_time_high_date = None;
-            pair_request.model.all_time_high_price = None;
-            pair_request.model.percent_from_all_time_high = None;
-            pair_request.model.fifteen_minutes_price_percent_change = None;
-            pair_request.model.thirty_minutes_price_percent_change = None;
-            pair_request.model.hour_price_percent_change = None;
-            pair_request.model.six_hours_price_percent_change = None;
-            pair_request.model.twelve_hours_price_percent_change = None;
-            pair_request.model.day_price_percent_change = None;
-            pair_request.model.week_price_percent_change = None;
-            pair_request.model.month_price_percent_change = None;
-            pair_request.model.year_price_percent_change = None;
+            pair_request.all_time_high_date = None;
+            pair_request.all_time_high_price = None;
+            pair_request.percent_from_all_time_high = None;
+            pair_request.fifteen_minutes_price_percent_change = None;
+            pair_request.thirty_minutes_price_percent_change = None;
+            pair_request.hour_price_percent_change = None;
+            pair_request.six_hours_price_percent_change = None;
+            pair_request.twelve_hours_price_percent_change = None;
+            pair_request.day_price_percent_change = None;
+            pair_request.week_price_percent_change = None;
+            pair_request.month_price_percent_change = None;
+            pair_request.year_price_percent_change = None;
 
-            let model = match pair_request.update_pair().await {
+            let model = match pairs_repo.clone().update(pair_request).await {
                 Err(err) => {
-                    error_span!("Binance - Pair - Update - Error", pair = ?pair, error = ?err);
-                    dbg!(eprint!("{err:?} \n"));
+                    dbg!(err);
                     continue;
                 }
                 Ok(val) => val,
             };
 
-            let _ = Pairs::default()
-                .with_env(environment)
-                .from_model(model)
-                .upsert_pair()
-                .await;
+            if let Err(err) = Pairs::blank().upsert(environment, model.id, model).await {
+                dbg!(err);
+            }
         }
-    }
-}
-
-impl<Phase> Binance<Phase> {
-    pub fn next_phase<Next>(self) -> Binance<Next> {
-        Binance {
-            phase: PhantomData::<Next>,
-            environment: self.environment,
-        }
-    }
-}
-
-impl Binance<Types> {
-    pub async fn get_account(
-        self,
-        api_key: String,
-        secret_pass: String,
-    ) -> Result<AccountInformation, Response> {
-        self.next_phase()
-            .get_account_core(api_key, secret_pass)
-            .await
-    }
-
-    pub async fn get_account_manually(self) -> Result<AccountInformation, Response> {
-        self.next_phase().get_account_manually_core().await
-    }
-
-    pub async fn get_exchange_information(self) -> Option<ExchangeInformation> {
-        self.next_phase().get_exchange_information_core().await
-    }
-
-    pub async fn post_new_order(
-        self,
-        symbol: String,
-        order: &mut OrderRequest,
-        api_key: String,
-        secret_pass: String,
-    ) -> Result<(), Response> {
-        self.next_phase()
-            .post_new_order_core(symbol, order, api_key, secret_pass)
-            .await
-    }
-
-    pub async fn resolve_binance_integration(
-        self,
-    ) -> Result<entities::integrations::Model, Response> {
-        self.next_phase().resolve_binance_integration_core().await
-    }
-
-    pub async fn resolve_binance_credentials(self) -> Result<(String, String), Response> {
-        self.next_phase().resolve_binance_credentials_core().await
     }
 }

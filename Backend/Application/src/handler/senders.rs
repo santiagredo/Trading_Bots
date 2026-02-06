@@ -1,5 +1,3 @@
-use std::marker::PhantomData;
-
 use models::{
     entities::orders,
     enums::WebsocketCommand,
@@ -7,26 +5,35 @@ use models::{
 };
 use tokio::sync::broadcast::{self, Receiver, Sender};
 
-use crate::utils::{Core, Types};
-
 #[derive(Debug, Clone)]
-pub struct Senders<Phase = Types> {
-    pub phase: PhantomData<Phase>,
+pub struct Senders {
     pub command_sender: broadcast::Sender<WebsocketCommand>,
     pub event_sender: broadcast::Sender<Ticker>,
     pub order_sender: broadcast::Sender<(Environments, orders::Model)>,
 }
 
 impl Senders {
-    pub fn set_commands_brodcast() -> (Sender<WebsocketCommand>, Receiver<WebsocketCommand>) {
+    pub fn new() -> Self {
+        let (command_sender, _) = Self::set_commands_brodcast();
+        let (event_sender, _) = Self::set_events_broadcast();
+        let (order_sender, _) = Self::set_orders_broadcast();
+
+        Self {
+            command_sender,
+            event_sender,
+            order_sender,
+        }
+    }
+
+    fn set_commands_brodcast() -> (Sender<WebsocketCommand>, Receiver<WebsocketCommand>) {
         broadcast::channel::<WebsocketCommand>(64)
     }
 
-    pub fn set_events_broadcast() -> (Sender<Ticker>, Receiver<Ticker>) {
+    fn set_events_broadcast() -> (Sender<Ticker>, Receiver<Ticker>) {
         broadcast::channel::<Ticker>(64)
     }
 
-    pub fn set_orders_broadcast() -> (
+    fn set_orders_broadcast() -> (
         Sender<(Environments, orders::Model)>,
         Receiver<(Environments, orders::Model)>,
     ) {
@@ -34,6 +41,6 @@ impl Senders {
     }
 
     pub async fn get_senders() -> Senders {
-        Senders::<Core>::get_senders_core().await
+        Senders::get_senders_core().await
     }
 }

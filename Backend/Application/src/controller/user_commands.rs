@@ -5,7 +5,7 @@ use crate::handler::UserCommands;
 
 #[post("/{env}/start")]
 pub async fn start_everything(env: web::Path<Environments>) -> impl Responder {
-    match UserCommands::start_everything(env.into_inner()).await {
+    match UserCommands::start_everything(false, env.into_inner()).await {
         Err(err) => HttpResponse::InternalServerError().json(err),
         Ok(_) => HttpResponse::Ok().finish(),
     }
@@ -21,7 +21,7 @@ pub async fn stop_everything(env: web::Path<Environments>) -> impl Responder {
 
 #[post("/{env}/restart")]
 pub async fn restart_everything(env: web::Path<Environments>) -> impl Responder {
-    match UserCommands::restart_everything(env.into_inner()).await {
+    match UserCommands::restart_everything(false, env.into_inner()).await {
         Err(err) => HttpResponse::InternalServerError().json(err),
         Ok(_) => HttpResponse::Ok().finish(),
     }

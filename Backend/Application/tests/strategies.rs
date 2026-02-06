@@ -1,91 +1,123 @@
-use application::{handler::Strategies, utils::Cache};
-use models::{entities::strategies::Model, enums::LifecycleState, structs::Environments};
+use application::{handler::Strategies, utils::EntityCache};
+use models::{
+    entities::strategies::Model,
+    enums::LifecycleState,
+    structs::{CacheStrategy, Environments},
+};
+
+fn mock_strategy(id: i32) -> Model {
+    Model {
+        id,
+        is_active: true,
+        ..Default::default()
+    }
+}
 
 #[tokio::test]
-async fn full_strategies_cache_flow_should_work_correctly() {
-    fn mock_strategy(id: i32) -> Model {
-        Model {
-            id,
-            is_active: true,
-            ..Default::default()
-        }
-    }
-
+async fn full_strategies_flow_should_work_correctly() {
     let env = Environments::DEV;
+    let service = Strategies::blank();
 
-    // Reset (safe even if env doesn't exist)
-    Strategies::<Cache>::reset_strategies_cache(env)
+    /* ===========================
+     * INITIAL STATE
+     * ===========================
+     */
+
+    service.reset_strategies(env).await.unwrap();
+
+    let status = service.state(env).await;
+    assert_eq!(status, LifecycleState::Off);
+
+    let cache = service.get_all(env).await;
+    assert!(cache.is_none());
+
+    /* ===========================
+     * START STRATEGIES
+     * ===========================
+     */
+
+    service
+        .set_state(env, LifecycleState::Starting)
         .await
         .unwrap();
 
-    // Env not created yet → Off by default
-    assert_eq!(
-        Strategies::<Cache>::get_strategies_state_cache(env).await,
-        LifecycleState::Off
-    );
-
-    let cache = Strategies::<Cache>::get_strategies_cache(env)
+    service
+        .set_state(env, LifecycleState::Running)
         .await
         .unwrap();
+
+    let cache = service.get_all(env).await.unwrap();
+    assert_eq!(cache.status, LifecycleState::Running);
     assert!(cache.models.is_empty());
 
-    // Start lifecycle
-    Strategies::<Cache>::set_status_cache(env, LifecycleState::Starting)
-        .await
-        .unwrap();
+    /* ===========================
+     * LOAD MULTIPLE STRATEGIES
+     * ===========================
+     */
 
-    Strategies::<Cache>::set_status_cache(env, LifecycleState::Running)
-        .await
-        .unwrap();
+    let strategies = vec![mock_strategy(1), mock_strategy(2)]
+        .into_iter()
+        .map(|val| CacheStrategy {
+            model: val,
+            ..Default::default()
+        })
+        .collect();
 
-    // Load strategies
-    let strategies = vec![mock_strategy(1), mock_strategy(2)];
-    Strategies::<Cache>::set_strategies_cache(env, strategies)
-        .await
-        .unwrap();
+    service.set_all(env, strategies).await.unwrap();
 
-    let cache = Strategies::<Cache>::get_strategies_cache(env)
-        .await
-        .unwrap();
+    let cache = service.get_all(env).await.unwrap();
     assert_eq!(cache.models.len(), 2);
+    assert_eq!(cache.status, LifecycleState::Running);
 
-    // Upsert
+    /* ===========================
+     * INSERT INDIVIDUAL STRATEGY
+     * ===========================
+     */
+
     let extra = mock_strategy(3);
-    Strategies::<Cache>::upsert_strategy_cache(env, extra.clone())
+    service
+        .upsert(
+            env,
+            extra.id,
+            CacheStrategy {
+                model: extra.clone(),
+                ..Default::default()
+            },
+        )
         .await
         .unwrap();
 
-    let single = Strategies::<Cache>::get_strategy_cache(env, 3)
-        .await
-        .unwrap();
+    let single = service.get(env, 3).await.unwrap();
     assert_eq!(single.model, extra);
 
-    // Error state
-    Strategies::<Cache>::set_strategy_error_cache(env, 3, Some("boom".into()))
+    /* ===========================
+     * ERROR STATE
+     * ===========================
+     */
+
+    service
+        .set_strategy_error(env, 3, Some("boom".into()))
         .await
         .unwrap();
 
-    let errored = Strategies::<Cache>::get_strategy_cache(env, 3)
-        .await
-        .unwrap();
+    let errored = service.get(env, 3).await.unwrap();
     assert_eq!(errored.last_error_message, Some("boom".into()));
 
-    // Stop
-    Strategies::<Cache>::set_status_cache(env, LifecycleState::Stopping)
+    /* ===========================
+     * STOP
+     * ===========================
+     */
+
+    service
+        .set_state(env, LifecycleState::Stopping)
         .await
         .unwrap();
 
-    let removed = Strategies::<Cache>::remove_strategies_cache(env)
-        .await
-        .unwrap();
+    let removed = service.remove_all(env).await.unwrap();
     assert_eq!(removed.len(), 3);
 
-    Strategies::<Cache>::set_status_cache(env, LifecycleState::Off)
-        .await
-        .unwrap();
+    service.set_state(env, LifecycleState::Off).await.unwrap();
 
-    let final_cache = Strategies::<Cache>::get_strategies_cache(env)
-        .await
-        .unwrap();
-    assert!(final_cache.models.is_empty());
+    let final_result = service.get_all(env).await;
+    assert!(final_result.is_none());
 }

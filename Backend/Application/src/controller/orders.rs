@@ -1,18 +1,28 @@
 use actix_web::{get, patch, post, web, HttpResponse, Responder};
 use models::structs::{Environments, OrderRequest, QueryOptions};
 
-use crate::{handler::Orders, utils::error_response};
+use crate::{
+    handler::Orders,
+    utils::{error_response, DbRepo},
+};
+
+// ============================================
+// DATABASE OPERATIONS
+// ============================================
 
 #[post("/{env}")]
 pub async fn insert_order(
     env: web::Path<Environments>,
     web::Json(order): web::Json<OrderRequest>,
 ) -> impl Responder {
-    match Orders::new(order)
-        .with_env(env.into_inner())
-        .insert_order()
-        .await
-    {
+    let repo = match DbRepo::new(env.into_inner()).await {
+        Ok(val) => val,
+        Err(err) => return error_response(err),
+    };
+
+    let service = Orders::new(repo);
+
+    match service.insert(order).await {
         Ok(val) => HttpResponse::Ok().json(val),
         Err(err) => error_response(err),
     }
@@ -21,13 +31,16 @@ pub async fn insert_order(
 #[get("/{env}")]
 pub async fn select_order(
     env: web::Path<Environments>,
-    query: web::Query<OrderRequest>,
+    order: web::Query<OrderRequest>,
 ) -> impl Responder {
-    match Orders::new(query.into_inner())
-        .with_env(env.into_inner())
-        .select_order()
-        .await
-    {
+    let repo = match DbRepo::new(env.into_inner()).await {
+        Ok(val) => val,
+        Err(err) => return error_response(err),
+    };
+
+    let service = Orders::new(repo);
+
+    match service.select(order.into_inner()).await {
         Ok(val) => HttpResponse::Ok().json(val),
         Err(err) => error_response(err),
     }
@@ -39,9 +52,15 @@ pub async fn select_orders(
     order: web::Query<OrderRequest>,
     query: web::Query<QueryOptions>,
 ) -> impl Responder {
-    match Orders::new(order.into_inner())
-        .with_env(env.into_inner())
-        .select_orders(Some(query.into_inner()))
+    let repo = match DbRepo::new(env.into_inner()).await {
+        Ok(val) => val,
+        Err(err) => return error_response(err),
+    };
+
+    let service = Orders::new(repo);
+
+    match service
+        .select_many(order.into_inner(), Some(query.into_inner()))
         .await
     {
         Ok(val) => HttpResponse::Ok().json(val),
@@ -54,11 +73,14 @@ pub async fn update_order(
     env: web::Path<Environments>,
     web::Json(order): web::Json<OrderRequest>,
 ) -> impl Responder {
-    match Orders::new(order)
-        .with_env(env.into_inner())
-        .update_order()
-        .await
-    {
+    let repo = match DbRepo::new(env.into_inner()).await {
+        Ok(val) => val,
+        Err(err) => return error_response(err),
+    };
+
+    let service = Orders::new(repo);
+
+    match service.update(order).await {
         Ok(val) => HttpResponse::Ok().json(val),
         Err(err) => error_response(err),
     }

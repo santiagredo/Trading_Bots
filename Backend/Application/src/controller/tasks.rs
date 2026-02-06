@@ -1,7 +1,10 @@
 use actix_web::{get, patch, post, web, HttpResponse, Responder};
 use models::structs::{Environments, QueryOptions, TaskRequest};
 
-use crate::{handler::Tasks, utils::error_response};
+use crate::{
+    handler::Tasks,
+    utils::{error_response, RepoFactory},
+};
 
 // db
 #[get("/{env}/all")]
@@ -10,9 +13,12 @@ pub async fn select_tasks(
     task: web::Query<TaskRequest>,
     query: web::Query<QueryOptions>,
 ) -> impl Responder {
-    match Tasks::new(task.into_inner())
-        .with_env(env.into_inner())
-        .select_tasks(Some(query.into_inner()))
+    match Tasks::new()
+        .select_tasks(
+            env.into_inner(),
+            task.into_inner(),
+            Some(query.into_inner()),
+        )
         .await
     {
         Ok(val) => HttpResponse::Ok().json(val),
@@ -25,11 +31,7 @@ pub async fn update_task(
     env: web::Path<Environments>,
     web::Json(task): web::Json<TaskRequest>,
 ) -> impl Responder {
-    match Tasks::new(task)
-        .with_env(env.into_inner())
-        .update_task()
-        .await
-    {
+    match Tasks::new().update_task(env.into_inner(), task).await {
         Ok(val) => HttpResponse::Ok().json(val),
         Err(err) => error_response(err),
     }
@@ -38,21 +40,21 @@ pub async fn update_task(
 // cache
 #[get("/{env}/memory/all")]
 pub async fn get_tasks(env: web::Path<Environments>) -> impl Responder {
-    let result = Tasks::default()
-        .with_env(env.into_inner())
-        .get_tasks()
-        .await;
+    let result = Tasks::new().get_tasks(env.into_inner()).await;
 
     HttpResponse::Ok().json(result)
 }
 
 #[post("/{env}/memory/start")]
 pub async fn start_tasks_manually(env: web::Path<Environments>) -> impl Responder {
-    match Tasks::default()
-        .with_env(env.into_inner())
-        .start_tasks_manually()
-        .await
-    {
+    let env = env.into_inner();
+
+    let factory = match RepoFactory::db(env).await {
+        Err(err) => return error_response(err),
+        Ok(val) => val,
+    };
+
+    match Tasks::new().start_tasks_manually(factory, env).await {
         Ok(val) => HttpResponse::Ok().json(val),
         Err(err) => error_response(err),
     }
@@ -60,11 +62,7 @@ pub async fn start_tasks_manually(env: web::Path<Environments>) -> impl Responde
 
 #[post("/{env}/memory/stop")]
 pub async fn stop_tasks(env: web::Path<Environments>) -> impl Responder {
-    match Tasks::default()
-        .with_env(env.into_inner())
-        .stop_tasks()
-        .await
-    {
+    match Tasks::new().stop_tasks(env.into_inner()).await {
         Err(err) => error_response(err),
         Ok(_) => HttpResponse::Ok().finish(),
     }

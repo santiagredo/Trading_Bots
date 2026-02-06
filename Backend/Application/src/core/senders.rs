@@ -1,10 +1,7 @@
-use crate::{
-    handler::Senders,
-    utils::{Cache, Core},
-};
+use crate::handler::Senders;
 
-impl Senders<Core> {
+impl Senders {
     pub async fn get_senders_core() -> Senders {
-        Senders::<Cache>::get_senders_cache().await
+        Senders::get_senders_cache().await
     }
 }

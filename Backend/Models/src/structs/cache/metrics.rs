@@ -1,26 +1,75 @@
-// use sea_orm::prelude::DateTime;
-use chrono::NaiveDateTime;
+use chrono::{Local, NaiveDateTime};
+use std::collections::HashMap;
+
 use serde::{Deserialize, Serialize};
-use std::time::Duration;
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
-pub struct CriticalMetric {
-    pub id: i64,
+use crate::{
+    entities::critical_metrics::Model,
+    enums::{LifecycleState, TimestampedState},
+    structs::Environments,
+};
 
-    pub executions_ok: u64,
-    pub executions_err: u64,
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct CacheMetrics {
+    pub model: Model,
+    pub startup_date: NaiveDateTime,
+    pub last_update_date: NaiveDateTime,
+    pub status: LifecycleState,
+}
 
-    pub total_execution_time: Duration,
-    pub max_execution_time: Duration,
+impl CacheMetrics {
+    pub fn new() -> CacheMetrics {
+        let now = Local::now().naive_local();
 
-    pub active_posting: u64,
-    pub max_posting: u64,
+        CacheMetrics {
+            model: Model::default(),
+            startup_date: now,
+            last_update_date: now,
+            status: LifecycleState::Off,
+        }
+    }
+}
 
-    pub skipped_due_to_lock: u64,
+impl TimestampedState for CacheMetrics {
+    type State = LifecycleState;
 
-    pub last_success: Option<NaiveDateTime>,
-    pub last_error: Option<NaiveDateTime>,
+    fn state_mut(&mut self) -> &mut Self::State {
+        &mut self.status
+    }
 
-    pub consecutive_errors: u64,
-    pub slowest_duration: Duration,
+    fn last_update_mut(&mut self) -> &mut NaiveDateTime {
+        &mut self.last_update_date
+    }
+}
+
+#[derive(Default)]
+pub struct CacheMetricsEnvironments {
+    pub environments: HashMap<Environments, CacheMetrics>,
+}
+
+impl CacheMetricsEnvironments {
+    pub fn new() -> CacheMetricsEnvironments {
+        CacheMetricsEnvironments {
+            environments: HashMap::from([
+                (Environments::DEV, CacheMetrics::new()),
+                (Environments::PROD, CacheMetrics::new()),
+            ]),
+        }
+    }
+}
+
+impl CacheMetricsEnvironments {
+    pub fn get_or_create(&mut self, env: Environments) -> &mut CacheMetrics {
+        self.environments
+            .entry(env)
+            .or_insert_with(CacheMetrics::new)
+    }
+
+    pub fn get_mut(&mut self, env: &Environments) -> Option<&mut CacheMetrics> {
+        self.environments.get_mut(env)
+    }
+
+    pub fn get(&self, env: &Environments) -> Option<&CacheMetrics> {
+        self.environments.get(env)
+    }
 }

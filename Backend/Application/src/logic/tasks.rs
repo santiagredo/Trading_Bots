@@ -1,15 +1,13 @@
-use crate::{handler::Tasks, utils::Logic};
+use models::structs::TaskRequest;
 
-impl Tasks<Logic> {
-    pub fn update_task_logic(mut self) -> Result<Self, String> {
-        if self.model.id.is_some_and(|id| id <= 0) {
-            return Err(format!("Invalid task ID: {:?}", self.model.id));
-        }
-
-        if self.model.cooldown.is_some_and(|cooldown| cooldown <= 300) {
-            self.model.cooldown = Some(300)
-        }
-
-        Ok(self)
+pub fn update_task_logic(task: &mut TaskRequest) -> Result<(), String> {
+    if task.id.is_none_or(|id| id <= 0) {
+        return Err(format!("Invalid task ID: {:?}", task.id));
     }
+
+    if task.cooldown.is_none_or(|cooldown| cooldown <= 300) {
+        task.cooldown = Some(300)
+    }
+
+    Ok(())
 }

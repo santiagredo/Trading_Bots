@@ -1,57 +1,19 @@
-use std::marker::PhantomData;
+use models::{entities::strategies::Model, structs::StrategyRequest};
 
-use chrono::NaiveDateTime;
-use models::{
-    entities::strategies::Model,
-    enums::{LifecycleState, TradingState},
-    structs::{CacheStrategies, CacheStrategy, Environments, QueryOptions, StrategyRequest},
-};
-use tokio_util::sync::CancellationToken;
-
-use crate::utils::{Response, Types};
-
-#[derive(Debug, Default, Clone)]
-pub struct Strategies<Phase = Types> {
-    phase: PhantomData<Phase>,
-    pub environment: Environments,
-    pub model: StrategyRequest,
+#[derive(Debug, Clone)]
+pub struct Strategies<R> {
+    pub repo: R,
 }
 
-impl<Phase> Strategies<Phase> {
-    pub fn next_phase<Next>(self) -> Strategies<Next> {
-        Strategies {
-            phase: PhantomData::<Next>,
-            environment: self.environment,
-            model: self.model,
-        }
+impl<R> Strategies<R> {
+    pub fn new(repo: R) -> Self {
+        Self { repo }
     }
 }
 
-impl Strategies {
-    pub fn new(model: StrategyRequest) -> Self {
-        Self {
-            phase: PhantomData::<Types>,
-            environment: Environments::DEV,
-            model,
-        }
-    }
-
-    pub fn default() -> Self {
-        Self {
-            phase: PhantomData::<Types>,
-            environment: Environments::DEV,
-            model: StrategyRequest {
-                ..Default::default()
-            },
-        }
-    }
-
-    pub fn with_env(self, environment: Environments) -> Self {
-        Self {
-            phase: self.phase,
-            environment: environment,
-            model: self.model,
-        }
+impl Strategies<()> {
+    pub fn blank() -> Strategies<()> {
+        Self { repo: () }
     }
 
     pub fn into_model(strategy: StrategyRequest) -> Model {
@@ -69,8 +31,8 @@ impl Strategies {
         }
     }
 
-    pub fn into_request(mut self, model: Model) -> Self {
-        let strategy_request = StrategyRequest {
+    pub fn into_request(model: Model) -> StrategyRequest {
+        StrategyRequest {
             id: Some(model.id),
             name: Some(model.name),
             is_active: Some(model.is_active),
@@ -81,79 +43,6 @@ impl Strategies {
             error_cooldown: model.error_cooldown,
             error_last_date: model.error_last_date,
             last_update: model.last_update,
-        };
-
-        self.model = strategy_request;
-        self
-    }
-
-    pub async fn insert_strategy(self) -> Result<Model, Response> {
-        self.next_phase().insert_strategy_core().await
-    }
-
-    pub async fn select_strategy(self) -> Result<Option<Model>, Response> {
-        self.next_phase().select_strategy_core().await
-    }
-
-    pub async fn select_strategies(
-        self,
-        query: Option<QueryOptions>,
-    ) -> Result<Vec<Model>, Response> {
-        self.next_phase().select_strategies_core(query).await
-    }
-
-    pub async fn update_strategy(self) -> Result<Model, Response> {
-        self.next_phase().update_strategy_core().await
-    }
-
-    pub async fn delete_strategy(self) -> Result<u64, Response> {
-        self.next_phase().delete_strategy_core().await
-    }
-
-    // cache
-    pub async fn get_strategies(self) -> Option<CacheStrategies> {
-        self.next_phase().get_strategies_core().await
-    }
-
-    pub async fn get_strategy(self) -> Option<CacheStrategy> {
-        self.next_phase().get_strategy_core().await
-    }
-
-    pub async fn get_strategies_state(self) -> LifecycleState {
-        self.next_phase().get_strategies_state_core().await
-    }
-
-    pub async fn upsert_strategy(self) -> Result<(), String> {
-        self.next_phase().upsert_strategy_core().await
-    }
-
-    pub async fn set_strategy_error(self, error: Option<String>) -> Result<(), String> {
-        self.next_phase().set_strategy_error_core(error).await
-    }
-
-    pub async fn set_strategy_state(self, state: TradingState) -> Result<(), String> {
-        self.next_phase().set_strategy_state_core(state).await
-    }
-
-    pub async fn start_strategies(self, token: &CancellationToken) -> Result<(), Response> {
-        self.next_phase().start_strategies_core(token).await
-    }
-
-    pub async fn stop_strategies(self) -> Result<(), Response> {
-        self.next_phase().stop_strategies_core().await
-    }
-
-    pub async fn reset_strategies(self) -> Result<(), Response> {
-        self.next_phase().reset_strategies_core().await
-    }
-
-    // misc
-    pub fn evaluate_cooldown(
-        self,
-        last_exec: Option<NaiveDateTime>,
-        cooldown: Option<i32>,
-    ) -> bool {
-        self.next_phase()
-            .evaluate_cooldown_core(last_exec, cooldown)
+        }
     }
 }

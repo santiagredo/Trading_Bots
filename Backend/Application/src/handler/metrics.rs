@@ -1,76 +1,36 @@
-use crate::utils::{Core, Response, Types};
-use models::{
-    entities::critical_metrics::Model,
-    structs::{CriticalMetric, Environments, QueryOptions},
-};
-use std::{marker::PhantomData, time::Duration};
+use models::{entities::critical_metrics::Model, structs::MetricRequest};
 
-#[derive(Debug, Default)]
-pub struct Metrics<Phase = Types> {
-    phase: PhantomData<Phase>,
-    pub environment: Environments,
-    pub model: CriticalMetric,
+#[derive(Debug, Clone)]
+pub struct Metrics<R> {
+    pub repo: R,
 }
 
-impl<Phase> Metrics<Phase> {
-    pub fn next_phase<Next>(self) -> Metrics<Next> {
-        Metrics {
-            phase: PhantomData::<Next>,
-            environment: self.environment,
-            model: self.model,
-        }
+impl<R> Metrics<R> {
+    pub fn new(repo: R) -> Self {
+        Self { repo }
     }
 }
 
-impl Metrics {
-    pub fn default() -> Self {
-        Self {
-            phase: PhantomData::<Types>,
-            environment: Environments::DEV,
-            model: CriticalMetric::default(),
+impl Metrics<()> {
+    pub fn blank() -> Metrics<()> {
+        Self { repo: () }
+    }
+
+    pub fn into_request(model: Model) -> MetricRequest {
+        MetricRequest {
+            id: None,
+            creation_date: None,
+            executions_ok: Some(model.executions_ok),
+            executions_err: Some(model.executions_err),
+            total_execution_time: Some(model.total_execution_time),
+            max_execution_time: Some(model.max_execution_time),
+            slowest_duration: Some(model.slowest_duration),
+            active_posting: Some(model.active_posting),
+            max_active_posting: Some(model.max_active_posting),
+            skipped_due_to_lock: Some(model.skipped_due_to_lock),
+            last_success: model.last_success,
+            last_error: model.last_error,
+            consecutive_errors: Some(model.consecutive_errors),
         }
-    }
-
-    pub fn with_env(self, environment: Environments) -> Self {
-        Self {
-            phase: self.phase,
-            environment,
-            model: self.model,
-        }
-    }
-
-    // db
-    pub async fn select_metrics(self, query: Option<QueryOptions>) -> Result<Vec<Model>, Response> {
-        self.next_phase().select_metrics_core(query).await
-    }
-
-    // cache
-    pub async fn get_metric(self) -> Option<CriticalMetric> {
-        self.next_phase().get_metric_core().await
-    }
-
-    pub async fn set_execution_metrics(
-        environment: Environments,
-        elapsed: Duration,
-        success: bool,
-    ) {
-        Metrics::<Core>::set_execution_metrics_core(environment, elapsed, success).await
-    }
-
-    pub async fn set_posting_metrics(environment: Environments, increase: bool) {
-        Metrics::<Core>::set_posting_metrics_core(environment, increase).await
-    }
-
-    pub async fn set_skipped_metrics(environment: Environments) {
-        Metrics::<Core>::set_skipped_metrics_core(environment).await
-    }
-
-    pub async fn stop_metrics(self) {
-        self.next_phase().stop_metrics_core().await
-    }
-
-    // misc
-    pub async fn persist_metrics(self) -> Result<Model, Response> {
-        self.next_phase().persist_metrics_core().await
     }
 }

@@ -3,12 +3,9 @@ use std::time::Duration;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
 
-use crate::{
-    handler::{Senders, WebsocketStreams},
-    utils::{Cache, Core, Integration},
-};
+use crate::handler::{Senders, WebsocketStreams};
 
-impl WebsocketStreams<Core> {
+impl WebsocketStreams {
     pub async fn start_websocket_core(
         self,
         senders: Senders,
@@ -18,26 +15,25 @@ impl WebsocketStreams<Core> {
         let cancellation_token = token.clone();
 
         // Store token in cache
-        WebsocketStreams::<Cache>::set_cancellation_token_cache(cancellation_token.clone()).await;
+        WebsocketStreams::set_cancellation_token_cache(cancellation_token.clone()).await;
 
         // Spawn WebSocket task in Integration
         let handle = self
-            .next_phase()
             .spawn_socket_loop_integration(senders, cancellation_token);
 
         // Store handle in Integration
-        WebsocketStreams::<Integration>::set_handle_integration(handle).await;
+        WebsocketStreams::set_handle_integration(handle).await;
 
         Ok(())
     }
 
     pub async fn get_status_core(self) -> SocketStatus {
-        WebsocketStreams::<Integration>::get_status_integration().await
+        WebsocketStreams::get_status_integration().await
     }
 
     pub async fn stop_websocket_core() -> Result<(), String> {
         // Get cancellation token from cache
-        let token = WebsocketStreams::<Cache>::get_cancellation_token_cache()
+        let token = WebsocketStreams::get_cancellation_token_cache()
             .await
             .ok_or("No active WebSocket connection")?;
 
@@ -45,7 +41,7 @@ impl WebsocketStreams<Core> {
         token.cancel();
 
         // Take handle from Integration
-        let handle = WebsocketStreams::<Integration>::take_handle_integration()
+        let handle = WebsocketStreams::take_handle_integration()
             .await
             .ok_or("No WebSocket handle found")?;
 
@@ -55,7 +51,7 @@ impl WebsocketStreams<Core> {
                 info!("WebSocket stopped cleanly");
 
                 // Clean up cache
-                WebsocketStreams::<Cache>::remove_cancellation_token_cache().await;
+                WebsocketStreams::remove_cancellation_token_cache().await;
 
                 Ok(())
             }

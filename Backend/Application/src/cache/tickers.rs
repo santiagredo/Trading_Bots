@@ -1,4 +1,4 @@
-use crate::{handler::Tickers, utils::Cache};
+use crate::handler::Tickers;
 
 use std::{collections::HashMap, sync::Arc};
 
@@ -9,7 +9,7 @@ use tokio::sync::RwLock;
 static TICKERS: Lazy<Arc<RwLock<HashMap<String, Ticker>>>> =
     Lazy::new(|| Arc::new(RwLock::new(HashMap::new())));
 
-impl Tickers<Cache> {
+impl Tickers {
     pub async fn set_ticker_cache(model: Ticker) {
         let mut tickers = TICKERS.write().await;
 
@@ -50,7 +50,7 @@ impl Tickers<Cache> {
 mod tests {
     use sea_orm::prelude::Decimal;
 
-    use crate::{handler::Tickers, utils::Cache};
+    use crate::handler::Tickers;
     use models::structs::Ticker;
 
     // Helpers
@@ -88,7 +88,7 @@ mod tests {
 
     async fn reset_ticker(symbol: &str) {
         let dummy = mock_ticker(symbol, 0, 0);
-        Tickers::<Cache>::set_ticker_cache(dummy).await;
+        Tickers::set_ticker_cache(dummy).await;
     }
 
     // Scenarios (unit responsibilities)
@@ -97,9 +97,9 @@ mod tests {
         reset_ticker(symbol).await;
 
         let ticker = mock_ticker(symbol, 30_000, 100);
-        Tickers::<Cache>::set_ticker_cache(ticker.clone()).await;
+        Tickers::set_ticker_cache(ticker.clone()).await;
 
-        let cached = Tickers::<Cache>::get_ticker_cache(symbol.to_string()).await;
+        let cached = Tickers::get_ticker_cache(symbol.to_string()).await;
 
         assert_eq!(cached, Some(ticker));
     }
@@ -109,12 +109,12 @@ mod tests {
         reset_ticker(symbol).await;
 
         let initial = mock_ticker(symbol, 2_000, 100);
-        Tickers::<Cache>::set_ticker_cache(initial).await;
+        Tickers::set_ticker_cache(initial).await;
 
         let updated = mock_ticker(symbol, 2_100, 200);
-        Tickers::<Cache>::set_ticker_cache(updated.clone()).await;
+        Tickers::set_ticker_cache(updated.clone()).await;
 
-        let cached = Tickers::<Cache>::get_ticker_cache(symbol.to_string())
+        let cached = Tickers::get_ticker_cache(symbol.to_string())
             .await
             .expect("ticker should exist");
 
@@ -124,7 +124,7 @@ mod tests {
     }
 
     async fn scenario_get_non_existing_ticker() {
-        let cached = Tickers::<Cache>::get_ticker_cache("UNKNOWN".to_string()).await;
+        let cached = Tickers::get_ticker_cache("UNKNOWN".to_string()).await;
         assert!(cached.is_none());
     }
 
@@ -133,12 +133,12 @@ mod tests {
         reset_ticker(symbol).await;
 
         let first = mock_ticker(symbol, 300, 1);
-        Tickers::<Cache>::set_ticker_cache(first).await;
+        Tickers::set_ticker_cache(first).await;
 
         let second = mock_ticker(symbol, 320, 2);
-        Tickers::<Cache>::set_ticker_cache(second.clone()).await;
+        Tickers::set_ticker_cache(second.clone()).await;
 
-        let cached = Tickers::<Cache>::get_ticker_cache(symbol.to_string())
+        let cached = Tickers::get_ticker_cache(symbol.to_string())
             .await
             .unwrap();
 

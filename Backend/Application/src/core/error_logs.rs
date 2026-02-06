@@ -1,27 +1,33 @@
-use models::{entities::error_log::Model, structs::QueryOptions};
-
 use crate::{
-    handler::{ErrorLogs, DBC},
-    utils::{Core, Response},
+    handler::ErrorLogs,
+    utils::{Repository, Response},
+};
+use models::{
+    entities::error_log::Model,
+    structs::{ErrorLogRequest, QueryOptions},
 };
 
-impl ErrorLogs<Core> {
-    pub async fn insert_log_core(self) -> Result<Model, Response> {
-        let env = self.environment;
-
-        self.next_phase()
-            .insert_log_data(&DBC::db(&env).await?)
-            .await
+impl<R> ErrorLogs<R>
+where
+    R: Repository<ErrorLogRequest, Model>,
+{
+    pub async fn insert(self, req: ErrorLogRequest) -> Result<Model, Response> {
+        self.repo.insert(req).await
     }
 
-    pub async fn select_logs_core(
+    pub async fn select(self, req: ErrorLogRequest) -> Result<Option<Model>, Response> {
+        self.repo.select(req).await
+    }
+
+    pub async fn select_many(
         self,
+        req: ErrorLogRequest,
         query: Option<QueryOptions>,
     ) -> Result<Vec<Model>, Response> {
-        let env = self.environment;
+        self.repo.select_many(req, query).await
+    }
 
-        self.next_phase()
-            .select_logs_data(&DBC::db(&env).await?, query)
-            .await
+    pub async fn delete(self, req: ErrorLogRequest) -> Result<u64, Response> {
+        self.repo.delete(req).await
     }
 }

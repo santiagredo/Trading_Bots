@@ -1,23 +1,20 @@
 use reqwest::{Client, Error, RequestBuilder, Response};
 
-use crate::{handler::Binance, static_strings::EXCHANGE_INFORMATION_ENDPOINT, utils::Integration};
+use crate::{handler::Binance, static_strings::EXCHANGE_INFORMATION_ENDPOINT};
 
-impl Binance<Integration> {
-    pub async fn get_account_integration(self, request: RequestBuilder) -> Result<Response, Error> {
+impl<R> Binance<R> {
+    pub async fn send_account_request(&self, request: RequestBuilder) -> Result<Response, Error> {
         request.send().await
     }
 
-    pub async fn get_exchange_information_integration(self) -> Result<Response, Error> {
+    pub async fn send_exchange_information_request(&self) -> Result<Response, Error> {
         Client::new()
             .get(EXCHANGE_INFORMATION_ENDPOINT)
             .send()
             .await
     }
 
-    pub async fn post_new_order_integration(
-        self,
-        request: RequestBuilder,
-    ) -> Result<Response, Error> {
+    pub async fn send_new_order_request(&self, request: RequestBuilder) -> Result<Response, Error> {
         request.send().await
     }
 }

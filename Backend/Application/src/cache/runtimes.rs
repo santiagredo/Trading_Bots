@@ -7,15 +7,16 @@ use once_cell::sync::Lazy;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
-use crate::{handler::Runtimes, utils::Cache};
+use crate::handler::Runtimes;
 
 static ACTIVE_RUNTIMES: Lazy<Arc<RwLock<CacheRuntimes>>> =
     Lazy::new(|| Arc::new(RwLock::new(CacheRuntimes::new())));
 
-impl Runtimes<Cache> {
+impl Runtimes {
     pub async fn set_runtime_status_cache(
         self,
         environment: Environments,
+        status: LifecycleState,
     ) -> Result<CacheRuntimes, String> {
         let mut active_runtimes = ACTIVE_RUNTIMES.write().await;
 
@@ -25,8 +26,8 @@ impl Runtimes<Cache> {
         };
 
         let next_model = match environment {
-            Environments::PROD => self.model.prod.status,
-            _ => self.model.dev.status,
+            Environments::PROD => status,
+            _ => status,
         };
 
         transition_with_timestamp(&mut *active_runtime, next_model)?;

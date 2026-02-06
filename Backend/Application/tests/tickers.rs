@@ -1,6 +1,6 @@
 use sea_orm::prelude::Decimal;
 
-use application::{handler::Tickers, utils::Cache};
+use application::handler::Tickers;
 use models::structs::Ticker;
 
 fn d(val: i64) -> Decimal {
@@ -40,25 +40,21 @@ async fn full_ticker_cache_flow_should_work_correctly() {
     let symbol = "BTCUSDT";
 
     // Initial state
-    let initial = Tickers::<Cache>::get_ticker_cache(symbol.to_string()).await;
+    let initial = Tickers::get_ticker_cache(symbol.to_string()).await;
     assert!(initial.is_none());
 
     // Insert
     let first = mock_ticker(symbol, 30_000, 100);
-    Tickers::<Cache>::set_ticker_cache(first.clone()).await;
+    Tickers::set_ticker_cache(first.clone()).await;
 
-    let cached = Tickers::<Cache>::get_ticker_cache(symbol.to_string())
-        .await
-        .unwrap();
+    let cached = Tickers::get_ticker_cache(symbol.to_string()).await.unwrap();
     assert_eq!(cached.last_price, d(30_000));
 
     // Update same symbol
     let updated = mock_ticker(symbol, 30_500, 200);
-    Tickers::<Cache>::set_ticker_cache(updated.clone()).await;
+    Tickers::set_ticker_cache(updated.clone()).await;
 
-    let cached_after = Tickers::<Cache>::get_ticker_cache(symbol.to_string())
-        .await
-        .unwrap();
+    let cached_after = Tickers::get_ticker_cache(symbol.to_string()).await.unwrap();
 
     assert_eq!(cached_after.last_price, d(30_500));
     assert_eq!(cached_after.event_time, 200);

@@ -1,67 +1,23 @@
-use std::marker::PhantomData;
-
 use models::structs::{Environments, StrategyOverview, StrategyRequest};
 
-use crate::{
-    handler::Orders,
-    utils::{Core, Response, Types},
-};
+use crate::{handler::DBC, utils::Response};
 
 #[derive(Debug, Default)]
-pub struct StrategiesOverview<Phase = Types> {
-    phase: PhantomData<Phase>,
+pub struct StrategiesOverview {
     pub model: StrategyRequest,
-}
-
-impl<Phase> StrategiesOverview<Phase> {
-    pub fn next_phase<Next>(self) -> StrategiesOverview<Next> {
-        StrategiesOverview {
-            phase: PhantomData::<Next>,
-            model: self.model,
-        }
-    }
 }
 
 impl StrategiesOverview {
     pub fn new(strategy: StrategyRequest) -> Self {
-        Self {
-            phase: PhantomData::<Types>,
-            model: strategy,
-        }
+        Self { model: strategy }
     }
 
-    pub fn default() -> Self {
-        Self {
-            phase: PhantomData::<Types>,
-            model: StrategyRequest {
-                ..Default::default()
-            },
-        }
-    }
-
-    pub async fn get_strategy_overview(
-        environment: Environments,
-        strategy_id: &i32,
-        symbol: String,
-    ) -> Option<StrategyOverview> {
-        StrategiesOverview::<Core>::get_strategy_overview_core(
-            environment,
-            strategy_id,
-            symbol,
-        )
-        .await
-    }
-
-    pub async fn select_strategy_overview(
+    pub async fn select(
         environment: Environments,
         strategy: StrategyRequest,
-    ) -> Result<Vec<StrategyOverview>, Response> {
-        StrategiesOverview::<Core>::select_strategy_overview_core(environment, strategy).await
-    }
+    ) -> Result<StrategyOverview, Response> {
+        let db = DBC::db(&environment).await?;
 
-    pub fn evaluate_strategy_overview(
-        strategy_overview: &StrategyOverview,
-    ) -> Result<Orders, String> {
-        StrategiesOverview::<Core>::evaluate_strategy_overview_core(strategy_overview)
+        Self::select_strategy_overview(&db, strategy).await
     }
 }

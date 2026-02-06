@@ -1,56 +1,62 @@
-use crate::{handler::Ledgers, utils::Logic};
+use models::structs::LedgerRequest;
 
-impl Ledgers<Logic> {
-    pub fn insert_ledger_logic(self) -> Result<Self, String> {
-        if self.model.record_type_id.is_none_or(|id| id <= 0) {
-            return Err(format!("Invalid record type ID"));
-        }
+/* ======================================================
+ * VALIDATIONS
+ * ======================================================
+ */
 
-        if self.model.asset_id.is_none_or(|id| id <= 0) {
-            return Err(format!("Invalid asset ID"));
-        }
-
-        if self.model.free_amount.is_none() {
-            return Err(format!("Invalid free asset amount"));
-        }
-
-        if self.model.free_previous_balance.is_none() {
-            return Err(format!("Invalid free asset previous balance"));
-        }
-
-        if self.model.free_new_balance.is_none() {
-            return Err(format!("Invalid free asset new balance"));
-        }
-
-        if self.model.locked_amount.is_none() {
-            return Err(format!("Invalid locked asset amount"));
-        }
-
-        if self.model.locked_previous_balance.is_none() {
-            return Err(format!("Invalid locked asset previous balance"));
-        }
-
-        if self.model.locked_new_balance.is_none() {
-            return Err(format!("Invalid locked asset new balance"));
-        }
-
-        Ok(self)
+pub fn validate_insert(req: &LedgerRequest) -> Result<(), String> {
+    if req.record_type_id.is_none_or(|id| id <= 0) {
+        return Err("Invalid record type ID".into());
     }
+
+    if req.asset_id.is_none_or(|id| id <= 0) {
+        return Err("Invalid asset ID".into());
+    }
+
+    if req.free_amount.is_none() {
+        return Err("Invalid free asset amount".into());
+    }
+
+    if req.free_previous_balance.is_none() {
+        return Err("Invalid free asset previous balance".into());
+    }
+
+    if req.free_new_balance.is_none() {
+        return Err("Invalid free asset new balance".into());
+    }
+
+    if req.locked_amount.is_none() {
+        return Err("Invalid locked asset amount".into());
+    }
+
+    if req.locked_previous_balance.is_none() {
+        return Err("Invalid locked asset previous balance".into());
+    }
+
+    if req.locked_new_balance.is_none() {
+        return Err("Invalid locked asset new balance".into());
+    }
+
+    Ok(())
 }
 
+/* ======================================================
+ * TESTS
+ * ======================================================
+ */
+
 #[cfg(test)]
-mod fn_insert_ledger_logic {
-    use models::structs::LedgerRequest;
+mod fn_validate_insert {
     use sea_orm::prelude::Decimal;
 
-    use crate::handler::Ledgers;
-    use crate::utils::Logic;
+    use super::*;
 
     #[test]
-    fn test_insert_ledger_logic() {
-        let test_cases = vec![
+    fn cases() {
+        let cases = vec![
             (
-                "valid insert",
+                "ok",
                 LedgerRequest {
                     record_type_id: Some(1),
                     asset_id: Some(1),
@@ -65,7 +71,7 @@ mod fn_insert_ledger_logic {
                 true,
             ),
             (
-                "invalid record type id",
+                "err_invalid_record_type_id",
                 LedgerRequest {
                     record_type_id: Some(0),
                     ..Default::default()
@@ -73,7 +79,7 @@ mod fn_insert_ledger_logic {
                 false,
             ),
             (
-                "invalid asset id",
+                "err_invalid_asset_id",
                 LedgerRequest {
                     record_type_id: Some(1),
                     asset_id: Some(0),
@@ -82,7 +88,7 @@ mod fn_insert_ledger_logic {
                 false,
             ),
             (
-                "invalid free asset amount",
+                "err_missing_free_amount",
                 LedgerRequest {
                     record_type_id: Some(1),
                     asset_id: Some(1),
@@ -92,7 +98,7 @@ mod fn_insert_ledger_logic {
                 false,
             ),
             (
-                "invalid locked asset amount",
+                "err_missing_locked_amount",
                 LedgerRequest {
                     record_type_id: Some(1),
                     asset_id: Some(1),
@@ -106,10 +112,9 @@ mod fn_insert_ledger_logic {
             ),
         ];
 
-        for (name, req, expected) in test_cases {
-            let ledger = Ledgers::new(req).next_phase::<Logic>();
-            let result = ledger.insert_ledger_logic().is_ok();
-            assert_eq!(result, expected, "{}", name);
+        for (name, req, should_pass) in cases {
+            let result = validate_insert(&req);
+            assert_eq!(result.is_ok(), should_pass, "case `{}` failed", name);
         }
     }
 }

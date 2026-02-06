@@ -2,12 +2,9 @@ use migration::{Migrator, MigratorTrait};
 use sea_orm::{Database, DatabaseConnection};
 use tracing::error_span;
 
-use crate::{
-    handler::DBC,
-    utils::{Data, Response},
-};
+use crate::{handler::DBC, utils::Response};
 
-impl DBC<Data> {
+impl DBC {
     pub async fn set_database_data(
         connection_string: &str,
     ) -> Result<DatabaseConnection, Response> {

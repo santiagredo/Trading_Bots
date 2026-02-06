@@ -1,4 +1,4 @@
-use crate::{handler::DBC, utils::Cache};
+use crate::handler::DBC;
 
 use std::sync::Arc;
 
@@ -9,7 +9,7 @@ use tokio::sync::RwLock;
 static ACTIVE_DATABASE: Lazy<Arc<RwLock<Option<DatabaseManager>>>> =
     Lazy::new(|| Arc::new(RwLock::new(None)));
 
-impl DBC<Cache> {
+impl DBC {
     pub async fn set_database_cache(database_manager: DatabaseManager) -> DatabaseManager {
         let mut active_database_manager = ACTIVE_DATABASE.write().await;
 
@@ -29,7 +29,7 @@ impl DBC<Cache> {
 mod tests {
     use sea_orm::{Database, DbConn};
 
-    use crate::{handler::DBC, utils::Cache};
+    use crate::handler::DBC;
     use models::structs::DatabaseManager;
 
     // Helpers
@@ -57,7 +57,7 @@ mod tests {
         reset_database_cache().await;
 
         let db_manager = mock_database_manager().await;
-        let returned = DBC::<Cache>::set_database_cache(db_manager.clone()).await;
+        let returned = DBC::set_database_cache(db_manager.clone()).await;
 
         assert!(returned.dev.ping().await.is_ok());
         assert!(returned.prod.ping().await.is_ok())
@@ -68,9 +68,9 @@ mod tests {
         reset_database_cache().await;
 
         let db_manager = mock_database_manager().await;
-        DBC::<Cache>::set_database_cache(db_manager.clone()).await;
+        DBC::set_database_cache(db_manager.clone()).await;
 
-        let cached = DBC::<Cache>::get_database_cache()
+        let cached = DBC::get_database_cache()
             .await
             .expect("database manager should exist");
 
@@ -84,7 +84,7 @@ mod tests {
     async fn scenario_get_database_cache_empty() {
         reset_database_cache().await;
 
-        let cached = DBC::<Cache>::get_database_cache().await;
+        let cached = DBC::get_database_cache().await;
         assert!(cached.is_none());
     }
 
@@ -93,12 +93,12 @@ mod tests {
         reset_database_cache().await;
 
         let first = mock_database_manager().await;
-        DBC::<Cache>::set_database_cache(first).await;
+        DBC::set_database_cache(first).await;
 
         let second = mock_database_manager().await;
-        DBC::<Cache>::set_database_cache(second).await;
+        DBC::set_database_cache(second).await;
 
-        let cached = DBC::<Cache>::get_database_cache().await.unwrap();
+        let cached = DBC::get_database_cache().await.unwrap();
 
         assert!(cached.dev.ping().await.is_ok());
         assert!(cached.prod.ping().await.is_ok());

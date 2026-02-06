@@ -1,17 +1,15 @@
-use std::collections::BTreeMap;
-
-use models::structs::Environments;
-
 use crate::{
     handler::{
         Actions, Assets, Configurations, HealthCheck, Indicators, Integrations,
         IntegrationsSettings, Metrics, OrderStatus, Pairs, Strategies, SubscribedIndicators, Tasks,
         WebsocketStreams, DBC,
     },
-    utils::{Core, Response},
+    utils::{EntityCache, Response},
 };
+use models::structs::Environments;
+use std::collections::BTreeMap;
 
-impl HealthCheck<Core> {
+impl HealthCheck {
     pub async fn select_health_check_core() -> Result<BTreeMap<String, String>, Response> {
         let mut health_map = BTreeMap::new();
 
@@ -29,38 +27,26 @@ impl HealthCheck<Core> {
         );
 
         // Actions
-        let cache_actions_dev_status = Actions::default()
-            .with_env(Environments::DEV)
-            .get_actions_state()
-            .await;
+        let cache_actions_dev_status = Actions::blank().state(Environments::DEV).await;
         health_map.insert(
             "cache_actions_dev_status".to_string(),
             cache_actions_dev_status.to_string(),
         );
 
-        let cache_actions_prod_status = Actions::default()
-            .with_env(Environments::PROD)
-            .get_actions_state()
-            .await;
+        let cache_actions_prod_status = Actions::blank().state(Environments::PROD).await;
         health_map.insert(
             "cache_actions_prod_status".to_string(),
             cache_actions_prod_status.to_string(),
         );
 
         // Assets
-        let cache_assets_dev_status = Assets::default()
-            .with_env(Environments::DEV)
-            .get_assets_state()
-            .await;
+        let cache_assets_dev_status = Assets::blank().state(Environments::DEV).await;
         health_map.insert(
             "cache_assets_dev_status".to_string(),
             cache_assets_dev_status.to_string(),
         );
 
-        let cache_assets_prod_status = Assets::default()
-            .with_env(Environments::PROD)
-            .get_assets_state()
-            .await;
+        let cache_assets_prod_status = Assets::blank().state(Environments::PROD).await;
         health_map.insert(
             "cache_assets_prod_status".to_string(),
             cache_assets_prod_status.to_string(),
@@ -74,57 +60,42 @@ impl HealthCheck<Core> {
         );
 
         // Indicators
-        let cache_indicators_dev_status = Indicators::default()
-            .with_env(Environments::DEV)
-            .get_indicators_state()
-            .await;
+        let cache_indicators_dev_status = Indicators::blank().state(Environments::DEV).await;
         health_map.insert(
             "cache_indicators_dev_status".to_string(),
             cache_indicators_dev_status.to_string(),
         );
 
-        let cache_indicators_prod_status = Indicators::default()
-            .with_env(Environments::PROD)
-            .get_indicators_state()
-            .await;
+        let cache_indicators_prod_status = Indicators::blank().state(Environments::PROD).await;
         health_map.insert(
             "cache_indicators_prod_status".to_string(),
             cache_indicators_prod_status.to_string(),
         );
 
         // Integrations
-        let cache_integrations_dev_status = Integrations::default()
-            .with_env(Environments::DEV)
-            .get_integrations_state()
-            .await;
+        let cache_integrations_dev_status = Integrations::blank().state(Environments::DEV).await;
         health_map.insert(
             "cache_integrations_dev_status".to_string(),
             cache_integrations_dev_status.to_string(),
         );
 
-        let cache_integrations_prod_status = Integrations::default()
-            .with_env(Environments::PROD)
-            .get_integrations_state()
-            .await;
+        let cache_integrations_prod_status = Integrations::blank().state(Environments::PROD).await;
         health_map.insert(
             "cache_integrations_prod_status".to_string(),
             cache_integrations_prod_status.to_string(),
         );
 
         // Integrations Settings
-        let cache_integrations_settings_dev_status = IntegrationsSettings::default()
-            .with_env(Environments::DEV)
-            .get_integrations_settings_state()
-            .await;
+        let cache_integrations_settings_dev_status =
+            IntegrationsSettings::blank().state(Environments::DEV).await;
 
         health_map.insert(
             "cache_integrations_settings_dev_status".to_string(),
             cache_integrations_settings_dev_status.to_string(),
         );
 
-        let cache_integrations_settings_prod_status = IntegrationsSettings::default()
-            .with_env(Environments::PROD)
-            .get_integrations_settings_state()
+        let cache_integrations_settings_prod_status = IntegrationsSettings::blank()
+            .state(Environments::PROD)
             .await;
 
         health_map.insert(
@@ -133,92 +104,67 @@ impl HealthCheck<Core> {
         );
 
         // Metrics
-        let cache_metrics_dev_is_some = Metrics::default()
-            .with_env(Environments::DEV)
-            .get_metric()
-            .await;
+        let cache_metrics_dev_status = Metrics::blank().state(Environments::DEV).await;
         health_map.insert(
-            "cache_metrics_dev_is_some".to_string(),
-            cache_metrics_dev_is_some.is_some().to_string(),
+            "cache_metrics_dev_status".to_string(),
+            cache_metrics_dev_status.to_string(),
         );
 
-        let cache_metrics_prod_is_some = Metrics::default()
-            .with_env(Environments::PROD)
-            .get_metric()
-            .await;
+        let cache_metrics_prod_status = Metrics::blank().state(Environments::PROD).await;
         health_map.insert(
-            "cache_metrics_prod_is_some".to_string(),
-            cache_metrics_prod_is_some.is_some().to_string(),
+            "cache_metrics_prod_status".to_string(),
+            cache_metrics_prod_status.to_string(),
         );
 
         // Pairs
-        let cache_pairs_dev_status = Pairs::default()
-            .with_env(Environments::DEV)
-            .get_pairs_state()
-            .await;
+        let cache_pairs_dev_status = Pairs::blank().state(Environments::DEV).await;
         health_map.insert(
             "cache_pairs_dev_status".to_string(),
             cache_pairs_dev_status.to_string(),
         );
 
-        let cache_pairs_prod_status = Pairs::default()
-            .with_env(Environments::PROD)
-            .get_pairs_state()
-            .await;
+        let cache_pairs_prod_status = Pairs::blank().state(Environments::PROD).await;
         health_map.insert(
             "cache_pairs_prod_status".to_string(),
             cache_pairs_prod_status.to_string(),
         );
 
         // Order Status
-        let cache_order_status_dev_status = OrderStatus::default()
-            .with_env(Environments::DEV)
-            .get_status_state()
-            .await;
+        let cache_order_status_dev_status = OrderStatus::get_cache_state(Environments::DEV).await;
         health_map.insert(
             "cache_order_status_dev_status".to_string(),
             cache_order_status_dev_status.to_string(),
         );
 
-        let cache_order_status_prod_status = OrderStatus::default()
-            .with_env(Environments::PROD)
-            .get_status_state()
-            .await;
+        let cache_order_status_prod_status = OrderStatus::get_cache_state(Environments::PROD).await;
         health_map.insert(
             "cache_order_status_prod_status".to_string(),
             cache_order_status_prod_status.to_string(),
         );
 
         // Strategies
-        let cache_strategies_dev_status = Strategies::default()
-            .with_env(Environments::DEV)
-            .get_strategies_state()
-            .await;
+        let cache_strategies_dev_status = Strategies::blank().state(Environments::DEV).await;
         health_map.insert(
             "cache_strategies_dev_status".to_string(),
             cache_strategies_dev_status.to_string(),
         );
 
-        let cache_strategies_prod_status = Strategies::default()
-            .with_env(Environments::PROD)
-            .get_strategies_state()
-            .await;
+        let cache_strategies_prod_status = Strategies::blank().state(Environments::PROD).await;
         health_map.insert(
             "cache_strategies_prod_status".to_string(),
             cache_strategies_prod_status.to_string(),
         );
 
         // Subscribed Indicators
-        let cache_subscribed_indicators_dev_status = SubscribedIndicators::new(Environments::DEV)
-            .get_subscribed_indicators_state()
-            .await;
+        let cache_subscribed_indicators_dev_status =
+            SubscribedIndicators::blank().state(Environments::DEV).await;
         health_map.insert(
             "cache_subscribed_indicators_dev_status".to_string(),
             cache_subscribed_indicators_dev_status.to_string(),
         );
 
-        let cache_subscribed_indicators_prod_status = SubscribedIndicators::new(Environments::PROD)
-            .get_subscribed_indicators_state()
+        let cache_subscribed_indicators_prod_status = SubscribedIndicators::blank()
+            .state(Environments::PROD)
             .await;
         health_map.insert(
             "cache_subscribed_indicators_prod_status".to_string(),
@@ -226,26 +172,20 @@ impl HealthCheck<Core> {
         );
 
         // Tasks
-        let cache_tasks_dev_status = Tasks::default()
-            .with_env(Environments::DEV)
-            .get_tasks_state()
-            .await;
+        let cache_tasks_dev_status = Tasks::new().get_tasks_state(Environments::DEV).await;
         health_map.insert(
             "cache_tasks_dev_status".to_string(),
             cache_tasks_dev_status.to_string(),
         );
 
-        let cache_tasks_prod_status = Tasks::default()
-            .with_env(Environments::PROD)
-            .get_tasks_state()
-            .await;
+        let cache_tasks_prod_status = Tasks::new().get_tasks_state(Environments::PROD).await;
         health_map.insert(
             "cache_tasks_prod_status".to_string(),
             cache_tasks_prod_status.to_string(),
         );
 
         // Websocket streams
-        let cache_websocket_status = WebsocketStreams::default().get_status().await;
+        let cache_websocket_status = WebsocketStreams::new().get_status().await;
         health_map.insert(
             "cache_websocket_status".to_string(),
             cache_websocket_status.state.to_string(),

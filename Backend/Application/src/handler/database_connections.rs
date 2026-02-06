@@ -1,16 +1,11 @@
-use std::marker::PhantomData;
-
+use crate::utils::Response;
 use models::structs::Environments;
 use sea_orm::DatabaseConnection;
 
-use crate::utils::{Core, Response, Types};
-
-pub struct DBC<Phase = Types> {
-    phase: PhantomData<Phase>,
-}
+pub struct DBC;
 
 impl DBC {
     pub async fn db(environment: &Environments) -> Result<DatabaseConnection, Response> {
-        DBC::<Core>::get_database_core(environment).await
+        DBC::get_database_core(environment).await
     }
 }

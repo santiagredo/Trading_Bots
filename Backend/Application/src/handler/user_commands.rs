@@ -1,20 +1,18 @@
-use std::{marker::PhantomData, time::Instant};
-
-use models::{
-    enums::{LifecycleState, WebsocketCommand},
-    structs::Environments,
-};
-use serde::{Deserialize, Serialize};
-use tokio_util::sync::CancellationToken;
-
 use crate::{
     handler::{
         Actions, Assets, Cancellations, Indicators, Integrations, IntegrationsSettings, Metrics,
         OrderStatus, Pairs, Runtimes, Senders, Strategies, SubscribedIndicators, Tasks,
         WebsocketStreams,
     },
-    utils::{Response, Types},
+    utils::{EntityCache, RepoFactory, Response},
 };
+use models::{
+    enums::{LifecycleState, WebsocketCommand},
+    structs::Environments,
+};
+use serde::{Deserialize, Serialize};
+use std::time::Instant;
+use tokio_util::sync::CancellationToken;
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum StartupStep {
@@ -77,6 +75,7 @@ pub struct StopError {
 impl StartupStep {
     async fn execute(
         self,
+        factory: RepoFactory,
         environment: Environments,
         runtime_token: &CancellationToken,
     ) -> Result<(), Response> {
@@ -84,73 +83,77 @@ impl StartupStep {
             StartupStep::Runtimes => Ok(()),
 
             StartupStep::Assets => {
-                Assets::default()
-                    .with_env(environment)
-                    .start_assets(runtime_token)
+                let senders = Senders::get_senders().await;
+
+                let repo = factory.repo();
+
+                Assets::new(repo)
+                    .start(factory, environment, runtime_token, senders)
                     .await
             }
 
-            StartupStep::Pairs => Pairs::default().with_env(environment).start_pairs().await,
+            StartupStep::Pairs => {
+                let repo = factory.repo();
+
+                Pairs::new(repo).start_pairs(environment).await
+            }
 
             StartupStep::Tasks => {
-                Tasks::default()
-                    .with_env(environment)
-                    .start_tasks(runtime_token)
+                Tasks::new()
+                    .start_tasks(factory, environment, runtime_token)
                     .await
             }
 
-            StartupStep::OrderStatus => {
-                OrderStatus::default()
-                    .with_env(environment)
-                    .start_status()
-                    .await
-            }
+            StartupStep::OrderStatus => OrderStatus::new().start_status(environment).await,
 
             StartupStep::Strategies => {
-                Strategies::default()
-                    .with_env(environment)
-                    .start_strategies(runtime_token)
+                let senders = Senders::get_senders().await;
+
+                let repo = factory.repo();
+
+                let factory = RepoFactory::db(environment).await?;
+
+                Strategies::new(repo)
+                    .start_strategies(factory, environment, runtime_token, senders)
                     .await
             }
 
             StartupStep::Indicators => {
-                Indicators::default()
-                    .with_env(environment)
-                    .start_indicators()
-                    .await
+                let repo = factory.repo();
+
+                Indicators::new(repo).start_indicators(environment).await
             }
 
             StartupStep::SubscribedIndicators => {
-                SubscribedIndicators::new(environment)
-                    .start_subscribed_indicators()
+                SubscribedIndicators::blank()
+                    .start_subscribed_indicators(environment)
                     .await
             }
 
             StartupStep::Actions => {
-                Actions::default()
-                    .with_env(environment)
-                    .start_actions()
-                    .await
+                let repo = factory.repo();
+
+                Actions::new(repo).start(factory, environment).await
             }
 
-            StartupStep::Websocket => UserCommands::start_socket_loop(environment, runtime_token)
+            StartupStep::Websocket => UserCommands::start_socket_loop(runtime_token)
                 .await
                 .map_err(Response::server_error),
 
             StartupStep::Metrics => Ok(()),
 
             StartupStep::Integrations => {
-                Integrations::default()
-                    .with_env(environment)
-                    .start_integrations()
+                let repo = factory.repo();
+
+                Integrations::new(repo)
+                    .start_integrations(environment)
                     .await
             }
 
             StartupStep::IntegrationsSettings => {
-                IntegrationsSettings::default()
-                    .with_env(environment)
-                    .start_integrations_settings()
-                    .await
+                let repo = factory.repo();
+
+                IntegrationsSettings::new(repo).start(environment).await
             }
         }
     }
@@ -158,87 +161,54 @@ impl StartupStep {
     async fn stop(self, environment: Environments) -> Result<(), Response> {
         match self {
             StartupStep::Runtimes => Ok(()),
-            StartupStep::Assets => Assets::default().with_env(environment).stop_assets().await,
+            StartupStep::Assets => Assets::blank().stop(environment).await,
 
-            StartupStep::Pairs => Pairs::default().with_env(environment).stop_pairs().await,
+            StartupStep::Pairs => Pairs::blank().stop_pairs(environment).await,
 
-            StartupStep::Tasks => Tasks::default().with_env(environment).stop_tasks().await,
+            StartupStep::Tasks => Tasks::new().stop_tasks(environment).await,
 
-            StartupStep::OrderStatus => {
-                OrderStatus::default()
-                    .with_env(environment)
-                    .stop_status()
-                    .await
-            }
+            StartupStep::OrderStatus => OrderStatus::new().stop_status(environment).await,
 
-            StartupStep::Strategies => {
-                Strategies::default()
-                    .with_env(environment)
-                    .stop_strategies()
-                    .await
-            }
+            StartupStep::Strategies => Strategies::blank().stop_strategies(environment).await,
 
-            StartupStep::Indicators => {
-                Indicators::default()
-                    .with_env(environment)
-                    .stop_indicators()
-                    .await
-            }
+            StartupStep::Indicators => Indicators::blank().stop_indicators(environment).await,
 
             StartupStep::SubscribedIndicators => {
-                SubscribedIndicators::new(environment)
-                    .stop_subscribed_indicators()
+                SubscribedIndicators::blank()
+                    .stop_subscribed_indicators(environment)
                     .await
             }
 
-            StartupStep::Actions => {
-                Actions::default()
-                    .with_env(environment)
-                    .stop_actions()
-                    .await
-            }
+            StartupStep::Actions => Actions::blank().stop(environment).await,
 
             StartupStep::Websocket => {
                 let _ = UserCommands::stop_socket_loop().await;
                 Ok(())
             }
 
-            StartupStep::Metrics => {
-                Metrics::default()
-                    .with_env(environment)
-                    .stop_metrics()
-                    .await;
-                Ok(())
-            }
+            StartupStep::Metrics => Metrics::blank().stop_metrics(environment).await,
 
-            StartupStep::Integrations => {
-                Integrations::default()
-                    .with_env(environment)
-                    .stop_integrations()
-                    .await
-            }
+            StartupStep::Integrations => Integrations::blank().stop(environment).await,
 
             StartupStep::IntegrationsSettings => {
-                IntegrationsSettings::default()
-                    .with_env(environment)
-                    .stop_integrations_settings()
-                    .await
+                IntegrationsSettings::blank().stop(environment).await
             }
         }
     }
 }
 
 #[derive(Debug, Clone)]
-pub struct UserCommands<Phase = Types> {
-    phase: PhantomData<Phase>,
-}
+pub struct UserCommands;
 
 impl UserCommands {
-    pub async fn start_everything(environment: Environments) -> Result<(), StartupError> {
+    pub async fn start_everything(
+        is_test: bool,
+        environment: Environments,
+    ) -> Result<(), StartupError> {
         let start = Instant::now();
 
-        Runtimes::new(environment, LifecycleState::Starting)
-            .set_runtime_status(environment)
+        Runtimes::new()
+            .set_runtime_status(environment, LifecycleState::Starting)
             .await
             .map_err(|e| StartupError {
                 step: StartupStep::Runtimes, // pre-start
@@ -246,10 +216,10 @@ impl UserCommands {
                 reset_result: None,
             })?;
 
-        let runtime_token = match Cancellations::new(environment).get_runtime_token().await {
+        let runtime_token = match Cancellations::new().get_runtime_token(environment).await {
             Some(val) => val,
-            None => Cancellations::new(environment)
-                .start_runtime()
+            None => Cancellations::new()
+                .start_runtime(environment)
                 .await
                 .map_err(|e| StartupError {
                     step: StartupStep::Assets,
@@ -258,8 +228,24 @@ impl UserCommands {
                 })?,
         };
 
+        let factory = match is_test {
+            true => RepoFactory::mock(),
+            false => {
+                RepoFactory::db(environment)
+                    .await
+                    .map_err(|e| StartupError {
+                        step: StartupStep::Runtimes, // pre-start
+                        response: e,
+                        reset_result: None,
+                    })?
+            }
+        };
+
         for step in STARTUP_SEQUENCE {
-            if let Err(err) = step.execute(environment, &runtime_token).await {
+            if let Err(err) = step
+                .execute(factory.clone(), environment, &runtime_token)
+                .await
+            {
                 let reset_result =
                     UserCommands::reset_everything(environment, runtime_token.clone())
                         .await
@@ -273,8 +259,8 @@ impl UserCommands {
             }
         }
 
-        Runtimes::new(environment, LifecycleState::Running)
-            .set_runtime_status(environment)
+        Runtimes::new()
+            .set_runtime_status(environment, LifecycleState::Running)
             .await
             .map_err(|e| StartupError {
                 step: StartupStep::Assets,
@@ -291,8 +277,8 @@ impl UserCommands {
         let start = Instant::now();
         let mut errors = Vec::new();
 
-        if let Err(e) = Runtimes::new(environment, LifecycleState::Stopping)
-            .set_runtime_status(environment)
+        if let Err(e) = Runtimes::new()
+            .set_runtime_status(environment, LifecycleState::Stopping)
             .await
         {
             errors.push(StopError {
@@ -301,7 +287,7 @@ impl UserCommands {
             });
         }
 
-        Cancellations::new(environment).stop_runtime().await;
+        Cancellations::new().stop_runtime_core(environment).await;
 
         for step in STOP_SEQUENCE {
             if let Err(err) = step.stop(environment).await {
@@ -312,13 +298,8 @@ impl UserCommands {
             }
         }
 
-        Metrics::default()
-            .with_env(environment)
-            .stop_metrics()
-            .await;
-
-        if let Err(e) = Runtimes::new(environment, LifecycleState::Off)
-            .set_runtime_status(environment)
+        if let Err(e) = Runtimes::new()
+            .set_runtime_status(environment, LifecycleState::Off)
             .await
         {
             errors.push(StopError {
@@ -336,21 +317,21 @@ impl UserCommands {
         }
     }
 
-    pub async fn restart_everything(environment: Environments) -> Result<(), StartupError> {
+    pub async fn restart_everything(
+        is_test: bool,
+        environment: Environments,
+    ) -> Result<(), StartupError> {
         if let Err(stop_errors) = Self::stop_everything(environment).await {
             dbg!(stop_errors);
         }
 
-        Self::start_everything(environment).await
+        Self::start_everything(is_test, environment).await
     }
 
-    pub async fn start_socket_loop(
-        environment: Environments,
-        token: &CancellationToken,
-    ) -> Result<(), String> {
+    pub async fn start_socket_loop(token: &CancellationToken) -> Result<(), String> {
         let active_senders = Senders::get_senders().await;
 
-        WebsocketStreams::new(environment)
+        WebsocketStreams::new()
             .start_websocket(active_senders, token)
             .await
     }
@@ -382,67 +363,51 @@ impl UserCommands {
         }
 
         // Reset runtime
-        if let Err(err) = Runtimes::default().reset_runtime(environment).await {
+        if let Err(err) = Runtimes::new().reset_runtime(environment).await {
             errors.push(format!("Runtime: {}", err.message));
         }
 
         // Reset assets
-        if let Err(err) = Assets::default().with_env(environment).reset_assets().await {
-            errors.push(format!("Assets: {}", err.message));
+        if let Err(err) = Assets::blank().reset(environment).await {
+            errors.push(format!("Assets: {}", err));
         }
 
         // Reset pairs
-        if let Err(err) = Pairs::default().with_env(environment).reset_pairs().await {
-            errors.push(format!("Pairs: {}", err.message));
+        if let Err(err) = Pairs::blank().reset(environment).await {
+            errors.push(format!("Pairs: {}", err));
         }
 
         // Reset tasks
-        if let Err(err) = Tasks::default().with_env(environment).reset_tasks().await {
+        if let Err(err) = Tasks::new().reset_tasks(environment).await {
             errors.push(format!("Tasks: {}", err.message));
         }
 
         // Reset order status
-        if let Err(err) = OrderStatus::default()
-            .with_env(environment)
-            .reset_status()
-            .await
-        {
+        if let Err(err) = OrderStatus::new().reset_status(environment).await {
             errors.push(format!("OrderStatus: {}", err.message));
         }
 
         // Reset strategies
-        if let Err(err) = Strategies::default()
-            .with_env(environment)
-            .reset_strategies()
-            .await
-        {
+        if let Err(err) = Strategies::blank().reset_strategies(environment).await {
             errors.push(format!("Strategies: {}", err.message));
         }
 
         // Reset indicators
-        if let Err(err) = Indicators::default()
-            .with_env(environment)
-            .reset_indicators()
-            .await
-        {
+        if let Err(err) = Indicators::blank().reset_indicators(environment).await {
             errors.push(format!("Indicators: {}", err.message));
         }
 
         // Reset subscribed indicators
-        if let Err(err) = SubscribedIndicators::new(environment)
-            .reset_subscribed_indicators()
+        if let Err(err) = SubscribedIndicators::blank()
+            .reset_subscribed_indicators(environment)
             .await
         {
             errors.push(format!("SubscribedIndicators: {}", err.message));
         }
 
         // Reset actions
-        if let Err(err) = Actions::default()
-            .with_env(environment)
-            .reset_actions()
-            .await
-        {
-            errors.push(format!("Actions: {}", err.message));
+        if let Err(err) = Actions::blank().reset(environment).await {
+            errors.push(format!("Actions: {}", err));
         }
 
         let duration = start.elapsed();

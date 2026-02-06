@@ -1,15 +1,17 @@
 use actix_web::{get, post, HttpResponse, Responder};
 
-use crate::handler::Engines;
+use crate::{handler::Engines, utils::error_response};
 
 #[get("")]
 pub async fn get_engine_status() -> impl Responder {
-    let engine = Engines::default().get_engine_status().await;
+    let engine = Engines::blank().get_engine_cache().await;
     HttpResponse::Ok().json(engine)
 }
 
 #[post("/shutdown")]
 pub async fn shutdown_engine() -> impl Responder {
-    Engines::default().stop_engine().await;
-    HttpResponse::Ok().json("Shutting down")
+    match Engines::blank().stop_engine().await {
+        Ok(_) => HttpResponse::Ok().json("Shutting down"),
+        Err(err) => error_response(err),
+    }
 }

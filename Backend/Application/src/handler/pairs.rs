@@ -1,58 +1,22 @@
-use std::{collections::HashMap, marker::PhantomData};
+use models::{entities::pairs::Model, structs::PairRequest};
 
-use models::{
-    entities::pairs::Model,
-    enums::LifecycleState,
-    structs::{Environments, PairRequest, QueryOptions},
-};
-
-use crate::utils::{Core, Response, Types};
-
-#[derive(Debug, Default)]
-pub struct Pairs<Phase = Types> {
-    pub phase: PhantomData<Phase>,
-    pub environment: Environments,
-    pub model: PairRequest,
+#[derive(Debug, Clone)]
+pub struct Pairs<R> {
+    pub repo: R,
 }
 
-impl<Phase> Pairs<Phase> {
-    pub fn next_phase<Next>(self) -> Pairs<Next> {
-        Pairs {
-            phase: PhantomData::<Next>,
-            environment: self.environment,
-            model: self.model,
-        }
+impl<R> Pairs<R> {
+    pub fn new(repo: R) -> Self {
+        Self { repo }
     }
 }
 
-impl Pairs {
-    pub fn new(model: PairRequest) -> Self {
-        Self {
-            phase: PhantomData::<Types>,
-            environment: Environments::DEV,
-            model,
-        }
+impl Pairs<()> {
+    pub fn blank() -> Pairs<()> {
+        Self { repo: () }
     }
 
-    pub fn default() -> Self {
-        Self {
-            phase: PhantomData::<Types>,
-            environment: Environments::DEV,
-            model: PairRequest {
-                ..Default::default()
-            },
-        }
-    }
-
-    pub fn with_env(self, environment: Environments) -> Self {
-        Self {
-            phase: self.phase,
-            environment,
-            model: self.model,
-        }
-    }
-
-    pub fn from_model(mut self, m: Model) -> Self {
+    pub fn into_request(m: Model) -> PairRequest {
         let pair_request = PairRequest {
             id: Some(m.id),
             base_asset_id: Some(m.base_asset_id),
@@ -116,8 +80,7 @@ impl Pairs {
             max_num_algo_orders: Some(m.max_num_algo_orders),
         };
 
-        self.model = pair_request;
-        self
+        pair_request
     }
 
     pub fn into_model(req: PairRequest) -> Model {
@@ -200,55 +163,5 @@ impl Pairs {
             max_num_orders: req.max_num_orders.unwrap_or_default(),
             max_num_algo_orders: req.max_num_algo_orders.unwrap_or_default(),
         }
-    }
-
-    // db
-    pub async fn insert_pair(self) -> Result<Model, Response> {
-        self.next_phase::<Core>().insert_pair_core().await
-    }
-
-    pub async fn select_pair(self) -> Result<Option<Model>, Response> {
-        self.next_phase::<Core>().select_pair_core().await
-    }
-
-    pub async fn select_pairs(self, query: Option<QueryOptions>) -> Result<Vec<Model>, Response> {
-        self.next_phase::<Core>().select_pairs_core(query).await
-    }
-
-    pub async fn update_pair(self) -> Result<Model, Response> {
-        self.next_phase::<Core>().update_pair_core().await
-    }
-
-    // cache
-    pub async fn get_pairs(self) -> Option<HashMap<i32, Model>> {
-        self.next_phase().get_pairs_core().await
-    }
-
-    pub async fn get_pair(self) -> Option<Model> {
-        self.next_phase().get_pair_core().await
-    }
-
-    pub async fn get_pairs_state(self) -> LifecycleState {
-        self.next_phase().get_pairs_state_core().await
-    }
-
-    pub async fn upsert_pair(self) -> Result<(), Response> {
-        self.next_phase().upsert_pair_core().await
-    }
-
-    pub async fn remove_pair(self) -> Result<Option<Model>, Response> {
-        self.next_phase().remove_pair_core().await
-    }
-
-    pub async fn start_pairs(self) -> Result<(), Response> {
-        self.next_phase().start_pairs_core().await
-    }
-
-    pub async fn stop_pairs(self) -> Result<(), Response> {
-        self.next_phase().stop_pairs_core().await
-    }
-
-    pub async fn reset_pairs(self) -> Result<(), Response> {
-        self.next_phase().reset_pairs_core().await
     }
 }

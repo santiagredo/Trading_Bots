@@ -1,41 +1,24 @@
-use models::{
-    enums::{Status, TradingState},
-    structs::{Environments, StrategyOverview, StrategyRequest},
-};
-
 use crate::{
     guard::LockSkipGuard,
     handler::{
         Actions, Assets, Indicators, OrderStatus, Orders, Pairs, Strategies, StrategiesOverview,
-        Tickers, DBC,
+        Tickers,
     },
-    utils::{Core, Data, Logic, Response},
+    logic,
+    utils::EntityCache,
+};
+use models::{
+    enums::{Status, TradingState},
+    structs::{Environments, OrderRequest, StrategyOverview},
 };
 
-impl StrategiesOverview<Core> {
-    pub async fn select_strategy_overview_core(
-        environment: Environments,
-        strategy: StrategyRequest,
-    ) -> Result<Vec<StrategyOverview>, Response> {
-        let results = StrategiesOverview::<Data>::select_strategy_overview_data(
-            &DBC::db(&environment).await?,
-            strategy,
-        )
-        .await?;
-
-        Ok(StrategiesOverview::<Logic>::select_strategies_overview_logic(results))
-    }
-
-    pub async fn get_strategy_overview_core(
+impl StrategiesOverview {
+    pub async fn get_strategy_overview(
         environment: Environments,
         strategy_id: &i32,
         symbol: String,
     ) -> Option<StrategyOverview> {
-        let mut strategy_request = Strategies::default();
-        strategy_request.model.id = Some(*strategy_id);
-        strategy_request.environment = environment;
-
-        let strategy = match strategy_request.get_strategy().await {
+        let strategy = match Strategies::blank().get(environment, *strategy_id).await {
             None => return None,
             Some(val) => {
                 if val.state != TradingState::Ready {
@@ -47,43 +30,23 @@ impl StrategiesOverview<Core> {
             }
         };
 
-        let mut indicator_request = Indicators::default();
-        indicator_request.model.strategy_id = Some(*strategy_id);
-        indicator_request.environment = environment;
-
-        let Some(indicator) = indicator_request.get_indicator().await else {
+        let Some(indicator) = Indicators::blank().get(environment, *strategy_id).await else {
             return None;
         };
 
-        let mut action_request = Actions::default();
-        action_request.model.strategy_id = Some(*strategy_id);
-        action_request.environment = environment;
-
-        let Some(action) = action_request.get_action().await else {
+        let Some(action) = Actions::blank().get(environment, *strategy_id).await else {
             return None;
         };
 
-        let mut pair_request = Pairs::default();
-        pair_request.model.id = Some(action.pair_id);
-        pair_request.environment = environment;
-
-        let Some(pair) = pair_request.get_pair().await else {
+        let Some(pair) = Pairs::blank().get(environment, action.pair_id).await else {
             return None;
         };
 
-        let mut base_asset_request = Assets::default();
-        base_asset_request.model.id = Some(pair.base_asset_id);
-        base_asset_request.environment = environment;
-
-        let Some(base_asset) = base_asset_request.get_asset().await else {
+        let Some(base_asset) = Assets::blank().get(environment, pair.base_asset_id).await else {
             return None;
         };
 
-        let mut quote_asset_request = Assets::default();
-        quote_asset_request.model.id = Some(pair.quote_asset_id);
-        quote_asset_request.environment = environment;
-
-        let Some(quote_asset) = quote_asset_request.get_asset().await else {
+        let Some(quote_asset) = Assets::blank().get(environment, pair.quote_asset_id).await else {
             return None;
         };
 
@@ -91,11 +54,7 @@ impl StrategiesOverview<Core> {
             return None;
         };
 
-        let Some(order_status) = OrderStatus::default()
-            .with_env(environment)
-            .get_statuses()
-            .await
-        else {
+        let Some(order_status) = OrderStatus::new().get_statuses(environment).await else {
             return None;
         };
 
@@ -113,11 +72,11 @@ impl StrategiesOverview<Core> {
         Some(strategy_overview)
     }
 
-    pub fn evaluate_strategy_overview_core(
+    pub fn evaluate_strategy_overview(
         strategy_overview: &StrategyOverview,
-    ) -> Result<Orders, String> {
+    ) -> Result<OrderRequest, String> {
         // evaluate cooldown has passed
-        if !Strategies::default().evaluate_cooldown(
+        if !logic::strategies::evaluate_cooldown(
             strategy_overview.strategy.last_execution,
             strategy_overview.strategy.cooldown,
         ) {
@@ -125,7 +84,7 @@ impl StrategiesOverview<Core> {
         }
 
         // evaluate error cooldown has passed
-        if !Strategies::default().evaluate_cooldown(
+        if !logic::strategies::evaluate_cooldown(
             strategy_overview.strategy.error_last_date,
             strategy_overview.strategy.error_cooldown,
         ) {
@@ -133,9 +92,9 @@ impl StrategiesOverview<Core> {
         }
 
         // evalute indicator
-        match Indicators::evalute_indicators(
-            &strategy_overview.ticker,
+        match logic::indicators::evaluate_indicator(
             &strategy_overview.indicator,
+            &strategy_overview.ticker,
             &strategy_overview.pair,
         ) {
             Err(err) => return Err(err),
@@ -144,7 +103,7 @@ impl StrategiesOverview<Core> {
         };
 
         // evaluate and modify action
-        let action = match Actions::default().evaluate_action(
+        let action = match Actions::blank().evaluate_action(
             strategy_overview.action.clone(),
             &strategy_overview.pair,
             &strategy_overview.ticker,
@@ -164,13 +123,14 @@ impl StrategiesOverview<Core> {
             .map(|val| val.id)
             .unwrap_or(2);
 
-        let order = Orders::default()
-            .from_strategy(&strategy_overview.strategy)
-            .from_action(&action)
-            .from_pair(&strategy_overview.pair)
-            .from_ticker(&strategy_overview.ticker)
-            .from_status(order_status);
+        let mut order_request = OrderRequest::default();
 
-        Ok(order)
+        Orders::from_strategy(&mut order_request, &strategy_overview.strategy);
+        Orders::from_action(&mut order_request, &action);
+        Orders::from_pair(&mut order_request, &strategy_overview.pair);
+        Orders::from_ticker(&mut order_request, &strategy_overview.ticker);
+        Orders::from_status(&mut order_request, order_status);
+
+        Ok(order_request)
     }
 }

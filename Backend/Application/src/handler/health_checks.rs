@@ -1,10 +1,7 @@
-use std::{collections::BTreeMap, marker::PhantomData};
+use crate::utils::Response;
+use std::collections::BTreeMap;
 
-use crate::utils::{Response, Types};
-
-pub struct HealthCheck<Phase = Types> {
-    phase: PhantomData<Phase>,
-}
+pub struct HealthCheck;
 
 impl HealthCheck {
     pub async fn select_health_check() -> Result<BTreeMap<String, String>, Response> {

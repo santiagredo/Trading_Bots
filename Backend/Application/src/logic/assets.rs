@@ -1,60 +1,46 @@
-use crate::{
-    handler::Assets,
-    utils::{Logic, Utils},
-};
+use models::structs::AssetRequest;
 
-impl Assets<Logic> {
-    pub fn insert_asset_logic(mut self) -> Result<Self, String> {
-        self.model.name = Some(
-            Utils::validate_empty_field(self.model.name.clone().unwrap_or_default(), "Asset name")?
-                .to_uppercase(),
-        );
+use crate::utils::Utils;
 
-        self.model.ticker = Some(
-            Utils::validate_empty_field(
-                self.model.ticker.clone().unwrap_or_default(),
-                "Asset ticker",
-            )?
-            .to_uppercase(),
-        );
+pub fn validate_insert(req: &AssetRequest) -> Result<(), String> {
+    let _ = Utils::validate_empty_field(req.name.clone().unwrap_or_default(), "Asset name")?
+        .to_uppercase();
 
-        Ok(self)
+    let _ = Utils::validate_empty_field(req.ticker.clone().unwrap_or_default(), "Asset ticker")?
+        .to_uppercase();
+
+    Ok(())
+}
+
+pub fn validate_update(req: &AssetRequest) -> Result<(), String> {
+    if req.id.is_none_or(|id| id <= 0) {
+        return Err(format!("Invalid ID: {:?}", req.id));
     }
 
-    pub fn update_asset_logic(mut self) -> Result<Self, String> {
-        if self.model.id.is_none_or(|id| id <= 0) {
-            return Err(format!("Invalid asset ID"));
-        }
+    let _ = Utils::validate_empty_field(req.name.clone().unwrap_or_default(), "Asset name")?
+        .to_uppercase();
 
-        if let Some(name) = self.model.name.clone() {
-            self.model.name = Some(Utils::validate_empty_field(name, "Asset name")?.to_uppercase());
-        }
+    let _ = Utils::validate_empty_field(req.ticker.clone().unwrap_or_default(), "Asset ticker")?
+        .to_uppercase();
 
-        if let Some(ticker) = self.model.ticker.clone() {
-            self.model.ticker =
-                Some(Utils::validate_empty_field(ticker, "Asset ticker")?.to_uppercase());
-        }
+    Ok(())
+}
 
-        Ok(self)
+pub fn validate_delete(req: &AssetRequest) -> Result<(), String> {
+    if req.id.is_none_or(|id| id <= 0) {
+        return Err(format!("Invalid ID: {:?}", req.id));
     }
 
-    pub fn delete_asset_logic(self) -> Result<Self, String> {
-        if self.model.id.is_none_or(|id| id <= 0) {
-            return Err(format!("Invalid asset ID"));
-        }
-
-        Ok(self)
-    }
+    Ok(())
 }
 
 #[cfg(test)]
-mod fn_insert_asset_logic {
+mod fn_validate_insert {
     use super::*;
-    use crate::utils::Core;
     use models::structs::AssetRequest;
 
     #[test]
-    fn insert_asset_cases() {
+    fn validate_insert_cases() {
         let cases = vec![
             (
                 "ok_valid_insert",
@@ -75,6 +61,15 @@ mod fn_insert_asset_logic {
                 false,
             ),
             (
+                "err_empty_name",
+                AssetRequest {
+                    name: Some("".into()),
+                    ticker: Some("BTC".into()),
+                    ..Default::default()
+                },
+                false,
+            ),
+            (
                 "err_missing_ticker",
                 AssetRequest {
                     name: Some("Ethereum".into()),
@@ -83,12 +78,19 @@ mod fn_insert_asset_logic {
                 },
                 false,
             ),
+            (
+                "err_empty_ticker",
+                AssetRequest {
+                    name: Some("Ethereum".into()),
+                    ticker: Some("".into()),
+                    ..Default::default()
+                },
+                false,
+            ),
         ];
 
         for (name, req, should_pass) in cases {
-            let asset = Assets::new(req);
-
-            let result = asset.next_phase::<Core>().next_phase().insert_asset_logic();
+            let result = validate_insert(&req);
 
             assert_eq!(
                 result.is_ok(),
@@ -103,13 +105,12 @@ mod fn_insert_asset_logic {
 }
 
 #[cfg(test)]
-mod fn_update_asset_logic {
+mod fn_validate_update {
     use super::*;
-    use crate::utils::Core;
     use models::structs::AssetRequest;
 
     #[test]
-    fn update_asset_cases() {
+    fn validate_update_cases() {
         let cases = vec![
             (
                 "ok_valid_update",
@@ -132,6 +133,16 @@ mod fn_update_asset_logic {
                 false,
             ),
             (
+                "err_invalid_id_negative",
+                AssetRequest {
+                    id: Some(-1),
+                    name: Some("Litecoin".into()),
+                    ticker: Some("ltc".into()),
+                    ..Default::default()
+                },
+                false,
+            ),
+            (
                 "err_missing_id",
                 AssetRequest {
                     id: None,
@@ -141,12 +152,30 @@ mod fn_update_asset_logic {
                 },
                 false,
             ),
+            (
+                "err_missing_name",
+                AssetRequest {
+                    id: Some(1),
+                    name: None,
+                    ticker: Some("xrp".into()),
+                    ..Default::default()
+                },
+                false,
+            ),
+            (
+                "err_missing_ticker",
+                AssetRequest {
+                    id: Some(1),
+                    name: Some("XRP".into()),
+                    ticker: None,
+                    ..Default::default()
+                },
+                false,
+            ),
         ];
 
         for (name, req, should_pass) in cases {
-            let asset = Assets::new(req);
-
-            let result = asset.next_phase::<Core>().next_phase().update_asset_logic();
+            let result = validate_update(&req);
 
             assert_eq!(
                 result.is_ok(),
@@ -161,13 +190,12 @@ mod fn_update_asset_logic {
 }
 
 #[cfg(test)]
-mod fn_delete_asset_logic {
+mod fn_validate_delete {
     use super::*;
-    use crate::utils::Core;
     use models::structs::AssetRequest;
 
     #[test]
-    fn delete_asset_cases() {
+    fn validate_delete_cases() {
         let cases = vec![
             (
                 "ok_valid_delete",
@@ -186,6 +214,14 @@ mod fn_delete_asset_logic {
                 false,
             ),
             (
+                "err_invalid_id_negative",
+                AssetRequest {
+                    id: Some(-5),
+                    ..Default::default()
+                },
+                false,
+            ),
+            (
                 "err_missing_id",
                 AssetRequest {
                     id: None,
@@ -196,9 +232,7 @@ mod fn_delete_asset_logic {
         ];
 
         for (name, req, should_pass) in cases {
-            let asset = Assets::new(req);
-
-            let result = asset.next_phase::<Core>().next_phase().delete_asset_logic();
+            let result = validate_delete(&req);
 
             assert_eq!(
                 result.is_ok(),

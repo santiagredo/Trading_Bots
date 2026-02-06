@@ -15,7 +15,6 @@ use crate::handler::WebsocketStreams;
 use crate::{
     handler::{Senders, SubscribedIndicators, Tickers},
     static_strings::BINANCE_WEBSOCKET_STREAM_URL,
-    utils::Integration,
 };
 
 static WEBSOCKET_STATUS: Lazy<Arc<RwLock<SocketStatus>>> =
@@ -24,7 +23,7 @@ static WEBSOCKET_STATUS: Lazy<Arc<RwLock<SocketStatus>>> =
 static WEBSOCKET_HANDLE: Lazy<Arc<RwLock<Option<tokio::task::JoinHandle<()>>>>> =
     Lazy::new(|| Arc::new(RwLock::new(None)));
 
-impl WebsocketStreams<Integration> {
+impl WebsocketStreams {
     // === State ===
 
     pub async fn get_status_integration() -> SocketStatus {
@@ -244,7 +243,8 @@ impl WebsocketStreams<Integration> {
         S: SinkExt<Message> + Unpin,
         S::Error: std::fmt::Display,
     {
-        let symbols = SubscribedIndicators::get_all_unique_symbols()
+        let symbols = SubscribedIndicators::blank()
+            .get_all_unique_symbols()
             .await
             .map_err(|e| format!("Failed to get symbols: {}", e))?;
 

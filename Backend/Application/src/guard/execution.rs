@@ -1,34 +1,49 @@
 use std::time::Instant;
 
+use crate::{
+    handler::{Metrics, Strategies},
+    utils::RepoFactory,
+};
 use chrono::Local;
 use models::{
+    entities::strategies::Model,
     enums::TradingState,
     structs::{Environments, StrategyRequest},
 };
 
-use crate::handler::{Metrics, Strategies};
-
 #[derive(Debug, Clone)]
-pub struct StrategiesExecutionGuard {
+pub struct StrategiesExecutionGuard
+// where
+//     R: Repository<StrategyRequest, Model> + Clone + Send + Sync + 'static,
+{
+    pub factory: RepoFactory,
     pub environment: Environments,
     pub start: Instant,
     pub success: bool,
     pub model: StrategyRequest,
 }
 
-impl StrategiesExecutionGuard {
+impl StrategiesExecutionGuard
+// where
+//     R: Repository<StrategyRequest, Model> + Clone + Send + Sync + 'static,
+{
     pub async fn new(
+        factory: RepoFactory,
         environment: Environments,
         model: StrategyRequest,
-    ) -> Result<StrategiesExecutionGuard, String> {
+    ) -> Result<Self, String> {
         let start = Instant::now();
 
-        Strategies::new(model.clone())
-            .with_env(environment)
-            .set_strategy_state(TradingState::Running)
+        Strategies::blank()
+            .set_strategy_state(
+                environment,
+                model.id.unwrap_or_default(),
+                TradingState::Running,
+            )
             .await?;
 
         Ok(StrategiesExecutionGuard {
+            factory,
             environment,
             start,
             success: false,
@@ -43,16 +58,20 @@ impl StrategiesExecutionGuard {
     pub async fn err(&mut self, error: String) -> Result<(), String> {
         self.success = false;
 
-        let strategy = self.model.clone();
-
-        Strategies::new(strategy)
-            .with_env(self.environment)
-            .set_strategy_error(Some(error))
+        Strategies::blank()
+            .set_strategy_error(
+                self.environment,
+                self.model.id.unwrap_or_default(),
+                Some(error),
+            )
             .await?;
 
-        Strategies::new(self.model.clone())
-            .with_env(self.environment)
-            .set_strategy_state(TradingState::Ready)
+        Strategies::blank()
+            .set_strategy_state(
+                self.environment,
+                self.model.id.unwrap_or_default(),
+                TradingState::Ready,
+            )
             .await
     }
 
@@ -63,73 +82,88 @@ impl StrategiesExecutionGuard {
 
         self.model.error_last_date = Some(Local::now().naive_local());
 
-        let strategy = self.model.clone();
-
-        Strategies::new(strategy.clone())
-            .with_env(self.environment)
-            .set_strategy_error(Some(error))
+        Strategies::blank()
+            .set_strategy_error(
+                self.environment,
+                self.model.id.unwrap_or_default(),
+                Some(error),
+            )
             .await?;
 
-        Strategies::new(strategy.clone())
-            .with_env(self.environment)
-            .upsert_strategy()
+        Strategies::blank()
+            .set_strategy_model_error(self.environment, self.model.id.unwrap_or_default())
             .await?;
 
-        Strategies::new(strategy.clone())
-            .with_env(self.environment)
-            .update_strategy()
+        let strategies_repo = self.factory.clone().repo::<StrategyRequest, Model>();
+
+        Strategies::new(strategies_repo)
+            .update(self.model.clone())
             .await
             .map_err(|response| response.message)?;
 
-        Strategies::new(strategy)
-            .with_env(self.environment)
-            .set_strategy_state(TradingState::Ready)
+        Strategies::blank()
+            .set_strategy_state(
+                self.environment,
+                self.model.id.unwrap_or_default(),
+                TradingState::Ready,
+            )
             .await
     }
 
     pub async fn saving(&mut self) -> Result<(), String> {
-        let strategy = self.model.clone();
-
-        Strategies::new(strategy)
-            .with_env(self.environment)
-            .set_strategy_state(TradingState::Saving)
+        Strategies::blank()
+            .set_strategy_state(
+                self.environment,
+                self.model.id.unwrap_or_default(),
+                TradingState::Saving,
+            )
             .await
     }
 
     pub async fn lock(&self) -> Result<(), String> {
-        let strategy = self.model.clone();
-
-        Strategies::new(strategy)
-            .with_env(self.environment)
-            .set_strategy_state(TradingState::Trading)
+        Strategies::blank()
+            .set_strategy_state(
+                self.environment,
+                self.model.id.unwrap_or_default(),
+                TradingState::Trading,
+            )
             .await
     }
 }
 
-impl Drop for StrategiesExecutionGuard {
+impl Drop for StrategiesExecutionGuard
+// where
+//     R: Repository<StrategyRequest, Model> + Clone + Send + Sync + 'static,
+{
     fn drop(&mut self) {
         let environment = self.environment;
         let elapsed = self.start.elapsed();
         let success = self.success;
         let mut strategy_request = self.model.clone();
         let now = Local::now().naive_local();
+        let factory = self.factory.clone();
 
         tokio::spawn(async move {
-            Metrics::set_execution_metrics(environment, elapsed, success).await;
+            Metrics::blank()
+                .set_execution_metrics(environment, elapsed, success)
+                .await;
 
             if success {
                 strategy_request.last_execution = Some(now);
 
                 // update last exec
-                let _ = Strategies::new(strategy_request.clone())
-                    .with_env(environment)
-                    .upsert_strategy()
+                let strategies_repo = factory.clone().repo::<StrategyRequest, Model>();
+
+                let _ = Strategies::blank()
+                    .set_strategy_model_last_exec(
+                        environment,
+                        strategy_request.id.unwrap_or_default(),
+                    )
                     .await;
 
                 // update last exec in db
-                if let Err(err) = Strategies::new(strategy_request.clone())
-                    .with_env(environment)
-                    .update_strategy()
+                if let Err(err) = Strategies::new(strategies_repo)
+                    .update(strategy_request.clone())
                     .await
                 {
                     dbg!(eprintln!("{}", err.message));
@@ -137,9 +171,12 @@ impl Drop for StrategiesExecutionGuard {
                 };
 
                 // update trading state in cache
-                let _ = Strategies::new(strategy_request.clone())
-                    .with_env(environment)
-                    .set_strategy_state(TradingState::Ready)
+                let _ = Strategies::blank()
+                    .set_strategy_state(
+                        environment,
+                        strategy_request.id.unwrap_or_default(),
+                        TradingState::Ready,
+                    )
                     .await;
             }
         });

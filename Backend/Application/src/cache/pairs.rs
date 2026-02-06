@@ -1,6 +1,7 @@
 use std::{collections::HashMap, mem, sync::Arc};
 
 use chrono::Local;
+use migration::async_trait::async_trait;
 use models::{
     entities::pairs::Model,
     enums::{transition_with_timestamp, FiniteStateMachine, LifecycleState},
@@ -9,91 +10,117 @@ use models::{
 use once_cell::sync::Lazy;
 use tokio::sync::RwLock;
 
-use crate::{handler::Pairs, utils::Cache};
+use crate::{handler::Pairs, utils::EntityCache};
 
 static ACTIVE_PAIRS: Lazy<Arc<RwLock<CachePairsEnvironments>>> =
     Lazy::new(|| Arc::new(RwLock::new(CachePairsEnvironments::new())));
 
-impl Pairs<Cache> {
-    // =========================
+#[async_trait]
+impl<R> EntityCache<Environments> for Pairs<R>
+where
+    R: Send + Sync,
+{
+    type Key = i32;
+    type Value = Model;
+    type Collection = CachePairs;
+
+    // ============================
     // Lifecycle
-    // =========================
+    // ============================
 
-    pub async fn set_status_cache(
-        environment: Environments,
-        status: LifecycleState,
-    ) -> Result<(), String> {
+    async fn state(&self, env: Environments) -> LifecycleState {
+        let cache = ACTIVE_PAIRS.read().await;
+        cache
+            .get(&env)
+            .map(|c| c.status)
+            .unwrap_or(LifecycleState::Off)
+    }
+
+    async fn set_state(&self, env: Environments, state: LifecycleState) -> Result<(), String> {
         let mut cache = ACTIVE_PAIRS.write().await;
-        let env_cache = cache.get_or_create(environment);
+        let env_cache = cache.get_or_create(env);
 
-        transition_with_timestamp(env_cache, status)?;
+        transition_with_timestamp(env_cache, state)?;
         Ok(())
     }
 
-    // =========================
+    // ============================
+    // Queries
+    // ============================
+
+    async fn get_all(&self, env: Environments) -> Option<CachePairs> {
+        let cache = ACTIVE_PAIRS.read().await;
+        let env_cache = cache.get(&env)?;
+
+        if !env_cache.status.allows(LifecycleState::Running) {
+            return None;
+        }
+
+        Some(env_cache.clone())
+    }
+
+    async fn get(&self, env: Environments, key: i32) -> Option<Model> {
+        let cache = ACTIVE_PAIRS.read().await;
+        let env_cache = cache.get(&env)?;
+
+        if !env_cache.status.allows(LifecycleState::Running) {
+            return None;
+        }
+
+        env_cache.models.get(&key).cloned()
+    }
+
+    // ============================
     // Mutations
-    // =========================
+    // ============================
 
-    pub async fn set_pairs_cache(
-        environment: Environments,
-        pairs: Vec<Model>,
-    ) -> Result<(), String> {
+    async fn set_all(&self, env: Environments, values: Vec<Model>) -> Result<(), String> {
         let mut cache = ACTIVE_PAIRS.write().await;
-        let env_cache = cache.get_or_create(environment);
-
-        if !env_cache.status.allows(LifecycleState::Running) {
-            return Err(format!(
-                "Cannot load pairs: cache not running ({:?})",
-                env_cache.status
-            ));
-        }
-
-        env_cache.models = pairs.into_iter().map(|p| (p.id, p)).collect();
-        env_cache.last_update_date = Local::now().naive_local();
-
-        Ok(())
-    }
-
-    pub async fn upsert_pair_cache(environment: Environments, pair: Model) -> Result<(), String> {
-        let mut cache = ACTIVE_PAIRS.write().await;
-        let env_cache = cache.get_or_create(environment);
+        let env_cache = cache.get_or_create(env);
 
         if !env_cache.status.allows(LifecycleState::Running) {
             return Err("Cache not running".into());
         }
 
-        env_cache.models.insert(pair.id, pair);
+        let values: Vec<(i32, Model)> = values.into_iter().map(|m| (m.id, m)).collect();
+
+        env_cache.models = values.into_iter().collect();
         env_cache.last_update_date = Local::now().naive_local();
 
         Ok(())
     }
 
-    pub async fn remove_pair_cache(
-        environment: Environments,
-        pair_id: i32,
-    ) -> Result<Option<Model>, String> {
+    async fn upsert(&self, env: Environments, key: i32, value: Model) -> Result<(), String> {
         let mut cache = ACTIVE_PAIRS.write().await;
-        let env_cache = cache
-            .get_mut(&environment)
-            .ok_or("Environment not initialized")?;
+        let env_cache = cache.get_or_create(env);
 
         if !env_cache.status.allows(LifecycleState::Running) {
             return Err("Cache not running".into());
         }
 
-        let removed = env_cache.models.remove(&pair_id);
+        env_cache.models.insert(key, value);
+        env_cache.last_update_date = Local::now().naive_local();
+
+        Ok(())
+    }
+
+    async fn remove(&self, env: Environments, key: i32) -> Result<Option<Model>, String> {
+        let mut cache = ACTIVE_PAIRS.write().await;
+        let env_cache = cache.get_mut(&env).ok_or("Environment not initialized")?;
+
+        if !env_cache.status.allows(LifecycleState::Running) {
+            return Err("Cache not running".into());
+        }
+
+        let removed = env_cache.models.remove(&key);
         env_cache.last_update_date = Local::now().naive_local();
 
         Ok(removed)
     }
 
-    pub async fn remove_pairs_cache(
-        environment: Environments,
-    ) -> Result<HashMap<i32, Model>, String> {
+    async fn remove_all(&self, env: Environments) -> Result<HashMap<i32, Model>, String> {
         let mut cache = ACTIVE_PAIRS.write().await;
-        let env_cache = cache
-            .get_mut(&environment)
-            .ok_or("Environment not initialized")?;
+        let env_cache = cache.get_mut(&env).ok_or("Environment not initialized")?;
 
         if !env_cache.status.allows(LifecycleState::Stopping) {
             return Err("Cache not stopping".into());
@@ -105,32 +132,10 @@ impl Pairs<Cache> {
         Ok(removed)
     }
 
-    // =========================
-    // Queries
-    // =========================
-
-    pub async fn get_pairs_cache(environment: Environments) -> Option<CachePairs> {
-        let cache = ACTIVE_PAIRS.read().await;
-        cache.get(&environment).cloned()
-    }
-
-    pub async fn get_pair_cache(environment: Environments, pair_id: i32) -> Option<Model> {
-        let cache = ACTIVE_PAIRS.read().await;
-        cache.get(&environment)?.models.get(&pair_id).cloned()
-    }
-
-    pub async fn get_cache_state(environment: Environments) -> LifecycleState {
-        let cache = ACTIVE_PAIRS.read().await;
-        cache
-            .get(&environment)
-            .map(|c| c.status)
-            .unwrap_or(LifecycleState::Off)
-    }
-
-    pub async fn reset_pairs_cache(environment: Environments) -> Result<(), String> {
+    async fn reset(&self, env: Environments) -> Result<(), String> {
         let mut cache = ACTIVE_PAIRS.write().await;
 
-        if let Some(env_cache) = cache.environments.get_mut(&environment) {
+        if let Some(env_cache) = cache.environments.get_mut(&env) {
             *env_cache = CachePairs::new();
         }
 
@@ -142,11 +147,11 @@ impl Pairs<Cache> {
 mod tests {
     use models::{entities::pairs::Model, enums::LifecycleState, structs::Environments};
 
-    use crate::{handler::Pairs, utils::Cache};
+    use crate::{handler::Pairs, utils::EntityCache};
 
-    // =========================
-    // Helpers
-    // =========================
+    /* =========================================================
+     * Helpers
+     * ========================================================= */
 
     fn mock_pair(id: i32) -> Model {
         Model {
@@ -155,131 +160,81 @@ mod tests {
         }
     }
 
-    async fn start_env(env: Environments) {
-        let _ = Pairs::<Cache>::set_status_cache(env, LifecycleState::Starting).await;
-        let _ = Pairs::<Cache>::set_status_cache(env, LifecycleState::Running).await;
+    async fn new_service() -> Pairs<()> {
+        Pairs::blank()
     }
 
-    async fn stop_env(env: Environments) {
-        let _ = Pairs::<Cache>::set_status_cache(env, LifecycleState::Stopping).await;
-
-        let removed = Pairs::<Cache>::remove_pairs_cache(env)
+    async fn start_env(service: &Pairs<()>, env: Environments) {
+        service
+            .set_state(env, LifecycleState::Starting)
             .await
-            .expect("remove_pairs_cache should work in Stopping");
+            .unwrap();
+        service
+            .set_state(env, LifecycleState::Running)
+            .await
+            .unwrap();
+    }
 
+    async fn stop_env(service: &Pairs<()>, env: Environments) {
+        service
+            .set_state(env, LifecycleState::Stopping)
+            .await
+            .unwrap();
+
+        let removed = service.remove_all(env).await.unwrap();
         assert!(removed.is_empty() || !removed.is_empty());
 
-        let _ = Pairs::<Cache>::set_status_cache(env, LifecycleState::Off).await;
+        service.set_state(env, LifecycleState::Off).await.unwrap();
     }
 
-    // =========================
-    // Scenarios
-    // =========================
-
-    async fn scenario_reset_env_clears_state(env: Environments) {
-        start_env(env).await;
-
-        Pairs::<Cache>::set_pairs_cache(env, vec![mock_pair(1)])
-            .await
-            .unwrap();
-
-        let _ = Pairs::<Cache>::set_status_cache(env, LifecycleState::Stopping).await;
-
-        let removed = Pairs::<Cache>::remove_pairs_cache(env).await.unwrap();
-        assert_eq!(removed.len(), 1);
-
-        let cache = Pairs::<Cache>::get_pairs_cache(env).await.unwrap();
-        assert!(cache.models.is_empty());
-
-        let _ = Pairs::<Cache>::set_status_cache(env, LifecycleState::Off).await;
-
-        let status = Pairs::<Cache>::get_cache_state(env).await;
-        assert_eq!(status, LifecycleState::Off);
-    }
-
-    async fn scenario_set_pairs_cache(env: Environments) {
-        start_env(env).await;
-
-        Pairs::<Cache>::set_pairs_cache(env, vec![mock_pair(1), mock_pair(2)])
-            .await
-            .unwrap();
-
-        let cache = Pairs::<Cache>::get_pairs_cache(env).await.unwrap();
-
-        assert_eq!(cache.models.len(), 2);
-        assert!(cache.models.contains_key(&1));
-        assert!(cache.models.contains_key(&2));
-
-        stop_env(env).await;
-    }
-
-    async fn scenario_upsert_pair(env: Environments) {
-        start_env(env).await;
-
-        let pair = mock_pair(10);
-        Pairs::<Cache>::upsert_pair_cache(env, pair.clone())
-            .await
-            .unwrap();
-
-        let cached = Pairs::<Cache>::get_pair_cache(env, 10).await.unwrap();
-        assert_eq!(cached, pair);
-
-        stop_env(env).await;
-    }
-
-    async fn scenario_remove_pair(env: Environments) {
-        start_env(env).await;
-
-        Pairs::<Cache>::upsert_pair_cache(env, mock_pair(20))
-            .await
-            .unwrap();
-
-        let removed = Pairs::<Cache>::remove_pair_cache(env, 20).await.unwrap();
-
-        assert!(removed.is_some());
-        assert!(Pairs::<Cache>::get_pair_cache(env, 20).await.is_none());
-
-        stop_env(env).await;
-    }
-
-    async fn scenario_get_cache_state(env: Environments) {
-        assert_eq!(
-            Pairs::<Cache>::get_cache_state(env).await,
-            LifecycleState::Off
-        );
-
-        start_env(env).await;
-
-        assert_eq!(
-            Pairs::<Cache>::get_cache_state(env).await,
-            LifecycleState::Running
-        );
-
-        stop_env(env).await;
-    }
-
-    async fn scenario_cannot_remove_pairs_when_running(env: Environments) {
-        start_env(env).await;
-
-        let result = Pairs::<Cache>::remove_pairs_cache(env).await;
-        assert!(result.is_err());
-
-        stop_env(env).await;
-    }
-
-    // =========================
-    // Entry point
-    // =========================
+    /* =========================================================
+     * Scenarios
+     * ========================================================= */
 
     #[tokio::test]
     async fn cache_pairs_unit_responsibilities() {
         let env = Environments::DEV;
+        let service = new_service().await;
 
-        scenario_reset_env_clears_state(env).await;
-        scenario_set_pairs_cache(env).await;
-        scenario_upsert_pair(env).await;
-        scenario_remove_pair(env).await;
-        scenario_get_cache_state(env).await;
-        scenario_cannot_remove_pairs_when_running(env).await;
+        // reset clears state
+        start_env(&service, env).await;
+
+        service.set_all(env, vec![mock_pair(1)]).await.unwrap();
+
+        service
+            .set_state(env, LifecycleState::Stopping)
+            .await
+            .unwrap();
+
+        let removed = service.remove_all(env).await.unwrap();
+        assert_eq!(removed.len(), 1);
+
+        service.set_state(env, LifecycleState::Off).await.unwrap();
+
+        assert_eq!(service.state(env).await, LifecycleState::Off);
+
+        // set / get
+        start_env(&service, env).await;
+
+        service
+            .set_all(env, vec![mock_pair(1), mock_pair(2)])
+            .await
+            .unwrap();
+
+        let cache = service.get_all(env).await.unwrap();
+        assert_eq!(cache.models.len(), 2);
+
+        // upsert
+        service.upsert(env, 10, mock_pair(10)).await.unwrap();
+        assert!(service.get(env, 10).await.is_some());
+
+        // remove
+        service.remove(env, 10).await.unwrap();
+        assert!(service.get(env, 10).await.is_none());
+
+        // cannot remove_all while running
+        assert!(service.remove_all(env).await.is_err());
+
+        stop_env(&service, env).await;
     }
 }

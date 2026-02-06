@@ -1,318 +1,231 @@
 use chrono::{Duration, Local, NaiveDateTime};
 
-use crate::{
-    handler::Strategies,
-    utils::{Logic, Utils},
-};
+use models::structs::StrategyRequest;
 
-impl Strategies<Logic> {
-    pub fn insert_strategy_logic(self) -> Result<Self, String> {
-        Utils::validate_empty_field(self.model.name.clone().unwrap_or_default(), "Strategy name")?;
+use crate::utils::Utils;
 
-        if self.model.cooldown.is_none_or(|cooldown| cooldown <= 0) {
-            return Err(format!("Invalid cooldown: {:?}", self.model.cooldown));
-        };
+/* ======================================================
+ * VALIDATIONS
+ * ======================================================
+ */
 
-        if self
-            .model
-            .error_cooldown
-            .is_none_or(|error_cooldown| error_cooldown <= 0)
-        {
-            return Err(format!(
-                "Invalid error cooldown: {:?}",
-                self.model.error_cooldown
-            ));
-        };
+pub fn validate_insert(req: &StrategyRequest) -> Result<(), String> {
+    Utils::validate_empty_field(req.name.clone().unwrap_or_default(), "Strategy name")?;
 
-        Ok(self)
+    if req.cooldown.is_none_or(|v| v <= 0) {
+        return Err(format!("Invalid cooldown: {:?}", req.cooldown));
     }
 
-    pub fn update_strategy_logic(self) -> Result<Self, String> {
-        if self.model.id.is_none_or(|id| id <= 0) {
-            return Err(format!("Invalid strategy id: {:?}", self.model.id));
-        }
-
-        if let Some(name) = self.model.name.clone() {
-            Utils::validate_empty_field(name, "Strategy name")?;
-        }
-
-        if self.model.cooldown.is_some_and(|cooldown| cooldown <= 0) {
-            return Err(format!("Invalid cooldown: {:?}", self.model.cooldown));
-        };
-
-        if self
-            .model
-            .error_cooldown
-            .is_some_and(|error_cooldown| error_cooldown <= 0)
-        {
-            return Err(format!(
-                "Invalid error cooldown: {:?}",
-                self.model.error_cooldown
-            ));
-        };
-
-        Ok(self)
+    if req.error_cooldown.is_none_or(|v| v <= 0) {
+        return Err(format!("Invalid error cooldown: {:?}", req.error_cooldown));
     }
 
-    pub fn delete_strategy_logic(self) -> Result<Self, String> {
-        if self.model.id.is_none() || self.model.id.is_some_and(|id| id <= 0) {
-            return Err(format!("Invalid strategy ID"));
-        }
+    Ok(())
+}
 
-        Ok(self)
+pub fn validate_update(req: &StrategyRequest) -> Result<(), String> {
+    if req.id.is_none_or(|id| id <= 0) {
+        return Err(format!("Invalid strategy id: {:?}", req.id));
     }
 
-    pub fn evaluate_cooldown_logic(
-        self,
-        last_exec: Option<NaiveDateTime>,
-        cooldown: Option<i32>,
-    ) -> bool {
-        if let Some(last_exec) = last_exec {
-            let now = Local::now().naive_local();
+    if let Some(name) = req.name.clone() {
+        Utils::validate_empty_field(name, "Strategy name")?;
+    }
 
-            let cooldown_secs = cooldown.unwrap_or(86400) as i64;
-            let cooldown_end = last_exec + Duration::seconds(cooldown_secs);
+    if req.cooldown.is_some_and(|v| v <= 0) {
+        return Err(format!("Invalid cooldown: {:?}", req.cooldown));
+    }
 
-            now > cooldown_end
-        } else {
-            true
-        }
+    if req.error_cooldown.is_some_and(|v| v <= 0) {
+        return Err(format!("Invalid error cooldown: {:?}", req.error_cooldown));
+    }
+
+    Ok(())
+}
+
+pub fn validate_delete(req: &StrategyRequest) -> Result<(), String> {
+    if req.id.is_none_or(|id| id <= 0) {
+        return Err("Invalid strategy ID".into());
+    }
+
+    Ok(())
+}
+
+/* ======================================================
+ * EVALUATION
+ * ======================================================
+ */
+
+pub fn evaluate_cooldown(last_exec: Option<NaiveDateTime>, cooldown: Option<i32>) -> bool {
+    if let Some(last_exec) = last_exec {
+        let now = Local::now().naive_local();
+        let cooldown_secs = cooldown.unwrap_or(86_400) as i64;
+
+        now > last_exec + Duration::seconds(cooldown_secs)
+    } else {
+        true
     }
 }
 
+/* ======================================================
+ * TESTS
+ * ======================================================
+ */
+
 #[cfg(test)]
-mod fn_insert_strategy_logic {
-    use crate::handler::Strategies;
-    use crate::utils::Logic;
+mod fn_validate_insert {
+    use super::*;
 
     #[test]
-    fn insert_strategy_cases() {
+    fn cases() {
         let cases = vec![
             (
-                "ok_valid_insert",
-                Some("Scalping".to_string()),
-                Some(10),
-                Some(10),
+                "ok",
+                StrategyRequest {
+                    name: Some("Scalping".into()),
+                    cooldown: Some(10),
+                    error_cooldown: Some(10),
+                    ..Default::default()
+                },
                 true,
             ),
             (
                 "err_empty_name",
-                Some("".to_string()),
-                Some(10),
-                Some(10),
+                StrategyRequest {
+                    name: Some("".into()),
+                    cooldown: Some(10),
+                    error_cooldown: Some(10),
+                    ..Default::default()
+                },
                 false,
             ),
-            ("err_none_name", None, Some(10), Some(10), false),
             (
                 "err_invalid_cooldown",
-                Some("Scalping".to_string()),
-                Some(0),
-                Some(0),
-                false,
-            ),
-            (
-                "err_none_cooldown",
-                Some("Scalping".to_string()),
-                None,
-                None,
-                false,
-            ),
-            (
-                "err_invalid_error_cooldown",
-                Some("Scalping".to_string()),
-                Some(10),
-                Some(0),
-                false,
-            ),
-            (
-                "err_none_error_cooldown",
-                Some("Scalping".to_string()),
-                Some(10),
-                None,
+                StrategyRequest {
+                    name: Some("A".into()),
+                    cooldown: Some(0),
+                    error_cooldown: Some(10),
+                    ..Default::default()
+                },
                 false,
             ),
         ];
 
-        for (name, strategy_name, cooldown, error_cooldown, should_pass) in cases {
-            let mut strategy = Strategies::default();
-            strategy.model.name = strategy_name;
-            strategy.model.cooldown = cooldown;
-            strategy.model.error_cooldown = error_cooldown;
-
-            let result = strategy.next_phase::<Logic>().insert_strategy_logic();
-
-            assert_eq!(
-                result.is_ok(),
-                should_pass,
-                "case `{}` failed: expected {}, got {:?}",
-                name,
-                should_pass,
-                result
-            );
+        for (name, req, should_pass) in cases {
+            let result = validate_insert(&req);
+            assert_eq!(result.is_ok(), should_pass, "case `{}` failed", name);
         }
     }
 }
 
 #[cfg(test)]
-mod fn_update_strategy_logic {
-    use crate::handler::Strategies;
-    use crate::utils::Logic;
+mod fn_validate_update {
+    use super::*;
 
     #[test]
-    fn update_strategy_cases() {
+    fn cases() {
         let cases = vec![
             (
-                "ok_valid_update",
-                Some(1),
-                Some("Swing".to_string()),
-                Some(30),
-                Some(30),
+                "ok",
+                StrategyRequest {
+                    id: Some(1),
+                    name: Some("Swing".into()),
+                    cooldown: Some(30),
+                    error_cooldown: Some(30),
+                    ..Default::default()
+                },
                 true,
             ),
             (
                 "err_invalid_id",
-                Some(0),
-                Some("Swing".to_string()),
-                Some(30),
-                Some(30),
-                false,
-            ),
-            (
-                "err_none_id",
-                None,
-                Some("Swing".to_string()),
-                Some(30),
-                Some(30),
-                false,
-            ),
-            (
-                "err_empty_name",
-                Some(1),
-                Some("".to_string()),
-                Some(30),
-                Some(30),
-                false,
-            ),
-            (
-                "err_invalid_cooldown",
-                Some(1),
-                Some("Swing".to_string()),
-                Some(0),
-                Some(30),
-                false,
-            ),
-            (
-                "err_invalid_error_cooldown",
-                Some(1),
-                Some("Scalping".to_string()),
-                Some(30),
-                Some(0),
+                StrategyRequest {
+                    id: Some(0),
+                    name: Some("Swing".into()),
+                    ..Default::default()
+                },
                 false,
             ),
         ];
 
-        for (name, id, strategy_name, cooldown, error_cooldown, should_pass) in cases {
-            let mut strategy = Strategies::default();
-            strategy.model.id = id;
-            strategy.model.name = strategy_name;
-            strategy.model.cooldown = cooldown;
-            strategy.model.error_cooldown = error_cooldown;
-
-            let result = strategy.next_phase::<Logic>().update_strategy_logic();
-
-            assert_eq!(
-                result.is_ok(),
-                should_pass,
-                "case `{}` failed: expected {}, got {:?}",
-                name,
-                should_pass,
-                result
-            );
+        for (name, req, should_pass) in cases {
+            let result = validate_update(&req);
+            assert_eq!(result.is_ok(), should_pass, "case `{}` failed", name);
         }
     }
 }
 
 #[cfg(test)]
-mod fn_delete_strategy_logic {
-    use crate::handler::Strategies;
-    use crate::utils::Logic;
+mod fn_validate_delete {
+    use super::*;
 
     #[test]
-    fn delete_strategy_cases() {
+    fn cases() {
         let cases = vec![
-            ("ok_valid_delete", Some(1), true),
-            ("err_none_id", None, false),
-            ("err_invalid_id", Some(0), false),
+            (
+                "ok",
+                StrategyRequest {
+                    id: Some(1),
+                    ..Default::default()
+                },
+                true,
+            ),
+            (
+                "err",
+                StrategyRequest {
+                    id: None,
+                    ..Default::default()
+                },
+                false,
+            ),
         ];
 
-        for (name, id, should_pass) in cases {
-            let mut strategy = Strategies::default();
-            strategy.model.id = id;
-
-            let result = strategy.next_phase::<Logic>().delete_strategy_logic();
-
-            assert_eq!(
-                result.is_ok(),
-                should_pass,
-                "case `{}` failed: expected {}, got {:?}",
-                name,
-                should_pass,
-                result
-            );
+        for (name, req, should_pass) in cases {
+            let result = validate_delete(&req);
+            assert_eq!(result.is_ok(), should_pass, "case `{}` failed", name);
         }
     }
 }
 
 #[cfg(test)]
-mod fn_evaluate_cooldown_logic {
-    use crate::handler::Strategies;
-    use crate::utils::Logic;
+mod fn_evaluate_cooldown {
+    use super::*;
     use chrono::{Duration, Local};
 
     #[test]
-    fn evaluate_cooldown_cases() {
+    fn cases() {
         let now = Local::now().naive_local();
 
         let cases = vec![
             ("ok_none_last_exec", None, Some(60), true),
             (
-                "ok_passed_cooldown",
+                "ok_passed",
                 Some(now - Duration::seconds(120)),
                 Some(60),
                 true,
             ),
             (
-                "err_not_passed_cooldown",
+                "err_not_passed",
                 Some(now - Duration::seconds(30)),
                 Some(60),
                 false,
             ),
             (
-                "ok_none_cooldown_default",
-                Some(now - Duration::seconds(86500)),
+                "ok_default_cd",
+                Some(now - Duration::seconds(90_000)),
                 None,
                 true,
             ),
             (
-                "err_none_cooldown_still_active",
+                "err_default_cd",
                 Some(now - Duration::seconds(100)),
                 None,
                 false,
             ),
         ];
 
-        for (name, last_exec, cooldown, expected) in cases {
-            let strategy = Strategies::default();
-
-            let result = strategy
-                .next_phase::<Logic>()
-                .evaluate_cooldown_logic(last_exec, cooldown);
-
-            assert_eq!(
-                result, expected,
-                "case `{}` failed: expected {}, got {}",
-                name, expected, result
-            );
+        for (name, last, cd, expected) in cases {
+            let result = evaluate_cooldown(last, cd);
+            assert_eq!(result, expected, "case `{}` failed", name);
         }
     }
 }

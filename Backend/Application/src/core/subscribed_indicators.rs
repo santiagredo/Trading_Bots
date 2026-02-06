@@ -1,171 +1,99 @@
 use std::collections::{HashMap, HashSet};
 
-use models::{entities::indicators::Model, enums::LifecycleState, structs::Environments};
-
 use crate::{
     handler::{Indicators, SubscribedIndicators},
-    utils::{Cache, Core, Response},
+    utils::{EntityCache, Response},
 };
+use models::{enums::LifecycleState, structs::Environments};
 
-impl SubscribedIndicators<Core> {
-    /* ===========================
-     * CACHE (WRITE)
-     * ===========================
-     */
-
-    pub async fn upsert_subscribed_indicator_core(self, indicator: Model) -> Result<(), Response> {
-        let env = self.environment;
-
-        SubscribedIndicators::<Cache>::upsert_subscribed_indicator_cache(env, indicator)
-            .await
-            .map_err(|err| Response {
-                code: 500,
-                message: err,
-            })
-    }
-
-    pub async fn remove_subscribed_indicator_core(
-        self,
-        indicator: Model,
-    ) -> Result<Option<Model>, Response> {
-        let env = self.environment;
-
-        SubscribedIndicators::<Cache>::remove_subscribed_indicator_cache(env, indicator.clone())
-            .await
-            .map(|_| Some(indicator))
-            .map_err(|err| Response {
-                code: 500,
-                message: err,
-            })
-    }
-
-    /* ===========================
-     * CACHE (READ)
-     * ===========================
-     */
-
-    pub async fn get_subscribed_indicator_core(self, key: String) -> Option<HashSet<i32>> {
-        SubscribedIndicators::<Cache>::get_subscribed_indicator_cache(self.environment, &key).await
-    }
-
-    pub async fn get_subscribed_indicators_core(self) -> Option<HashMap<String, HashSet<i32>>> {
-        SubscribedIndicators::<Cache>::get_subscribed_indicators_cache(self.environment).await
-    }
-
-    pub async fn get_subscribed_indicators_state_core(self) -> LifecycleState {
-        SubscribedIndicators::<Cache>::get_subscribed_indicators_state_cache(self.environment).await
-    }
-
+impl<R> SubscribedIndicators<R>
+where
+    R: Send + Sync,
+{
     /* ===========================
      * LIFECYCLE
      * ===========================
      */
 
-    pub async fn start_subscribed_indicators_core(self) -> Result<(), Response> {
-        let env = self.environment;
-
+    pub async fn start_subscribed_indicators(
+        &self,
+        environment: Environments,
+    ) -> Result<(), Response> {
         // STARTING
-        if let Err(err) =
-            SubscribedIndicators::<Cache>::set_status_cache(env, LifecycleState::Starting).await
-        {
-            return Err(Response {
-                code: 500,
-                message: err,
-            });
-        };
+        self.set_state(environment, LifecycleState::Starting)
+            .await
+            .map_err(Response::server_error)?;
 
-        let mut indicators_request = Indicators::default();
-        indicators_request.environment = env;
-
-        let active_indicators = indicators_request
-            .get_indicators()
+        // LOAD ACTIVE INDICATORS
+        let active_indicators = Indicators::blank()
+            .get_all(environment)
             .await
             .unwrap_or_default();
 
         let mut indicators_map: HashMap<String, HashSet<i32>> = HashMap::new();
-        for (_, indicator) in active_indicators {
+
+        for (_, indicator) in active_indicators.models {
             indicators_map
-                .entry(indicator.symbol.clone())
-                .and_modify(|val| {
-                    val.insert(indicator.strategy_id);
-                })
+                .entry(indicator.symbol)
                 .or_insert_with(HashSet::new)
                 .insert(indicator.strategy_id);
         }
 
-        // RUNNING
-        if let Err(err) =
-            SubscribedIndicators::<Cache>::set_status_cache(env, LifecycleState::Running).await
-        {
-            return Err(Response {
-                code: 500,
-                message: err,
-            });
-        };
+        let indicators_vec: Vec<(String, Vec<i32>)> = indicators_map
+            .into_iter()
+            .map(|(k, v)| (k, v.into_iter().collect()))
+            .collect();
 
-        if let Err(err) =
-            SubscribedIndicators::<Cache>::set_subscribed_indicators_cache(env, indicators_map)
-                .await
-        {
-            return Err(Response {
-                code: 500,
-                message: err,
-            });
-        };
+        // RUNNING
+        self.set_state(environment, LifecycleState::Running)
+            .await
+            .map_err(Response::server_error)?;
+
+        self.set_all(environment, indicators_vec)
+            .await
+            .map_err(Response::server_error)?;
 
         Ok(())
     }
 
-    pub async fn stop_subscribed_indicators_core(self) -> Result<(), Response> {
-        let env = self.environment;
-
+    pub async fn stop_subscribed_indicators(
+        &self,
+        environment: Environments,
+    ) -> Result<(), Response> {
         // STOPPING
-        if let Err(err) =
-            SubscribedIndicators::<Cache>::set_status_cache(env, LifecycleState::Stopping).await
-        {
-            return Err(Response {
-                code: 500,
-                message: err,
-            });
-        };
+        self.set_state(environment, LifecycleState::Stopping)
+            .await
+            .map_err(Response::server_error)?;
 
-        if let Err(err) =
-            SubscribedIndicators::<Cache>::remove_all_subscribed_indicators_cache(env).await
-        {
-            return Err(Response {
-                code: 500,
-                message: err,
-            });
-        };
+        self.remove_all(environment)
+            .await
+            .map_err(Response::server_error)?;
 
         // OFF
-        if let Err(err) =
-            SubscribedIndicators::<Cache>::set_status_cache(env, LifecycleState::Off).await
-        {
-            return Err(Response {
-                code: 500,
-                message: err,
-            });
-        };
+        self.set_state(environment, LifecycleState::Off)
+            .await
+            .map_err(Response::server_error)?;
 
         Ok(())
     }
 
-    pub async fn reset_subscribed_indicators_core(self) -> Result<(), Response> {
-        SubscribedIndicators::<Cache>::reset_subscribed_indicators_cache(self.environment)
+    pub async fn reset_subscribed_indicators(
+        &self,
+        environment: Environments,
+    ) -> Result<(), Response> {
+        self.reset(environment)
             .await
             .map_err(Response::server_error)
     }
 
-    pub async fn get_all_unique_symbols_core() -> Result<Vec<String>, String> {
+    pub async fn get_all_unique_symbols(&self) -> Result<Vec<String>, String> {
         let mut symbols = std::collections::HashSet::new();
 
         for env in [Environments::DEV, Environments::PROD] {
-            if let Some(indicators) = SubscribedIndicators::new(env)
-                .get_subscribed_indicators()
-                .await
-            {
-                symbols.extend(indicators.keys().cloned());
+            if let Some(indicators) = self.get_all(env).await {
+                for key in indicators.models.keys() {
+                    symbols.insert(key.clone());
+                }
             }
         }
 

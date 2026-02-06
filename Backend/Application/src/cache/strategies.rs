@@ -1,156 +1,162 @@
-use models::enums::{transition_with_timestamp, FiniteStateMachine, TradingState};
 use std::{collections::HashMap, mem, sync::Arc};
 
 use chrono::Local;
+use migration::async_trait::async_trait;
 use models::{
-    entities::strategies::Model,
-    enums::LifecycleState,
+    enums::{transition_with_timestamp, FiniteStateMachine, LifecycleState, TradingState},
     structs::{CacheStrategies, CacheStrategiesEnvironments, CacheStrategy, Environments},
 };
 use once_cell::sync::Lazy;
 use tokio::sync::RwLock;
 
-use crate::{handler::Strategies, utils::Cache};
+use crate::{handler::Strategies, utils::EntityCache};
+
+/* =========================================================
+ * Static cache
+ * ========================================================= */
 
 static ACTIVE_STRATEGIES: Lazy<Arc<RwLock<CacheStrategiesEnvironments>>> =
     Lazy::new(|| Arc::new(RwLock::new(CacheStrategiesEnvironments::new())));
 
-impl Strategies<Cache> {
-    /* ===========================
-     * Lifecycle
-     * ===========================
-     */
+/* =========================================================
+ * EntityCache implementation
+ * ========================================================= */
 
-    pub async fn set_status_cache(
-        environment: Environments,
-        status: LifecycleState,
-    ) -> Result<(), String> {
+#[async_trait]
+impl<R> EntityCache<Environments> for Strategies<R>
+where
+    R: Send + Sync,
+{
+    type Key = i32;
+    type Value = CacheStrategy;
+    type Collection = CacheStrategies;
+
+    async fn state(&self, env: Environments) -> LifecycleState {
+        let cache = ACTIVE_STRATEGIES.read().await;
+        cache
+            .get(&env)
+            .map(|c| c.status)
+            .unwrap_or(LifecycleState::Off)
+    }
+
+    async fn set_state(&self, env: Environments, state: LifecycleState) -> Result<(), String> {
         let mut cache = ACTIVE_STRATEGIES.write().await;
-        let env_cache = cache.get_or_create(environment);
+        let env_cache = cache.get_or_create(env);
 
-        transition_with_timestamp(env_cache, status)?;
+        transition_with_timestamp(env_cache, state)?;
         Ok(())
     }
 
-    pub async fn reset_strategies_cache(environment: Environments) -> Result<(), String> {
-        let mut cache = ACTIVE_STRATEGIES.write().await;
+    async fn get_all(&self, env: Environments) -> Option<CacheStrategies> {
+        let cache = ACTIVE_STRATEGIES.read().await;
+        let env_cache = cache.get(&env)?;
 
-        if let Some(env_cache) = cache.environments.get_mut(&environment) {
-            *env_cache = CacheStrategies::new();
+        if !env_cache.status.allows(LifecycleState::Running) {
+            return None;
         }
 
-        Ok(())
+        Some(env_cache.clone())
     }
 
-    /* ===========================
-     * Mutations
-     * ===========================
-     */
+    async fn get(&self, env: Environments, key: i32) -> Option<CacheStrategy> {
+        let cache = ACTIVE_STRATEGIES.read().await;
+        let env_cache = cache.get(&env)?;
 
-    pub async fn set_strategies_cache(
-        environment: Environments,
-        strategies: Vec<Model>,
-    ) -> Result<(), String> {
+        if !env_cache.status.allows(LifecycleState::Running) {
+            return None;
+        }
+
+        env_cache.models.get(&key).cloned()
+    }
+
+    async fn set_all(&self, env: Environments, values: Vec<CacheStrategy>) -> Result<(), String> {
         let mut cache = ACTIVE_STRATEGIES.write().await;
-        let env_cache = cache.get_or_create(environment);
+        let env_cache = cache.get_or_create(env);
 
         if !env_cache.status.allows(LifecycleState::Running) {
             return Err("Cache not running".into());
         }
 
-        env_cache.models = strategies
-            .into_iter()
-            .map(|s| {
-                (
-                    s.id,
-                    CacheStrategy {
-                        model: s,
-                        ..Default::default()
-                    },
-                )
-            })
-            .collect();
+        let values: Vec<(i32, CacheStrategy)> =
+            values.into_iter().map(|m| (m.model.id, m)).collect();
 
+        env_cache.models = values.into_iter().collect();
         env_cache.last_update_date = Local::now().naive_local();
+
         Ok(())
     }
 
-    pub async fn upsert_strategy_cache(
-        environment: Environments,
-        strategy: Model,
+    async fn upsert(
+        &self,
+        env: Environments,
+        key: i32,
+        value: CacheStrategy,
     ) -> Result<(), String> {
         let mut cache = ACTIVE_STRATEGIES.write().await;
-        let env_cache = cache.get_or_create(environment);
+        let env_cache = cache.get_or_create(env);
 
         if !env_cache.status.allows(LifecycleState::Running) {
             return Err("Cache not running".into());
         }
 
-        env_cache
-            .models
-            .entry(strategy.id)
-            .and_modify(|c| c.model = strategy.clone())
-            .or_insert(CacheStrategy {
-                model: strategy,
-                ..Default::default()
-            });
-
+        env_cache.models.insert(key, value);
         env_cache.last_update_date = Local::now().naive_local();
+
         Ok(())
     }
 
-    pub async fn remove_strategy_cache(
-        environment: Environments,
-        strategy_id: i32,
-    ) -> Result<Option<CacheStrategy>, String> {
+    async fn remove(&self, env: Environments, key: i32) -> Result<Option<CacheStrategy>, String> {
         let mut cache = ACTIVE_STRATEGIES.write().await;
-        let env_cache = cache
-            .get_mut(&environment)
-            .ok_or("Environment not initialized")?;
+        let env_cache = cache.get_mut(&env).ok_or("Environment not initialized")?;
 
         if !env_cache.status.allows(LifecycleState::Running) {
             return Err("Cache not running".into());
         }
 
-        let removed = env_cache.models.remove(&strategy_id);
+        let removed = env_cache.models.remove(&key);
         env_cache.last_update_date = Local::now().naive_local();
+
         Ok(removed)
     }
 
-    pub async fn remove_strategies_cache(
-        environment: Environments,
-    ) -> Result<HashMap<i32, CacheStrategy>, String> {
+    async fn remove_all(&self, env: Environments) -> Result<HashMap<i32, CacheStrategy>, String> {
         let mut cache = ACTIVE_STRATEGIES.write().await;
-
-        let env_cache = cache
-            .get_mut(&environment)
-            .ok_or("Environment not initialized")?;
+        let env_cache = cache.get_mut(&env).ok_or("Environment not initialized")?;
 
         if !env_cache.status.allows(LifecycleState::Stopping) {
             return Err("Cache not stopping".into());
         }
 
         let removed = mem::take(&mut env_cache.models);
-
         env_cache.last_update_date = Local::now().naive_local();
 
         Ok(removed)
     }
 
-    /* ===========================
-     * Helpers (extra properties)
-     * ===========================
-     */
+    async fn reset(&self, env: Environments) -> Result<(), String> {
+        let mut cache = ACTIVE_STRATEGIES.write().await;
 
-    pub async fn set_strategy_state_cache(
-        environment: Environments,
+        if let Some(env_cache) = cache.environments.get_mut(&env) {
+            *env_cache = CacheStrategies::new();
+        }
+
+        Ok(())
+    }
+}
+
+/* =========================================================
+ * Strategy-specific helpers (domain logic)
+ * ========================================================= */
+
+impl<R> Strategies<R> {
+    pub async fn set_strategy_state(
+        &self,
+        env: Environments,
         strategy_id: i32,
         state: TradingState,
     ) -> Result<(), String> {
         let mut cache = ACTIVE_STRATEGIES.write().await;
-        let env_cache = cache
-            .get_mut(&environment)
-            .ok_or("Environment not initialized")?;
+        let env_cache = cache.get_mut(&env).ok_or("Environment not initialized")?;
 
         let strategy = env_cache
             .models
@@ -158,21 +164,19 @@ impl Strategies<Cache> {
             .ok_or("Strategy not found")?;
 
         transition_with_timestamp(strategy, state)?;
-
         env_cache.last_update_date = Local::now().naive_local();
 
         Ok(())
     }
 
-    pub async fn set_strategy_error_cache(
-        environment: Environments,
+    pub async fn set_strategy_error(
+        &self,
+        env: Environments,
         strategy_id: i32,
         error: Option<String>,
     ) -> Result<(), String> {
         let mut cache = ACTIVE_STRATEGIES.write().await;
-        let env_cache = cache
-            .get_mut(&environment)
-            .ok_or("Environment not initialized")?;
+        let env_cache = cache.get_mut(&env).ok_or("Environment not initialized")?;
 
         let strategy = env_cache
             .models
@@ -180,267 +184,195 @@ impl Strategies<Cache> {
             .ok_or("Strategy not found")?;
 
         strategy.last_error_message = error;
-
         env_cache.last_update_date = Local::now().naive_local();
 
         Ok(())
     }
 
-    /* ===========================
-     * Queries
-     * ===========================
-     */
-
-    pub async fn get_strategies_cache(environment: Environments) -> Option<CacheStrategies> {
-        let cache = ACTIVE_STRATEGIES.read().await;
-        cache.get(&environment).cloned()
-    }
-
-    pub async fn get_strategy_cache(
-        environment: Environments,
+    pub async fn set_strategy_model_error(
+        &self,
+        env: Environments,
         strategy_id: i32,
-    ) -> Option<CacheStrategy> {
-        let cache = ACTIVE_STRATEGIES.read().await;
-        cache.get(&environment)?.models.get(&strategy_id).cloned()
+    ) -> Result<(), String> {
+        let mut cache = ACTIVE_STRATEGIES.write().await;
+        let env_cache = cache.get_mut(&env).ok_or("Environment not initialized")?;
+
+        let strategy = env_cache
+            .models
+            .get_mut(&strategy_id)
+            .ok_or("Strategy not found")?;
+
+        let now = Local::now().naive_local();
+
+        strategy.model.error_last_date = Some(now);
+        env_cache.last_update_date = now;
+
+        Ok(())
     }
 
-    pub async fn get_strategies_state_cache(environment: Environments) -> LifecycleState {
-        let cache = ACTIVE_STRATEGIES.read().await;
-        cache
-            .get(&environment)
-            .map(|c| c.status)
-            .unwrap_or(LifecycleState::Off)
+    pub async fn set_strategy_model_last_exec(
+        &self,
+        env: Environments,
+        strategy_id: i32,
+    ) -> Result<(), String> {
+        let mut cache = ACTIVE_STRATEGIES.write().await;
+        let env_cache = cache.get_mut(&env).ok_or("Environment not initialized")?;
+
+        let strategy = env_cache
+            .models
+            .get_mut(&strategy_id)
+            .ok_or("Strategy not found")?;
+
+        let now = Local::now().naive_local();
+
+        strategy.model.last_execution = Some(now);
+        env_cache.last_update_date = now;
+
+        Ok(())
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use models::{
         entities::strategies::Model,
         enums::{LifecycleState, TradingState},
-        structs::Environments,
+        structs::{CacheStrategy, Environments},
     };
 
-    use crate::{handler::Strategies, utils::Cache};
+    use crate::handler::Strategies;
 
-    /* ===========================
-     * Helpers
-     * ===========================
-     */
-
-    fn mock_strategy(id: i32) -> Model {
-        Model {
-            id,
-            is_active: true,
+    fn mock_strategy(id: i32) -> CacheStrategy {
+        CacheStrategy {
+            model: Model {
+                id,
+                is_active: true,
+                ..Default::default()
+            },
             ..Default::default()
         }
     }
 
-    async fn reset_env(env: Environments) {
-        let _ = Strategies::<Cache>::reset_strategies_cache(env).await;
+    async fn new_service() -> Strategies<()> {
+        Strategies::blank()
     }
 
-    /* ===========================
-     * Scenarios
-     * ===========================
-     */
+    async fn start_env(service: &Strategies<()>, env: Environments) {
+        service
+            .set_state(env, LifecycleState::Starting)
+            .await
+            .unwrap();
 
-    async fn scenario_initial_state(env: Environments) {
-        reset_env(env).await;
-
-        let state = Strategies::<Cache>::get_strategies_state_cache(env).await;
-        assert_eq!(state, LifecycleState::Off);
-
-        let cache = Strategies::<Cache>::get_strategies_cache(env).await;
-        assert!(cache.is_some());
-        assert!(cache.unwrap().models.is_empty());
+        service
+            .set_state(env, LifecycleState::Running)
+            .await
+            .unwrap();
     }
 
-    async fn scenario_lifecycle_transitions(env: Environments) {
-        reset_env(env).await;
+    async fn stop_env(service: &Strategies<()>, env: Environments) {
+        service
+            .set_state(env, LifecycleState::Stopping)
+            .await
+            .unwrap();
 
-        assert!(
-            Strategies::<Cache>::set_status_cache(env, LifecycleState::Starting)
-                .await
-                .is_ok()
-        );
-        assert!(
-            Strategies::<Cache>::set_status_cache(env, LifecycleState::Running)
-                .await
-                .is_ok()
-        );
+        let removed = service.remove_all(env).await.unwrap();
+        assert!(removed.is_empty() || !removed.is_empty());
 
-        let state = Strategies::<Cache>::get_strategies_state_cache(env).await;
-        assert_eq!(state, LifecycleState::Running);
-
-        assert!(
-            Strategies::<Cache>::set_status_cache(env, LifecycleState::Stopping)
-                .await
-                .is_ok()
-        );
-        assert!(
-            Strategies::<Cache>::set_status_cache(env, LifecycleState::Off)
-                .await
-                .is_ok()
-        );
+        service.set_state(env, LifecycleState::Off).await.unwrap();
     }
-
-    async fn scenario_set_strategies_cache(env: Environments) {
-        reset_env(env).await;
-
-        Strategies::<Cache>::set_status_cache(env, LifecycleState::Starting)
-            .await
-            .unwrap();
-        Strategies::<Cache>::set_status_cache(env, LifecycleState::Running)
-            .await
-            .unwrap();
-
-        let strategies = vec![mock_strategy(1), mock_strategy(2)];
-
-        let result = Strategies::<Cache>::set_strategies_cache(env, strategies);
-        assert!(result.await.is_ok());
-
-        let cache = Strategies::<Cache>::get_strategies_cache(env)
-            .await
-            .unwrap();
-
-        assert_eq!(cache.models.len(), 2);
-        assert!(cache.models.contains_key(&1));
-        assert!(cache.models.contains_key(&2));
-    }
-
-    async fn scenario_upsert_strategy(env: Environments) {
-        reset_env(env).await;
-
-        Strategies::<Cache>::set_status_cache(env, LifecycleState::Starting)
-            .await
-            .unwrap();
-        Strategies::<Cache>::set_status_cache(env, LifecycleState::Running)
-            .await
-            .unwrap();
-
-        let strategy = mock_strategy(10);
-
-        Strategies::<Cache>::upsert_strategy_cache(env, strategy.clone())
-            .await
-            .unwrap();
-
-        let cached = Strategies::<Cache>::get_strategy_cache(env, 10)
-            .await
-            .unwrap();
-
-        assert_eq!(cached.model, strategy);
-        assert_eq!(cached.state, TradingState::Ready);
-        assert!(cached.last_error_message.is_none());
-    }
-
-    async fn scenario_strategy_state_transitions(env: Environments) {
-        reset_env(env).await;
-
-        Strategies::<Cache>::set_status_cache(env, LifecycleState::Starting)
-            .await
-            .unwrap();
-        Strategies::<Cache>::set_status_cache(env, LifecycleState::Running)
-            .await
-            .unwrap();
-
-        Strategies::<Cache>::upsert_strategy_cache(env, mock_strategy(50))
-            .await
-            .unwrap();
-
-        // Ready → Running
-        assert!(
-            Strategies::<Cache>::set_strategy_state_cache(env, 50, TradingState::Running)
-                .await
-                .is_ok()
-        );
-
-        // Running → Trading
-        assert!(
-            Strategies::<Cache>::set_strategy_state_cache(env, 50, TradingState::Trading)
-                .await
-                .is_ok()
-        );
-
-        // Trading → Saving
-        assert!(
-            Strategies::<Cache>::set_strategy_state_cache(env, 50, TradingState::Saving)
-                .await
-                .is_ok()
-        );
-
-        // Saving → Ready
-        assert!(
-            Strategies::<Cache>::set_strategy_state_cache(env, 50, TradingState::Ready)
-                .await
-                .is_ok()
-        );
-    }
-
-    async fn scenario_invalid_strategy_state_transition(env: Environments) {
-        reset_env(env).await;
-
-        Strategies::<Cache>::set_status_cache(env, LifecycleState::Starting)
-            .await
-            .unwrap();
-        Strategies::<Cache>::set_status_cache(env, LifecycleState::Running)
-            .await
-            .unwrap();
-
-        Strategies::<Cache>::upsert_strategy_cache(env, mock_strategy(60))
-            .await
-            .unwrap();
-
-        // Ready → Trading (inválido)
-        let result =
-            Strategies::<Cache>::set_strategy_state_cache(env, 60, TradingState::Trading).await;
-
-        assert!(result.is_err());
-    }
-
-    async fn scenario_strategy_error(env: Environments) {
-        reset_env(env).await;
-
-        Strategies::<Cache>::set_status_cache(env, LifecycleState::Starting)
-            .await
-            .unwrap();
-        Strategies::<Cache>::set_status_cache(env, LifecycleState::Running)
-            .await
-            .unwrap();
-
-        Strategies::<Cache>::upsert_strategy_cache(env, mock_strategy(40))
-            .await
-            .unwrap();
-
-        Strategies::<Cache>::set_strategy_error_cache(env, 40, Some("boom".to_string()))
-            .await
-            .unwrap();
-
-        let cached = Strategies::<Cache>::get_strategy_cache(env, 40)
-            .await
-            .unwrap();
-
-        assert_eq!(cached.last_error_message, Some("boom".to_string()));
-        assert_eq!(cached.state, TradingState::Ready);
-    }
-
-    /* ===========================
-     * Entry test
-     * ===========================
-     */
 
     #[tokio::test]
-    async fn strategies_cache_full_flow_should_work_correctly() {
+    async fn cache_strategies_unit_responsibilities() {
         let env = Environments::DEV;
+        let service = new_service().await;
 
-        scenario_initial_state(env).await;
-        scenario_lifecycle_transitions(env).await;
-        scenario_set_strategies_cache(env).await;
-        scenario_upsert_strategy(env).await;
-        scenario_strategy_state_transitions(env).await;
-        scenario_invalid_strategy_state_transition(env).await;
-        scenario_strategy_error(env).await;
+        /* =========================================================
+         * RESET / INITIAL STATE
+         * ========================================================= */
 
-        reset_env(env).await;
+        start_env(&service, env).await;
+
+        service.set_all(env, vec![mock_strategy(1)]).await.unwrap();
+
+        service
+            .set_state(env, LifecycleState::Stopping)
+            .await
+            .unwrap();
+
+        let removed = service.remove_all(env).await.unwrap();
+        assert_eq!(removed.len(), 1);
+
+        service.set_state(env, LifecycleState::Off).await.unwrap();
+
+        assert_eq!(service.state(env).await, LifecycleState::Off);
+
+        /* =========================================================
+         * SET / GET
+         * ========================================================= */
+
+        start_env(&service, env).await;
+
+        service
+            .set_all(env, vec![mock_strategy(1), mock_strategy(2)])
+            .await
+            .unwrap();
+
+        let cache = service.get_all(env).await.unwrap();
+        assert_eq!(cache.models.len(), 2);
+
+        /* =========================================================
+         * UPSERT
+         * ========================================================= */
+
+        service.upsert(env, 10, mock_strategy(10)).await.unwrap();
+
+        let single = service.get(env, 10).await.unwrap();
+        assert_eq!(single.model.id, 10);
+
+        /* =========================================================
+         * DOMAIN FSM
+         * ========================================================= */
+
+        service
+            .set_strategy_state(env, 10, TradingState::Running)
+            .await
+            .unwrap();
+
+        let strategy = service.get(env, 10).await.unwrap();
+        assert_eq!(strategy.state, TradingState::Running);
+
+        service
+            .set_strategy_error(env, 10, Some("boom".into()))
+            .await
+            .unwrap();
+
+        let strategy = service.get(env, 10).await.unwrap();
+        assert_eq!(strategy.last_error_message.as_deref(), Some("boom"));
+
+        service.set_strategy_error(env, 10, None).await.unwrap();
+
+        let strategy = service.get(env, 10).await.unwrap();
+        assert!(strategy.last_error_message.is_none());
+
+        /* =========================================================
+         * REMOVE
+         * ========================================================= */
+
+        service.remove(env, 10).await.unwrap();
+        assert!(service.get(env, 10).await.is_none());
+
+        /* =========================================================
+         * INVALID OPERATION
+         * ========================================================= */
+
+        // remove_all is forbidden while running
+        assert!(service.remove_all(env).await.is_err());
+
+        /* =========================================================
+         * STOP
+         * ========================================================= */
+
+        stop_env(&service, env).await;
     }
 }

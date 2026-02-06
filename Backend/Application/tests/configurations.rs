@@ -1,17 +1,17 @@
-use application::{handler::Configurations, utils::Cache};
+use application::handler::Configurations;
 use models::structs::Configuration;
 
 #[tokio::test]
 async fn full_configuration_cache_flow_should_work_correctly() {
     // Initial state
-    let initial = Configurations::<Cache>::get_configuration_cache().await;
+    let initial = Configurations::get_configuration().await;
     assert!(initial.is_none());
 
     // Set configuration
     let config = Configuration::default();
-    Configurations::<Cache>::set_configuration_cache(config.clone()).await;
+    Configurations::set_configuration(config.clone()).await;
 
-    let cached = Configurations::<Cache>::get_configuration_cache().await;
+    let cached = Configurations::get_configuration().await;
     assert_eq!(cached, Some(config.clone()));
 
     // Overwrite configuration
@@ -19,8 +19,8 @@ async fn full_configuration_cache_flow_should_work_correctly() {
         dev_database_url: "Test 1".to_string(),
         ..Default::default()
     };
-    Configurations::<Cache>::set_configuration_cache(new_config.clone()).await;
+    Configurations::set_configuration(new_config.clone()).await;
 
-    let cached_again = Configurations::<Cache>::get_configuration_cache().await;
+    let cached_again = Configurations::get_configuration().await;
     assert_eq!(cached_again, Some(new_config));
 }

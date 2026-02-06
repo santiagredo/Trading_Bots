@@ -1,51 +1,48 @@
+use crate::utils::handle_db_error;
+use crate::{handler::Tasks, utils::Response};
 use chrono::Local;
-use function_name::named;
+use models::structs::TaskRequest;
 use models::{
     entities::tasks::{self, Column, Entity, Model},
     enums::OrderDirection,
-    structs::{ErrorLogRequest, QueryOptions},
+    structs::QueryOptions,
 };
 use sea_orm::{
     ActiveModelTrait, ActiveValue, ColumnTrait, Condition, DatabaseConnection, EntityTrait,
     QueryFilter, QueryOrder, QuerySelect,
 };
 
-use crate::{
-    handler::{ErrorLogs, Tasks},
-    log_db_error,
-    utils::{Data, Response},
-};
-
-impl Tasks<Data> {
-    #[named]
+impl Tasks {
+    // #[named]
     pub async fn select_tasks_data(
         self,
         db: &DatabaseConnection,
+        task: TaskRequest,
         query: Option<QueryOptions>,
     ) -> Result<Vec<Model>, Response> {
         let mut condition = Condition::all();
 
-        if let Some(id) = self.model.id {
+        if let Some(id) = task.id {
             condition = condition.add(Column::Id.eq(id));
         }
 
-        if let Some(nick) = self.model.nick.as_ref() {
+        if let Some(nick) = task.nick.as_ref() {
             condition = condition.add(Column::Nick.eq(nick.clone()));
         }
 
-        if let Some(description) = self.model.description.as_ref() {
+        if let Some(description) = task.description.as_ref() {
             condition = condition.add(Column::Description.eq(description.clone()));
         }
 
-        if let Some(is_active) = self.model.is_active {
+        if let Some(is_active) = task.is_active {
             condition = condition.add(Column::IsActive.eq(is_active));
         }
 
-        if let Some(cooldown) = self.model.cooldown {
+        if let Some(cooldown) = task.cooldown {
             condition = condition.add(Column::Cooldown.eq(cooldown));
         }
 
-        if let Some(delay) = self.model.delay {
+        if let Some(delay) = task.delay {
             condition = condition.add(Column::Delay.eq(delay));
         }
 
@@ -73,7 +70,13 @@ impl Tasks<Data> {
         }
 
         match stmt.all(db).await {
-            Err(err) => log_db_error!(self, err),
+            Err(err) => {
+                // let _ = ErrorLogs::new(self.clone())
+                //     .insert(log_trait_db_error!(err, req))
+                //     .await;
+
+                Err(handle_db_error(&err))
+            }
             Ok(val) => Ok(val),
         }
     }
@@ -91,37 +94,47 @@ impl Tasks<Data> {
         }
     }
 
-    #[named]
-    pub async fn update_task_data(self, db: &DatabaseConnection) -> Result<Model, Response> {
-        let mut task = tasks::ActiveModel {
-            id: ActiveValue::Unchanged(self.model.id.unwrap_or_default()),
+    // #[named]
+    pub async fn update_task_data(
+        self,
+        db: &DatabaseConnection,
+        task: TaskRequest,
+    ) -> Result<Model, Response> {
+        let mut active_task = tasks::ActiveModel {
+            id: ActiveValue::Unchanged(task.id.unwrap_or_default()),
             ..Default::default()
         };
 
-        if let Some(is_active) = self.model.is_active {
-            task.is_active = ActiveValue::Set(is_active);
+        if let Some(is_active) = task.is_active {
+            active_task.is_active = ActiveValue::Set(is_active);
         }
 
-        if let Some(cooldown) = self.model.cooldown {
-            task.cooldown = ActiveValue::Set(cooldown.into());
+        if let Some(cooldown) = task.cooldown {
+            active_task.cooldown = ActiveValue::Set(cooldown.into());
         }
 
-        if let Some(delay) = self.model.delay {
-            task.delay = ActiveValue::Set(delay.into());
+        if let Some(delay) = task.delay {
+            active_task.delay = ActiveValue::Set(delay.into());
         }
 
-        if let Some(last_update) = self.model.last_update {
-            task.last_update = ActiveValue::Set(last_update.into())
+        if let Some(last_update) = task.last_update {
+            active_task.last_update = ActiveValue::Set(last_update.into())
         } else {
-            task.last_update = ActiveValue::Set(Local::now().naive_local().into())
+            active_task.last_update = ActiveValue::Set(Local::now().naive_local().into())
         }
 
-        if let Some(last_execution) = self.model.last_execution {
-            task.last_execution = ActiveValue::Set(last_execution.into())
+        if let Some(last_execution) = task.last_execution {
+            active_task.last_execution = ActiveValue::Set(last_execution.into())
         }
 
-        match task.update(db).await {
-            Err(err) => log_db_error!(self, err),
+        match active_task.update(db).await {
+            Err(err) => {
+                // let _ = ErrorLogs::new(self.clone())
+                //     .insert(log_trait_db_error!(err, req))
+                //     .await;
+
+                Err(handle_db_error(&err))
+            }
             Ok(val) => Ok(val),
         }
     }

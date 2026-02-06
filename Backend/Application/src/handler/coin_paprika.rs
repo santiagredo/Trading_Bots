@@ -1,49 +1,29 @@
-use std::marker::PhantomData;
-
+use crate::{
+    handler::{Pairs, Tickers},
+    utils::{EntityCache, RepoFactory},
+};
 use chrono::DateTime;
-use models::structs::{CoinPaprikaTicker, Environments, Quote};
+use models::structs::{CoinPaprikaTicker, Environments, PairRequest, Quote};
 use sea_orm::prelude::Decimal;
 use tracing::error_span;
 
-use crate::{
-    handler::{Pairs, Tickers},
-    utils::Types,
-};
-
-pub struct CoinPaprika<Phase = Types> {
-    phase: PhantomData<Phase>,
-    pub environment: Environments,
-}
+pub struct CoinPaprika;
 
 impl CoinPaprika {
-    pub fn default() -> Self {
-        Self {
-            phase: PhantomData::<Types>,
-            environment: Environments::DEV,
-        }
+    pub fn new() -> Self {
+        Self
     }
 
-    pub fn with_env(self, environment: Environments) -> Self {
-        Self {
-            phase: PhantomData::<Types>,
-            environment,
-        }
-    }
+    pub async fn update_pairs_statistics(self, factory: RepoFactory, environment: Environments) {
+        let repo = factory.repo();
+        let pair_request = PairRequest::default();
 
-    pub async fn update_pairs_statistics(self) {
-        // let start = Instant::now();
-        let environment = self.environment;
-
-        let mut stored_pairs = match Pairs::default()
-            .with_env(environment)
-            .select_pairs(None)
-            .await
-        {
+        let mut stored_pairs = match Pairs::new(repo).select_many(pair_request, None).await {
             Ok(pairs) if !pairs.is_empty() => pairs,
             _ => return,
         };
 
-        let coinpaprika_tickers = match Self::default().get_tickers().await {
+        let coinpaprika_tickers = match Self::new().get_tickers(factory.clone()).await {
             Ok(tickers) if !tickers.is_empty() => tickers,
             _ => return,
         };
@@ -122,12 +102,10 @@ impl CoinPaprika {
                     pair.last_price = ticker.last_price
                 }
 
-                let model = match Pairs::default()
-                    .with_env(environment)
-                    .from_model(pair.clone())
-                    .update_pair()
-                    .await
-                {
+                let req = Pairs::into_request(pair.clone());
+                let repo = factory.repo();
+
+                let model = match Pairs::new(repo).update(req).await {
                     Err(err) => {
                         error_span!("CoinPaprika - Pair - Update - Error", pair = ?pair, quote = ?quote, error = ?err);
                         dbg!(eprint!("{err:?} \n"));
@@ -136,27 +114,12 @@ impl CoinPaprika {
                     Ok(val) => val,
                 };
 
-                let _ = Pairs::default()
-                    .with_env(environment)
-                    .from_model(model)
-                    .upsert_pair()
-                    .await;
+                let _ = Pairs::blank().upsert(environment, model.id, model).await;
             }
         }
     }
-}
 
-impl<Phase> CoinPaprika<Phase> {
-    pub fn next_phase<Next>(self) -> CoinPaprika<Next> {
-        CoinPaprika {
-            phase: PhantomData::<Next>,
-            environment: self.environment,
-        }
-    }
-}
-
-impl CoinPaprika<Types> {
-    pub async fn get_tickers(self) -> Result<Vec<CoinPaprikaTicker>, String> {
-        self.next_phase().get_tickers_core().await
+    pub async fn get_tickers(self, factory: RepoFactory) -> Result<Vec<CoinPaprikaTicker>, String> {
+        self.get_tickers_core(factory).await
     }
 }

@@ -1,4 +1,4 @@
-use application::{handler::Indicators, utils::Cache};
+use application::{handler::Indicators, utils::EntityCache};
 use models::{entities::indicators::Model, enums::LifecycleState, structs::Environments};
 
 fn mock_indicator(id: i32) -> Model {
@@ -13,44 +13,50 @@ fn mock_indicator(id: i32) -> Model {
 #[tokio::test]
 async fn full_indicators_cache_flow_should_work_correctly() {
     let env = Environments::DEV;
+    let service = Indicators::blank();
 
     /* ===========================
      * INITIAL STATE
      * ===========================
      */
 
-    let reset = Indicators::<Cache>::reset_indicators_cache(env).await;
-    assert!(reset.is_ok());
+    service.reset_indicators(env).await.unwrap();
 
-    let off = Indicators::<Cache>::set_status_cache(env, LifecycleState::Off).await;
-    assert!(off.is_err());
-
-    let status = Indicators::<Cache>::get_cache_state(env).await;
+    let status = service.state(env).await;
     assert_eq!(status, LifecycleState::Off);
 
-    let cache = Indicators::<Cache>::get_indicators_cache(env).await;
-    assert!(cache.is_some_and(|val| val.models.is_empty()));
+    let cache = service.get_all(env).await;
+    assert!(cache.is_none());
+
+    /* ===========================
+     * START INDICATORS
+     * ===========================
+     */
+
+    service
+        .set_state(env, LifecycleState::Starting)
+        .await
+        .unwrap();
+
+    service
+        .set_state(env, LifecycleState::Running)
+        .await
+        .unwrap();
+
+    let cache = service.get_all(env).await.unwrap();
+    assert_eq!(cache.status, LifecycleState::Running);
+    assert!(cache.models.is_empty());
 
     /* ===========================
      * LOAD MULTIPLE INDICATORS
      * ===========================
      */
 
-    let starting = Indicators::<Cache>::set_status_cache(env, LifecycleState::Starting).await;
-    assert!(starting.is_ok());
-
     let indicators = vec![mock_indicator(1), mock_indicator(2)];
 
-    let running = Indicators::<Cache>::set_status_cache(env, LifecycleState::Running).await;
-    assert!(running.is_ok());
+    service.set_all(env, indicators).await.unwrap();
 
-    Indicators::<Cache>::set_indicators_cache(env, indicators)
-        .await
-        .unwrap();
-
-    let cache = Indicators::<Cache>::get_indicators_cache(env)
-        .await
-        .unwrap();
+    let cache = service.get_all(env).await.unwrap();
     assert_eq!(cache.models.len(), 2);
     assert_eq!(cache.status, LifecycleState::Running);
 
@@ -60,13 +66,10 @@ async fn full_indicators_cache_flow_should_work_correctly() {
      */
 
     let extra = mock_indicator(3);
-    Indicators::<Cache>::upsert_indicator_cache(env, extra.clone())
-        .await
-        .unwrap();
 
-    let single = Indicators::<Cache>::get_indicator_cache(env, 3)
-        .await
-        .unwrap();
+    service.upsert(env, extra.id, extra.clone()).await.unwrap();
+
+    let single = service.get(env, 3).await.unwrap();
     assert_eq!(single, extra);
 
     /* ===========================
@@ -74,18 +77,16 @@ async fn full_indicators_cache_flow_should_work_correctly() {
      * ===========================
      */
 
-    Indicators::<Cache>::set_status_cache(env, LifecycleState::Stopping)
+    service
+        .set_state(env, LifecycleState::Stopping)
         .await
         .unwrap();
 
-    Indicators::<Cache>::remove_indicators_cache(env)
-        .await
-        .unwrap();
+    let removed = service.remove_all(env).await.unwrap();
+    assert_eq!(removed.len(), 3);
 
-    Indicators::<Cache>::set_status_cache(env, LifecycleState::Off)
-        .await
-        .unwrap();
+    service.set_state(env, LifecycleState::Off).await.unwrap();
 
-    let final_cache = Indicators::<Cache>::get_indicators_cache(env).await;
-    assert!(final_cache.is_some_and(|val| val.models.is_empty()));
+    let final_cache = service.get_all(env).await;
+    assert!(final_cache.is_none());
 }

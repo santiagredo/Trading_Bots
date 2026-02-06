@@ -1,27 +1,33 @@
-use models::{entities::integration_log::Model, structs::QueryOptions};
-
 use crate::{
-    handler::{IntegrationLogs, DBC},
-    utils::{Core, Response},
+    handler::IntegrationLogs,
+    utils::{Repository, Response},
+};
+use models::{
+    entities::integration_log::Model,
+    structs::{IntegrationLogRequest, QueryOptions},
 };
 
-impl IntegrationLogs<Core> {
-    pub async fn insert_log_core(self) -> Result<Model, Response> {
-        let env = self.environment;
-
-        self.next_phase()
-            .insert_log_data(&DBC::db(&env).await?)
-            .await
+impl<R> IntegrationLogs<R>
+where
+    R: Repository<IntegrationLogRequest, Model>,
+{
+    pub async fn insert(&self, req: IntegrationLogRequest) -> Result<Model, Response> {
+        self.repo.insert(req).await
     }
 
-    pub async fn select_logs_core(
-        self,
+    pub async fn select(&self, req: IntegrationLogRequest) -> Result<Option<Model>, Response> {
+        self.repo.select(req).await
+    }
+
+    pub async fn select_many(
+        &self,
+        req: IntegrationLogRequest,
         query: Option<QueryOptions>,
     ) -> Result<Vec<Model>, Response> {
-        let env = self.environment;
+        self.repo.select_many(req, query).await
+    }
 
-        self.next_phase()
-            .select_logs_data(&DBC::db(&env).await?, query)
-            .await
+    pub async fn delete(&self, req: IntegrationLogRequest) -> Result<u64, Response> {
+        self.repo.delete(req).await
     }
 }

@@ -1,23 +1,30 @@
-use std::time::Instant;
-
-use function_name::named;
-use models::structs::{CoinPaprikaTicker, IntegrationLogRequest};
-
 use crate::{
     handler::{CoinPaprika, IntegrationLogs},
     static_strings::COINPAPRIKA_TICKERS_ENDPOINT,
-    utils::Core,
+    utils::{AnyRepo, RepoFactory},
 };
+use function_name::named;
+use models::{
+    entities::integration_log,
+    structs::{CoinPaprikaTicker, IntegrationLogRequest},
+};
+use std::time::Instant;
 
 const INTEGRATION_NAME: &'static str = "COINPAPRIKA";
 
-impl CoinPaprika<Core> {
+impl CoinPaprika {
     #[named]
-    pub async fn get_tickers_core(self) -> Result<Vec<CoinPaprikaTicker>, String> {
-        let environment = self.environment;
+    pub async fn get_tickers_core(
+        self,
+        factory: RepoFactory,
+    ) -> Result<Vec<CoinPaprikaTicker>, String> {
+        let integration_logs_repo: AnyRepo<IntegrationLogRequest, integration_log::Model> =
+            factory.repo();
+
         let start = Instant::now();
 
-        let result = self.next_phase().get_tickers_integration().await;
+        let result: Result<reqwest::Response, reqwest::Error> =
+            self.get_tickers_integration().await;
 
         let execution_time_ms = start.elapsed().as_millis();
 
@@ -62,7 +69,9 @@ impl CoinPaprika<Core> {
         });
 
         // Persist log
-        let _ = IntegrationLogs::new(&environment, log).insert_log().await;
+        let _ = IntegrationLogs::new(integration_logs_repo)
+            .insert(log)
+            .await;
 
         // Final return
         outcome

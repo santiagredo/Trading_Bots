@@ -1,42 +1,20 @@
-use std::marker::PhantomData;
-
+use crate::utils::Response;
 use models::structs::Environments;
 use tokio_util::sync::CancellationToken;
 
-use crate::utils::{Response, Types};
-
 #[derive(Debug, Default)]
-pub struct Cancellations<Phase = Types> {
-    phase: PhantomData<Phase>,
-    pub environment: Environments,
-}
-
-impl<Phase> Cancellations<Phase> {
-    pub fn next_phase<Next>(self) -> Cancellations<Next> {
-        Cancellations {
-            phase: PhantomData::<Next>,
-            environment: self.environment,
-        }
-    }
-}
+pub struct Cancellations;
 
 impl Cancellations {
-    pub fn new(environment: Environments) -> Self {
-        Self {
-            phase: PhantomData::<Types>,
-            environment,
-        }
+    pub fn new() -> Self {
+        Self
     }
 
-    pub async fn get_runtime_token(self) -> Option<CancellationToken> {
-        self.next_phase().get_runtime_token_core().await
+    pub async fn get_runtime_token(self, env: Environments) -> Option<CancellationToken> {
+        self.get_runtime_token_core(env).await
     }
 
-    pub async fn start_runtime(self) -> Result<CancellationToken, Response> {
-        self.next_phase().start_runtime_core().await
-    }
-
-    pub async fn stop_runtime(self) {
-        self.next_phase().stop_runtime_core().await
+    pub async fn start_runtime(self, env: Environments) -> Result<CancellationToken, Response> {
+        self.start_runtime_core(env).await
     }
 }

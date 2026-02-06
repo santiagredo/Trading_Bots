@@ -1,6 +1,7 @@
 use std::{collections::HashMap, mem, sync::Arc};
 
 use chrono::Local;
+use migration::async_trait::async_trait;
 use models::{
     entities::integrations::Model,
     enums::{transition_with_timestamp, FiniteStateMachine, LifecycleState},
@@ -9,89 +10,105 @@ use models::{
 use once_cell::sync::Lazy;
 use tokio::sync::RwLock;
 
-use crate::{handler::Integrations, utils::Cache};
+use crate::{handler::Integrations, utils::EntityCache};
 
 static ACTIVE_INTEGRATIONS: Lazy<Arc<RwLock<CacheIntegrationsEnvironments>>> =
     Lazy::new(|| Arc::new(RwLock::new(CacheIntegrationsEnvironments::new())));
 
-impl Integrations<Cache> {
-    pub async fn set_status_cache(
-        environment: Environments,
-        status: LifecycleState,
-    ) -> Result<(), String> {
-        let mut cache = ACTIVE_INTEGRATIONS.write().await;
-        let env_cache = cache.get_or_create(environment);
+#[async_trait]
+impl<R> EntityCache<Environments> for Integrations<R>
+where
+    R: Send + Sync,
+{
+    type Key = i32;
+    type Value = Model;
+    type Collection = CacheIntegrations;
 
-        transition_with_timestamp(env_cache, status)?;
+    async fn state(&self, env: Environments) -> LifecycleState {
+        let cache = ACTIVE_INTEGRATIONS.read().await;
+        cache
+            .get(&env)
+            .map(|c| c.status)
+            .unwrap_or(LifecycleState::Off)
+    }
+
+    async fn set_state(&self, env: Environments, state: LifecycleState) -> Result<(), String> {
+        let mut cache = ACTIVE_INTEGRATIONS.write().await;
+        let env_cache = cache.get_or_create(env);
+
+        transition_with_timestamp(env_cache, state)?;
         Ok(())
     }
 
-    pub async fn set_integrations_cache(
-        environment: Environments,
-        integrations: Vec<Model>,
-    ) -> Result<(), String> {
-        let mut cache = ACTIVE_INTEGRATIONS.write().await;
-        let env_cache = cache.get_or_create(environment);
+    async fn get_all(&self, env: Environments) -> Option<CacheIntegrations> {
+        let cache = ACTIVE_INTEGRATIONS.read().await;
+        let env_cache = cache.get(&env)?;
 
         if !env_cache.status.allows(LifecycleState::Running) {
-            return Err(format!(
-                "Cannot load integrations: cache not running ({:?})",
-                env_cache.status
-            ));
+            return None;
         }
 
-        env_cache.models = integrations.into_iter().map(|a| (a.id, a)).collect();
-
-        env_cache.last_update_date = Local::now().naive_local();
-
-        Ok(())
+        Some(env_cache.clone())
     }
 
-    pub async fn upsert_integration_cache(
-        environment: Environments,
-        integration: Model,
-    ) -> Result<(), String> {
-        let mut cache = ACTIVE_INTEGRATIONS.write().await;
-        let env_cache = cache.get_or_create(environment);
+    async fn get(&self, env: Environments, key: i32) -> Option<Model> {
+        let cache = ACTIVE_INTEGRATIONS.read().await;
+        let env_cache = cache.get(&env)?;
 
         if !env_cache.status.allows(LifecycleState::Running) {
-            return Err("Cache not running".into());
+            return None;
         }
 
-        env_cache.models.insert(integration.id, integration);
-
-        env_cache.last_update_date = Local::now().naive_local();
-
-        Ok(())
+        env_cache.models.get(&key).cloned()
     }
 
-    pub async fn remove_integration_cache(
-        environment: Environments,
-        integration_id: i32,
-    ) -> Result<Option<Model>, String> {
+    async fn set_all(&self, env: Environments, values: Vec<Model>) -> Result<(), String> {
         let mut cache = ACTIVE_INTEGRATIONS.write().await;
-        let env_cache = cache
-            .get_mut(&environment)
-            .ok_or("Environment not initialized")?;
+        let env_cache = cache.get_or_create(env);
 
         if !env_cache.status.allows(LifecycleState::Running) {
             return Err("Cache not running".into());
         }
 
-        let removed = env_cache.models.remove(&integration_id);
+        let values: Vec<(i32, Model)> = values.into_iter().map(|m| (m.id, m)).collect();
 
+        env_cache.models = values.into_iter().collect();
+        env_cache.last_update_date = Local::now().naive_local();
+
+        Ok(())
+    }
+
+    async fn upsert(&self, env: Environments, key: i32, value: Model) -> Result<(), String> {
+        let mut cache = ACTIVE_INTEGRATIONS.write().await;
+        let env_cache = cache.get_or_create(env);
+
+        if !env_cache.status.allows(LifecycleState::Running) {
+            return Err("Cache not running".into());
+        }
+
+        env_cache.models.insert(key, value);
+        env_cache.last_update_date = Local::now().naive_local();
+
+        Ok(())
+    }
+
+    async fn remove(&self, env: Environments, key: i32) -> Result<Option<Model>, String> {
+        let mut cache = ACTIVE_INTEGRATIONS.write().await;
+        let env_cache = cache.get_mut(&env).ok_or("Environment not initialized")?;
+
+        if !env_cache.status.allows(LifecycleState::Running) {
+            return Err("Cache not running".into());
+        }
+
+        let removed = env_cache.models.remove(&key);
         env_cache.last_update_date = Local::now().naive_local();
 
         Ok(removed)
     }
 
-    pub async fn remove_integrations_cache(
-        environment: Environments,
-    ) -> Result<HashMap<i32, Model>, String> {
+    async fn remove_all(&self, env: Environments) -> Result<HashMap<i32, Model>, String> {
         let mut cache = ACTIVE_INTEGRATIONS.write().await;
-        let env_cache = cache
-            .get_mut(&environment)
-            .ok_or("Environment not initialized")?;
+        let env_cache = cache.get_mut(&env).ok_or("Environment not initialized")?;
 
         if !env_cache.status.allows(LifecycleState::Stopping) {
             return Err("Cache not stopping".into());
@@ -104,35 +121,10 @@ impl Integrations<Cache> {
         Ok(removed)
     }
 
-    pub async fn get_integrations_cache(environment: Environments) -> Option<CacheIntegrations> {
-        let cache = ACTIVE_INTEGRATIONS.read().await;
-        cache.get(&environment).cloned()
-    }
-
-    pub async fn get_integration_cache(
-        environment: Environments,
-        integration_id: i32,
-    ) -> Option<Model> {
-        let cache = ACTIVE_INTEGRATIONS.read().await;
-        cache
-            .get(&environment)?
-            .models
-            .get(&integration_id)
-            .cloned()
-    }
-
-    pub async fn get_cache_state(environment: Environments) -> LifecycleState {
-        let cache = ACTIVE_INTEGRATIONS.read().await;
-        cache
-            .get(&environment)
-            .map(|c| c.status)
-            .unwrap_or(LifecycleState::Off)
-    }
-
-    pub async fn reset_integrations_cache(environment: Environments) -> Result<(), String> {
+    async fn reset(&self, env: Environments) -> Result<(), String> {
         let mut cache = ACTIVE_INTEGRATIONS.write().await;
 
-        if let Some(env_cache) = cache.environments.get_mut(&environment) {
+        if let Some(env_cache) = cache.environments.get_mut(&env) {
             *env_cache = CacheIntegrations::new();
         }
 
@@ -144,7 +136,7 @@ impl Integrations<Cache> {
 mod tests {
     use models::{entities::integrations::Model, enums::LifecycleState, structs::Environments};
 
-    use crate::{handler::Integrations, utils::Cache};
+    use crate::{handler::Integrations, utils::EntityCache};
 
     // =========================
     // Helpers
@@ -157,140 +149,144 @@ mod tests {
         }
     }
 
-    async fn start_env(env: Environments) {
-        let _ = Integrations::<Cache>::set_status_cache(env, LifecycleState::Starting).await;
-        let _ = Integrations::<Cache>::set_status_cache(env, LifecycleState::Running).await;
+    async fn new_service() -> Integrations<()> {
+        Integrations::blank()
     }
 
-    async fn stop_env(env: Environments) {
-        let _ = Integrations::<Cache>::set_status_cache(env, LifecycleState::Stopping).await;
-
-        let removed = Integrations::<Cache>::remove_integrations_cache(env)
+    async fn start_env(service: &Integrations<()>, env: Environments) {
+        service
+            .set_state(env, LifecycleState::Starting)
             .await
-            .expect("remove_integrations_cache should work in Stopping");
+            .unwrap();
 
+        service
+            .set_state(env, LifecycleState::Running)
+            .await
+            .unwrap();
+    }
+
+    async fn stop_env(service: &Integrations<()>, env: Environments) {
+        service
+            .set_state(env, LifecycleState::Stopping)
+            .await
+            .unwrap();
+
+        let removed = service.remove_all(env).await.unwrap();
         assert!(removed.is_empty() || !removed.is_empty());
 
-        let _ = Integrations::<Cache>::set_status_cache(env, LifecycleState::Off).await;
+        service.set_state(env, LifecycleState::Off).await.unwrap();
     }
 
     // =========================
-    // Scenarios (unit responsibilities)
+    // Scenarios
     // =========================
 
-    async fn scenario_reset_env_clears_state(env: Environments) {
-        start_env(env).await;
+    async fn scenario_reset_env_clears_state(service: &Integrations<()>, env: Environments) {
+        start_env(service, env).await;
 
-        let integrations = vec![mock_integration(1)];
-        Integrations::<Cache>::set_integrations_cache(env, integrations)
+        service
+            .set_all(env, vec![mock_integration(1)])
             .await
             .unwrap();
 
-        let _ = Integrations::<Cache>::set_status_cache(env, LifecycleState::Stopping).await;
-
-        let removed = Integrations::<Cache>::remove_integrations_cache(env)
+        service
+            .set_state(env, LifecycleState::Stopping)
             .await
             .unwrap();
+
+        let removed = service.remove_all(env).await.unwrap();
         assert_eq!(removed.len(), 1);
 
-        let cache = Integrations::<Cache>::get_integrations_cache(env)
-            .await
-            .unwrap();
-        assert!(cache.models.is_empty());
+        let cache = service.get_all(env).await;
+        assert!(cache.is_none());
 
-        let _ = Integrations::<Cache>::set_status_cache(env, LifecycleState::Off).await;
+        service.set_state(env, LifecycleState::Off).await.unwrap();
 
-        let status = Integrations::<Cache>::get_cache_state(env).await;
+        let status = service.state(env).await;
         assert_eq!(status, LifecycleState::Off);
     }
 
-    async fn scenario_set_integrations_cache(env: Environments) {
-        start_env(env).await;
+    async fn scenario_set_integrations_cache(service: &Integrations<()>, env: Environments) {
+        start_env(service, env).await;
 
         let integrations = vec![mock_integration(1), mock_integration(2)];
 
-        Integrations::<Cache>::set_integrations_cache(env, integrations)
-            .await
-            .unwrap();
+        service.set_all(env, integrations).await.unwrap();
 
-        let cache = Integrations::<Cache>::get_integrations_cache(env)
-            .await
-            .unwrap();
-        let status = Integrations::<Cache>::get_cache_state(env).await;
+        let cache = service.get_all(env).await.unwrap();
+        let status = service.state(env).await;
 
         assert_eq!(cache.models.len(), 2);
         assert!(cache.models.contains_key(&1));
         assert!(cache.models.contains_key(&2));
         assert_eq!(status, LifecycleState::Running);
 
-        stop_env(env).await;
+        stop_env(service, env).await;
     }
 
-    async fn scenario_upsert_integration_insert(env: Environments) {
-        start_env(env).await;
+    async fn scenario_upsert_integration_insert(service: &Integrations<()>, env: Environments) {
+        start_env(service, env).await;
 
         let integration = mock_integration(10);
-        Integrations::<Cache>::upsert_integration_cache(env, integration.clone())
+
+        service
+            .upsert(env, integration.id, integration.clone())
             .await
             .unwrap();
 
-        let cached = Integrations::<Cache>::get_integration_cache(env, 10)
-            .await
-            .unwrap();
+        let cached = service.get(env, 10).await.unwrap();
+
         assert_eq!(cached, integration);
 
-        stop_env(env).await;
+        stop_env(service, env).await;
     }
 
-    async fn scenario_remove_integration(env: Environments) {
-        start_env(env).await;
+    async fn scenario_remove_integration(service: &Integrations<()>, env: Environments) {
+        start_env(service, env).await;
 
         let integration = mock_integration(20);
-        Integrations::<Cache>::upsert_integration_cache(env, integration)
+
+        service
+            .upsert(env, integration.id, integration)
             .await
             .unwrap();
 
-        let removed = Integrations::<Cache>::remove_integration_cache(env, 20)
-            .await
-            .unwrap();
-
+        let removed = service.remove(env, 20).await.unwrap();
         assert!(removed.is_some());
 
-        let cached = Integrations::<Cache>::get_integration_cache(env, 20).await;
+        let cached = service.get(env, 20).await;
         assert!(cached.is_none());
 
-        stop_env(env).await;
+        stop_env(service, env).await;
     }
 
-    async fn scenario_get_cache_state(env: Environments) {
-        assert_eq!(
-            Integrations::<Cache>::get_cache_state(env).await,
-            LifecycleState::Off
-        );
+    async fn scenario_get_cache_state(service: &Integrations<()>, env: Environments) {
+        assert_eq!(service.state(env).await, LifecycleState::Off);
 
-        start_env(env).await;
+        start_env(service, env).await;
 
-        assert_eq!(
-            Integrations::<Cache>::get_cache_state(env).await,
-            LifecycleState::Running
-        );
+        assert_eq!(service.state(env).await, LifecycleState::Running);
 
-        stop_env(env).await;
+        stop_env(service, env).await;
     }
 
-    async fn scenario_cannot_remove_integrations_when_running(env: Environments) {
-        start_env(env).await;
+    async fn scenario_cannot_remove_integrations_when_running(
+        service: &Integrations<()>,
+        env: Environments,
+    ) {
+        start_env(service, env).await;
 
-        let result = Integrations::<Cache>::remove_integrations_cache(env).await;
+        let result = service.remove_all(env).await;
         assert!(result.is_err());
 
-        stop_env(env).await;
+        stop_env(service, env).await;
     }
 
-    async fn scenario_cannot_set_integrations_when_not_running(env: Environments) {
-        let integrations = vec![mock_integration(1)];
-
-        let result = Integrations::<Cache>::set_integrations_cache(env, integrations).await;
+    async fn scenario_cannot_set_integrations_when_not_running(
+        service: &Integrations<()>,
+        env: Environments,
+    ) {
+        let result = service.set_all(env, vec![mock_integration(1)]).await;
 
         assert!(result.is_err());
     }
@@ -302,13 +298,14 @@ mod tests {
     #[tokio::test]
     async fn cache_integrations_unit_responsibilities() {
         let env = Environments::DEV;
+        let service = new_service().await;
 
-        scenario_reset_env_clears_state(env).await;
-        scenario_set_integrations_cache(env).await;
-        scenario_upsert_integration_insert(env).await;
-        scenario_remove_integration(env).await;
-        scenario_get_cache_state(env).await;
-        scenario_cannot_remove_integrations_when_running(env).await;
-        scenario_cannot_set_integrations_when_not_running(env).await;
+        scenario_reset_env_clears_state(&service, env).await;
+        scenario_set_integrations_cache(&service, env).await;
+        scenario_upsert_integration_insert(&service, env).await;
+        scenario_remove_integration(&service, env).await;
+        scenario_get_cache_state(&service, env).await;
+        scenario_cannot_remove_integrations_when_running(&service, env).await;
+        scenario_cannot_set_integrations_when_not_running(&service, env).await;
     }
 }

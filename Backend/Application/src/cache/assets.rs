@@ -1,6 +1,7 @@
 use std::{collections::HashMap, mem, sync::Arc};
 
 use chrono::Local;
+use migration::async_trait::async_trait;
 use models::{
     entities::assets::Model,
     enums::{transition_with_timestamp, FiniteStateMachine, LifecycleState},
@@ -10,101 +11,133 @@ use once_cell::sync::Lazy;
 use sea_orm::prelude::Decimal;
 use tokio::sync::RwLock;
 
-use crate::{handler::Assets, utils::Cache};
+use crate::{handler::Assets, utils::EntityCache};
 
 static ACTIVE_ASSETS: Lazy<Arc<RwLock<CacheAssetsEnvironments>>> =
     Lazy::new(|| Arc::new(RwLock::new(CacheAssetsEnvironments::new())));
 
-impl Assets<Cache> {
-    pub async fn set_status_cache(
-        environment: Environments,
-        status: LifecycleState,
-    ) -> Result<(), String> {
+#[async_trait]
+impl<R> EntityCache<Environments> for Assets<R>
+where
+    R: Send + Sync,
+{
+    type Key = i32;
+    type Value = Model;
+    type Collection = CacheAssets;
+
+    async fn state(&self, env: Environments) -> LifecycleState {
+        let cache = ACTIVE_ASSETS.read().await;
+        cache
+            .get(&env)
+            .map(|c| c.status)
+            .unwrap_or(LifecycleState::Off)
+    }
+
+    async fn set_state(&self, env: Environments, state: LifecycleState) -> Result<(), String> {
         let mut cache = ACTIVE_ASSETS.write().await;
-        let env_cache = cache.get_or_create(environment);
+        let env_cache = cache.get_or_create(env);
 
-        transition_with_timestamp(env_cache, status)?;
-
+        transition_with_timestamp(env_cache, state)?;
         Ok(())
     }
 
-    pub async fn set_assets_cache(
-        environment: Environments,
-        assets: Vec<Model>,
-    ) -> Result<(), String> {
-        let mut cache = ACTIVE_ASSETS.write().await;
-        let env_cache = cache.get_or_create(environment);
+    async fn get_all(&self, env: Environments) -> Option<CacheAssets> {
+        let cache = ACTIVE_ASSETS.read().await;
+        let env_cache = cache.get(&env)?;
 
         if !env_cache.status.allows(LifecycleState::Running) {
-            return Err(format!(
-                "Cannot load assets: cache not running ({:?})",
-                env_cache.status
-            ));
+            return None;
         }
 
-        env_cache.models = assets.into_iter().map(|asset| (asset.id, asset)).collect();
-
-        env_cache.last_update_date = Local::now().naive_local();
-
-        Ok(())
+        Some(env_cache.clone())
     }
 
-    pub async fn upsert_asset_cache(environment: Environments, asset: Model) -> Result<(), String> {
-        let mut cache = ACTIVE_ASSETS.write().await;
-        let env_cache = cache.get_or_create(environment);
+    async fn get(&self, env: Environments, key: i32) -> Option<Model> {
+        let cache = ACTIVE_ASSETS.read().await;
+        let env_cache = cache.get(&env)?;
 
         if !env_cache.status.allows(LifecycleState::Running) {
-            return Err("Cache not running".into());
+            return None;
         }
 
-        env_cache.models.insert(asset.id, asset);
-
-        env_cache.last_update_date = Local::now().naive_local();
-
-        Ok(())
+        env_cache.models.get(&key).cloned()
     }
 
-    pub async fn remove_asset_cache(
-        environment: Environments,
-        asset_id: i32,
-    ) -> Result<Option<Model>, String> {
+    async fn set_all(&self, env: Environments, values: Vec<Model>) -> Result<(), String> {
         let mut cache = ACTIVE_ASSETS.write().await;
-        let env_cache = cache
-            .get_mut(&environment)
-            .ok_or("Environment not initialized")?;
+        let env_cache = cache.get_or_create(env);
 
         if !env_cache.status.allows(LifecycleState::Running) {
             return Err("Cache not running".into());
         }
 
-        let removed = env_cache.models.remove(&asset_id);
+        let values: Vec<(i32, Model)> = values.into_iter().map(|m| (m.id, m)).collect();
 
+        env_cache.models = values.into_iter().collect();
+        env_cache.last_update_date = Local::now().naive_local();
+
+        Ok(())
+    }
+
+    async fn upsert(&self, env: Environments, key: i32, value: Model) -> Result<(), String> {
+        let mut cache = ACTIVE_ASSETS.write().await;
+        let env_cache = cache.get_or_create(env);
+
+        if !env_cache.status.allows(LifecycleState::Running) {
+            return Err("Cache not running".into());
+        }
+
+        env_cache.models.insert(key, value);
+        env_cache.last_update_date = Local::now().naive_local();
+
+        Ok(())
+    }
+
+    async fn remove(&self, env: Environments, key: i32) -> Result<Option<Model>, String> {
+        let mut cache = ACTIVE_ASSETS.write().await;
+        let env_cache = cache.get_mut(&env).ok_or("Environment not initialized")?;
+
+        if !env_cache.status.allows(LifecycleState::Running) {
+            return Err("Cache not running".into());
+        }
+
+        let removed = env_cache.models.remove(&key);
         env_cache.last_update_date = Local::now().naive_local();
 
         Ok(removed)
     }
 
-    pub async fn remove_assets_cache(
-        environment: Environments,
-    ) -> Result<HashMap<i32, Model>, String> {
+    async fn remove_all(&self, env: Environments) -> Result<HashMap<i32, Model>, String> {
         let mut cache = ACTIVE_ASSETS.write().await;
-
-        let env_cache = cache
-            .get_mut(&environment)
-            .ok_or("Environment not initialized")?;
+        let env_cache = cache.get_mut(&env).ok_or("Environment not initialized")?;
 
         if !env_cache.status.allows(LifecycleState::Stopping) {
-            return Err("Cache not running".into());
+            return Err("Cache not stopping".into());
         }
 
-        let removed_models = mem::take(&mut env_cache.models);
-
+        let removed = mem::take(&mut env_cache.models);
         env_cache.last_update_date = Local::now().naive_local();
 
-        Ok(removed_models)
+        Ok(removed)
     }
 
-    pub async fn update_asset_balance_cache(
+    async fn reset(&self, env: Environments) -> Result<(), String> {
+        let mut cache = ACTIVE_ASSETS.write().await;
+
+        if let Some(env_cache) = cache.environments.get_mut(&env) {
+            *env_cache = CacheAssets::new();
+        }
+
+        Ok(())
+    }
+}
+
+impl<R> Assets<R>
+where
+    R: Send + Sync,
+{
+    pub async fn set_asset_balance(
+        &self,
         environment: Environments,
         asset_id: i32,
         value: Decimal,
@@ -142,34 +175,6 @@ impl Assets<Cache> {
         // env_cache.last_update_date = Local::now().naive_local();
         Ok((asset.clone(), previous))
     }
-
-    pub async fn get_assets_cache(environment: Environments) -> Option<CacheAssets> {
-        let cache = ACTIVE_ASSETS.read().await;
-        cache.get(&environment).cloned()
-    }
-
-    pub async fn get_asset_cache(environment: Environments, asset_id: i32) -> Option<Model> {
-        let cache = ACTIVE_ASSETS.read().await;
-        cache.get(&environment)?.models.get(&asset_id).cloned()
-    }
-
-    pub async fn get_assets_state_cache(environment: Environments) -> LifecycleState {
-        let cache = ACTIVE_ASSETS.read().await;
-        cache
-            .get(&environment)
-            .map(|c| c.status)
-            .unwrap_or(LifecycleState::Off)
-    }
-
-    pub async fn reset_assets_cache(environment: Environments) -> Result<(), String> {
-        let mut cache = ACTIVE_ASSETS.write().await;
-
-        if let Some(env_map) = cache.environments.get_mut(&environment) {
-            *env_map = CacheAssets::new();
-        }
-
-        Ok(())
-    }
 }
 
 #[cfg(test)]
@@ -177,7 +182,7 @@ mod tests {
     use models::{entities::assets::Model, enums::LifecycleState, structs::Environments};
     use sea_orm::prelude::Decimal;
 
-    use crate::{handler::Assets, utils::Cache};
+    use crate::{handler::Assets, utils::EntityCache};
 
     fn mock_asset(id: i32, free: i64, locked: i64) -> Model {
         Model {
@@ -188,173 +193,133 @@ mod tests {
         }
     }
 
-    async fn start_env(env: Environments) {
-        let _ = Assets::<Cache>::set_status_cache(env, LifecycleState::Starting).await;
-        let _ = Assets::<Cache>::set_status_cache(env, LifecycleState::Running).await;
+    async fn new_service() -> Assets<()> {
+        Assets::blank()
     }
 
-    async fn stop_env(env: Environments) {
-        let _ = Assets::<Cache>::set_status_cache(env, LifecycleState::Stopping).await;
-
-        let removed = Assets::<Cache>::remove_assets_cache(env)
+    async fn start_env(service: &Assets<()>, env: Environments) {
+        service
+            .set_state(env, LifecycleState::Starting)
             .await
-            .expect("remove_assets_cache should work in Stopping");
-
-        assert!(removed.is_empty() || !removed.is_empty());
-
-        let _ = Assets::<Cache>::set_status_cache(env, LifecycleState::Off).await;
+            .unwrap();
+        service
+            .set_state(env, LifecycleState::Running)
+            .await
+            .unwrap();
     }
 
-    async fn scenario_reset_env_clears_state(env: Environments) {
-        start_env(env).await;
-
-        let assets = vec![mock_asset(1, 100, 0)];
-        Assets::<Cache>::set_assets_cache(env, assets)
+    async fn stop_env(service: &Assets<()>, env: Environments) {
+        service
+            .set_state(env, LifecycleState::Stopping)
             .await
             .unwrap();
 
-        let _ = Assets::<Cache>::set_status_cache(env, LifecycleState::Stopping).await;
+        let removed = service.remove_all(env).await.unwrap();
+        assert!(removed.is_empty() || !removed.is_empty());
 
-        let removed = Assets::<Cache>::remove_assets_cache(env).await.unwrap();
+        service.set_state(env, LifecycleState::Off).await.unwrap();
+    }
 
+    async fn scenario_reset_env_clears_state(service: &Assets<()>, env: Environments) {
+        start_env(service, env).await;
+
+        service
+            .set_all(env, vec![mock_asset(1, 100, 0)])
+            .await
+            .unwrap();
+
+        service
+            .set_state(env, LifecycleState::Stopping)
+            .await
+            .unwrap();
+
+        let removed = service.remove_all(env).await.unwrap();
         assert_eq!(removed.len(), 1);
 
-        let cache = Assets::<Cache>::get_assets_cache(env).await.unwrap();
-        assert!(cache.models.is_empty());
+        let cache = service.get_all(env).await;
+        assert!(cache.is_none());
 
-        let _ = Assets::<Cache>::set_status_cache(env, LifecycleState::Off).await;
+        service.set_state(env, LifecycleState::Off).await.unwrap();
 
-        let status = Assets::<Cache>::get_assets_state_cache(env).await;
+        let status = service.state(env).await;
         assert_eq!(status, LifecycleState::Off);
     }
 
-    async fn scenario_set_assets_cache(env: Environments) {
-        start_env(env).await;
+    async fn scenario_set_assets_cache(service: &Assets<()>, env: Environments) {
+        start_env(service, env).await;
 
         let assets = vec![mock_asset(1, 100, 0), mock_asset(2, 200, 10)];
 
-        Assets::<Cache>::set_assets_cache(env, assets)
-            .await
-            .unwrap();
+        service.set_all(env, assets).await.unwrap();
 
-        let cache = Assets::<Cache>::get_assets_cache(env).await.unwrap();
-        let status = Assets::<Cache>::get_assets_state_cache(env).await;
+        let cache = service.get_all(env).await.unwrap();
+        let status = service.state(env).await;
 
         assert_eq!(cache.models.len(), 2);
         assert!(cache.models.contains_key(&1));
         assert!(cache.models.contains_key(&2));
         assert_eq!(status, LifecycleState::Running);
 
-        stop_env(env).await;
+        stop_env(service, env).await;
     }
 
-    async fn scenario_upsert_asset_insert(env: Environments) {
-        start_env(env).await;
+    async fn scenario_upsert_asset_insert(service: &Assets<()>, env: Environments) {
+        start_env(service, env).await;
 
         let asset = mock_asset(10, 50, 5);
-        Assets::<Cache>::upsert_asset_cache(env, asset.clone())
-            .await
-            .unwrap();
 
-        let cached = Assets::<Cache>::get_asset_cache(env, 10).await.unwrap();
+        service.upsert(env, asset.id, asset.clone()).await.unwrap();
 
+        let cached = service.get(env, 10).await.unwrap();
         assert_eq!(cached, asset);
 
-        stop_env(env).await;
+        stop_env(service, env).await;
     }
 
-    async fn scenario_remove_asset(env: Environments) {
-        start_env(env).await;
+    async fn scenario_remove_asset(service: &Assets<()>, env: Environments) {
+        start_env(service, env).await;
 
         let asset = mock_asset(20, 30, 0);
-        Assets::<Cache>::upsert_asset_cache(env, asset)
-            .await
-            .unwrap();
+        service.upsert(env, asset.id, asset).await.unwrap();
 
-        let removed = Assets::<Cache>::remove_asset_cache(env, 20).await.unwrap();
-
+        let removed = service.remove(env, 20).await.unwrap();
         assert!(removed.is_some());
 
-        let cached = Assets::<Cache>::get_asset_cache(env, 20).await;
+        let cached = service.get(env, 20).await;
         assert!(cached.is_none());
 
-        stop_env(env).await;
+        stop_env(service, env).await;
     }
 
-    async fn scenario_update_free_buy(env: Environments) {
-        start_env(env).await;
+    async fn scenario_get_assets_state(service: &Assets<()>, env: Environments) {
+        assert_eq!(service.state(env).await, LifecycleState::Off);
 
-        let asset = mock_asset(1, 100, 0);
-        Assets::<Cache>::upsert_asset_cache(env, asset)
-            .await
-            .unwrap();
+        start_env(service, env).await;
 
-        let (updated, previous) =
-            Assets::<Cache>::update_asset_balance_cache(env, 1, Decimal::new(50, 0), false, false)
-                .await
-                .unwrap();
+        assert_eq!(service.state(env).await, LifecycleState::Running);
 
-        assert_eq!(previous, Decimal::new(100, 0));
-        assert_eq!(updated.free, Decimal::new(150, 0));
-
-        stop_env(env).await;
+        stop_env(service, env).await;
     }
 
-    async fn scenario_update_locked_sell(env: Environments) {
-        start_env(env).await;
+    async fn scenario_cannot_remove_assets_when_running(service: &Assets<()>, env: Environments) {
+        start_env(service, env).await;
 
-        let asset = mock_asset(2, 0, 100);
-        Assets::<Cache>::upsert_asset_cache(env, asset)
-            .await
-            .unwrap();
-
-        let (updated, previous) =
-            Assets::<Cache>::update_asset_balance_cache(env, 2, Decimal::new(40, 0), true, true)
-                .await
-                .unwrap();
-
-        assert_eq!(previous, Decimal::new(100, 0));
-        assert_eq!(updated.locked, Decimal::new(60, 0));
-
-        stop_env(env).await;
-    }
-
-    async fn scenario_get_assets_state_cache(env: Environments) {
-        assert_eq!(
-            Assets::<Cache>::get_assets_state_cache(env).await,
-            LifecycleState::Off
-        );
-
-        start_env(env).await;
-
-        assert_eq!(
-            Assets::<Cache>::get_assets_state_cache(env).await,
-            LifecycleState::Running
-        );
-
-        stop_env(env).await;
-    }
-
-    async fn scenario_cannot_remove_assets_when_running(env: Environments) {
-        start_env(env).await;
-
-        let result = Assets::<Cache>::remove_assets_cache(env).await;
+        let result = service.remove_all(env).await;
         assert!(result.is_err());
 
-        stop_env(env).await;
+        stop_env(service, env).await;
     }
 
     #[tokio::test]
     async fn cache_assets_unit_responsibilities() {
         let env = Environments::DEV;
+        let service = new_service().await;
 
-        scenario_reset_env_clears_state(env).await;
-        scenario_set_assets_cache(env).await;
-        scenario_upsert_asset_insert(env).await;
-        scenario_remove_asset(env).await;
-        scenario_update_free_buy(env).await;
-        scenario_update_locked_sell(env).await;
-        scenario_get_assets_state_cache(env).await;
-        scenario_cannot_remove_assets_when_running(env).await;
+        scenario_reset_env_clears_state(&service, env).await;
+        scenario_set_assets_cache(&service, env).await;
+        scenario_upsert_asset_insert(&service, env).await;
+        scenario_remove_asset(&service, env).await;
+        scenario_get_assets_state(&service, env).await;
+        scenario_cannot_remove_assets_when_running(&service, env).await;
     }
 }

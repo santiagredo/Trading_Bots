@@ -1,101 +1,81 @@
-use std::collections::HashMap;
-
+use crate::{
+    handler::{Integrations, IntegrationsSettings},
+    logic,
+    utils::{AnyRepo, EntityCache, Repository, Response, Select},
+};
 use models::{
     entities::{self, integration_settings::Model},
     enums::{FiniteStateMachine, LifecycleState},
-    structs::{CacheIntegrationsSettings, QueryOptions},
+    structs::{CacheIntegrationsSettings, Environments, IntegrationSettingRequest, QueryOptions},
 };
 
-use crate::{
-    handler::{Integrations, IntegrationsSettings, DBC},
-    utils::{handle_user_err, Cache, Core, Data, Logic, Response},
-};
+/* ======================================================
+ * CRUD / DB
+ * ======================================================
+ */
 
-impl IntegrationsSettings<Core> {
-    /* ===========================
-     * DB
-     * ===========================
-     */
+impl<R> IntegrationsSettings<R>
+where
+    R: Repository<IntegrationSettingRequest, Model>,
+{
+    pub async fn insert(&self, req: IntegrationSettingRequest) -> Result<Model, Response> {
+        self.repo.insert(req).await
+    }
 
-    pub async fn select_integrations_settings_core(
-        self,
+    pub async fn select(&self, req: IntegrationSettingRequest) -> Result<Option<Model>, Response> {
+        self.repo.select(req).await
+    }
+
+    pub async fn select_many(
+        &self,
+        req: IntegrationSettingRequest,
         query: Option<QueryOptions>,
     ) -> Result<Vec<Model>, Response> {
-        let env = self.environment;
-
-        self.next_phase::<Data>()
-            .select_integrations_settings_data(&DBC::db(&env).await?, query)
-            .await
+        self.repo.select_many(req, query).await
     }
 
-    pub async fn update_integration_setting_core(self) -> Result<Model, Response> {
-        let env = self.environment;
-
-        self.next_phase()
-            .update_integration_setting_logic()
-            .map_err(handle_user_err)?
-            .next_phase::<Data>()
-            .update_integration_setting_data(&DBC::db(&env).await?)
-            .await
+    pub async fn update(&self, req: IntegrationSettingRequest) -> Result<Model, Response> {
+        logic::integrations_settings::validate_update(&req).map_err(Response::bad_request)?;
+        self.repo.update(req).await
     }
 
-    /* ===========================
-     * CACHE (READ)
-     * ===========================
-     */
-
-    pub async fn get_integrations_settings_core(self) -> Option<CacheIntegrationsSettings> {
-        IntegrationsSettings::<Cache>::get_integrations_settings_cache(self.environment).await
+    pub async fn delete(&self, req: IntegrationSettingRequest) -> Result<u64, Response> {
+        self.repo.delete(req).await
     }
+}
 
-    pub async fn get_integration_settings_core(self) -> Option<HashMap<i32, Model>> {
-        IntegrationsSettings::<Cache>::get_integration_settings_cache(
-            self.environment,
-            self.model.integration_id.unwrap_or_default(),
-        )
-        .await
-    }
-
-    pub async fn get_integration_setting_core(self) -> Option<Model> {
-        let integration_id = self.model.integration_id.unwrap_or_default();
-
-        IntegrationsSettings::<Cache>::get_integration_setting_cache(
-            self.environment,
-            integration_id,
-        )
-        .await
-    }
-
-    pub async fn get_integrations_settings_state_core(self) -> LifecycleState {
-        IntegrationsSettings::<Cache>::get_cache_state(self.environment).await
-    }
-
+impl IntegrationsSettings<AnyRepo<IntegrationSettingRequest, Model>>
+where
+    Self: EntityCache<Environments>,
+{
     /* ===========================
      * START ACTIVE INTEGRATION SETTINGS
      * ===========================
      */
 
-    pub async fn start_integrations_settings_core(self) -> Result<(), Response> {
-        let env = self.environment;
-
+    pub async fn start(&self, environment: Environments) -> Result<(), Response> {
         // STARTING
-        if let Err(err) =
-            IntegrationsSettings::<Cache>::set_status_cache(env, LifecycleState::Starting).await
-        {
-            return Err(Response::server_error(err));
-        }
+        self.set_state(environment, LifecycleState::Starting)
+            .await
+            .map_err(Response::server_error)?;
 
         /*
          * Load active integrations FROM CACHE (in-memory)
          */
-        let active_integrations = Integrations::<Cache>::get_integrations_cache(env)
+
+        let active_integrations = Integrations::blank()
+            .get_all(environment)
             .await
             .ok_or_else(|| {
                 Response::server_error("Integrations cache not initialized".to_owned())
             })?;
 
         if !active_integrations.status.allows(LifecycleState::Running) {
-            let _ = IntegrationsSettings::<Cache>::reset_integrations_settings_cache(env).await;
+            let _ = self
+                .reset(environment)
+                .await
+                .map_err(Response::server_error)?;
+
             return Err(Response::server_error(
                 "Integrations cache not running".to_owned(),
             ));
@@ -110,111 +90,96 @@ impl IntegrationsSettings<Core> {
         /*
          * Load active settings FROM DB
          */
-        let settings_request = IntegrationsSettings::default().with_env(env);
 
-        let settings = match settings_request.select_integrations_settings(None).await {
+        let req = IntegrationSettingRequest::default();
+
+        let values = match self.repo.select_many(req, None).await {
             Ok(s) => s
                 .into_iter()
                 .filter(|s| active_integration_ids.contains(&s.integration_id))
                 .collect::<Vec<_>>(),
             Err(err) => {
-                let _ = IntegrationsSettings::<Cache>::reset_integrations_settings_cache(env).await;
+                let _ = self
+                    .reset(environment)
+                    .await
+                    .map_err(Response::server_error)?;
+
                 return Err(err);
             }
         };
 
         // RUNNING
-        if let Err(err) =
-            IntegrationsSettings::<Cache>::set_status_cache(env, LifecycleState::Running).await
-        {
-            let _ = IntegrationsSettings::<Cache>::reset_integrations_settings_cache(env).await;
-            return Err(Response::server_error(err));
-        }
+        self.set_state(environment, LifecycleState::Running)
+            .await
+            .map_err(Response::server_error)?;
 
         // Populate cache
-        if let Err(err) =
-            IntegrationsSettings::<Cache>::set_integrations_settings_cache(env, settings).await
-        {
-            let _ = IntegrationsSettings::<Cache>::reset_integrations_settings_cache(env).await;
+        if let Err(err) = self.set_all(environment, values).await {
+            let _ = self.reset(environment).await;
             return Err(Response::server_error(err));
         }
 
         Ok(())
     }
+}
 
+impl<R> IntegrationsSettings<R>
+where
+    Self: EntityCache<Environments>,
+{
     /* ===========================
      * STOP ACTIVE INTEGRATION SETTINGS
      * ===========================
      */
 
-    pub async fn stop_integrations_settings_core(self) -> Result<(), Response> {
-        let env = self.environment;
+    pub async fn stop(&self, environment: Environments) -> Result<(), Response> {
+        self.set_state(environment, LifecycleState::Stopping)
+            .await
+            .map_err(Response::server_error)?;
 
-        // STOPPING
-        if let Err(err) =
-            IntegrationsSettings::<Cache>::set_status_cache(env, LifecycleState::Stopping).await
-        {
-            let _ = IntegrationsSettings::<Cache>::reset_integrations_settings_cache(env).await;
-            return Err(Response::server_error(err));
-        }
+        self.remove_all(environment)
+            .await
+            .map_err(Response::server_error)?;
 
-        // Remove settings
-        if let Err(err) =
-            IntegrationsSettings::<Cache>::remove_integrations_settings_cache(env).await
-        {
-            let _ = IntegrationsSettings::<Cache>::reset_integrations_settings_cache(env).await;
-            return Err(Response::server_error(err));
-        }
-
-        // OFF
-        if let Err(err) =
-            IntegrationsSettings::<Cache>::set_status_cache(env, LifecycleState::Off).await
-        {
-            let _ = IntegrationsSettings::<Cache>::reset_integrations_settings_cache(env).await;
-            return Err(Response::server_error(err));
-        }
+        self.set_state(environment, LifecycleState::Off)
+            .await
+            .map_err(Response::server_error)?;
 
         Ok(())
     }
 
     /* ===========================
-     * RESET INTEGRATION SETTINGS
+     * RESET ACTIVE INTEGRATION SETTINGS
      * ===========================
      */
+}
 
-    pub async fn reset_integrations_settings_core(self) -> Result<(), Response> {
-        IntegrationsSettings::<Cache>::reset_integrations_settings_cache(self.environment)
-            .await
-            .map_err(Response::server_error)
-    }
-
-    /* ===========================
-     * RESOLVERS
-     * ===========================
-     */
-
-    pub async fn resolve_integration_settings_core(
+impl<R> IntegrationsSettings<R>
+where
+    R: Repository<IntegrationSettingRequest, Model>,
+    Self: EntityCache<Environments, Collection = CacheIntegrationsSettings>,
+{
+    // /* ===========================
+    //  * RESOLVERS
+    //  * ===========================
+    //  */
+    pub async fn resolve_integration_settings(
         &self,
+        environment: Environments,
+        req: IntegrationSettingRequest,
     ) -> Result<Vec<entities::integration_settings::Model>, Response> {
-        let mut req = IntegrationsSettings::default().with_env(self.environment);
-        req.model.integration_id = Some(self.model.integration_id.unwrap_or_default());
+        let cache_settings = match self.get_all(environment).await {
+            None => None,
+            Some(val) => val
+                .integrations_map
+                .get(&req.integration_id.unwrap_or_default())
+                .map(|map| map.models.values().cloned().collect::<Vec<Model>>()),
+        };
 
-        let cache_settings = IntegrationsSettings::default()
-            .with_env(self.environment)
-            .get_integration_settings()
-            .await;
-
-        match cache_settings {
-            Some(val) => Ok(val.values().cloned().collect()),
-            None => req.select_integrations_settings(None).await,
+        if let Some(settings) = cache_settings {
+            return Ok(settings);
         }
-    }
 
-    pub fn resolve_setting_value_core(
-        settings: &[entities::integration_settings::Model],
-        nick: &str,
-    ) -> Result<String, Response> {
-        IntegrationsSettings::<Logic>::resolve_setting_value_logic(settings, nick)
-            .map_err(Response::not_found)
+        self.select_many(req, None).await
     }
 }

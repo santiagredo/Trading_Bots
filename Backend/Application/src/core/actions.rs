@@ -1,248 +1,187 @@
-use std::collections::HashMap;
-
+use crate::{
+    handler::{Actions, Strategies},
+    logic,
+    utils::{handle_user_err, AnyRepo, EntityCache, RepoFactory, Repository, Response, Select},
+};
 use models::{
     entities::{actions::Model, assets, pairs},
     enums::LifecycleState,
-    structs::{QueryOptions, Ticker},
+    structs::{ActionRequest, Environments, QueryOptions, StrategyRequest, Ticker},
 };
 
-use crate::{
-    handler::{Actions, Strategies, DBC},
-    utils::{handle_user_err, Cache, Core, Data, Logic, Response},
-};
+/* ======================================================
+ * CRUD / DB
+ * ======================================================
+ */
 
-impl Actions<Core> {
-    /* ===========================
-     * DB
-     * ===========================
-     */
-
-    pub async fn insert_action_core(self) -> Result<Model, Response> {
-        let env = self.environment;
-
-        self.next_phase::<Logic>()
-            .insert_action_logic()
-            .map_err(handle_user_err)?
-            .next_phase::<Data>()
-            .insert_action_data(&DBC::db(&env).await?)
-            .await
+impl<R> Actions<R>
+where
+    R: Repository<ActionRequest, Model>,
+{
+    pub async fn insert(&self, req: ActionRequest) -> Result<Model, Response> {
+        logic::actions::validate_insert(&req).map_err(handle_user_err)?;
+        self.repo.insert(req).await
     }
 
-    pub async fn select_action_core(self) -> Result<Option<Model>, Response> {
-        let env = self.environment;
-
-        self.next_phase::<Data>()
-            .select_action_data(&DBC::db(&env).await?)
-            .await
+    pub async fn select(&self, req: ActionRequest) -> Result<Option<Model>, Response> {
+        self.repo.select(req).await
     }
 
-    pub async fn select_actions_core(
-        self,
+    pub async fn select_many(
+        &self,
+        req: ActionRequest,
         query: Option<QueryOptions>,
     ) -> Result<Vec<Model>, Response> {
-        let env = self.environment;
-
-        self.next_phase::<Data>()
-            .select_actions_data(&DBC::db(&env).await?, query)
-            .await
+        self.repo.select_many(req, query).await
     }
 
-    pub async fn update_action_core(self) -> Result<Model, Response> {
-        let env = self.environment;
-
-        self.next_phase::<Logic>()
-            .update_action_logic()
-            .map_err(handle_user_err)?
-            .next_phase::<Data>()
-            .update_action_data(&DBC::db(&env).await?)
-            .await
+    pub async fn update(&self, req: ActionRequest) -> Result<Model, Response> {
+        logic::actions::validate_update(&req).map_err(handle_user_err)?;
+        self.repo.update(req).await
     }
 
-    pub async fn delete_action_core(self) -> Result<u64, Response> {
-        let env = self.environment;
-
-        self.next_phase::<Logic>()
-            .delete_action_logic()
-            .map_err(handle_user_err)?
-            .next_phase::<Data>()
-            .delete_action_data(&DBC::db(&env).await?)
-            .await
+    pub async fn delete(&self, req: ActionRequest) -> Result<u64, Response> {
+        logic::actions::validate_delete(&req).map_err(handle_user_err)?;
+        self.repo.delete(req).await
     }
+}
 
-    /* ===========================
-     * CACHE (READ)
-     * ===========================
-     */
+/* ======================================================
+ * START / LOAD CACHE
+ * ======================================================
+ */
 
-    pub async fn get_actions_core(self) -> Option<HashMap<i32, Model>> {
-        Actions::<Cache>::get_actions_cache(self.environment)
-            .await
-            .map(|c| c.models)
-    }
-
-    pub async fn get_action_core(self) -> Option<Model> {
-        let id = self.model.id.or(self.model.strategy_id).unwrap_or_default();
-
-        Actions::<Cache>::get_action_cache(self.environment, id).await
-    }
-
-    pub async fn get_actions_state_core(self) -> LifecycleState {
-        Actions::<Cache>::get_cache_state(self.environment).await
-    }
-
-    /* ===========================
-     * CACHE (WRITE)
-     * ===========================
-     */
-
-    pub async fn upsert_action_core(self) -> Result<(), Response> {
-        let env = self.environment;
-        let model = Actions::into_model(self.model);
-
-        Actions::<Cache>::upsert_action_cache(env, model)
-            .await
-            .map_err(|err| Response {
-                code: 500,
-                message: err,
-            })
-    }
-
-    pub async fn remove_action_core(self) -> Result<Option<Model>, Response> {
-        let env = self.environment;
-        let id = self.model.strategy_id.unwrap_or_default();
-
-        Actions::<Cache>::remove_action_cache(env, id)
-            .await
-            .map_err(|err| Response {
-                code: 500,
-                message: err,
-            })
-    }
-
-    /* ===========================
-     * START ACTIVE ACTIONS
-     * ===========================
-     */
-
-    pub async fn start_actions_core(self) -> Result<(), Response> {
-        let env = self.environment;
-
+impl Actions<AnyRepo<ActionRequest, Model>>
+where
+    Self: EntityCache<Environments>,
+{
+    pub async fn start(&self, factory: RepoFactory, env: Environments) -> Result<(), Response> {
         // STARTING
-        if let Err(err) = Actions::<Cache>::set_status_cache(env, LifecycleState::Starting).await {
-            return Err(Response {
-                code: 500,
-                message: err,
-            });
-        }
+        self.set_state(env, LifecycleState::Starting)
+            .await
+            .map_err(Response::server_error)?;
 
         // Load active strategies
-        let mut strategies_request = Strategies::default().with_env(env);
-        strategies_request.model.is_active = Some(true);
+        let mut strategies_req = StrategyRequest::default();
+        strategies_req.is_active = Some(true);
 
-        let active_strategies = strategies_request
-            .get_strategies()
+        let strategies_repo =
+            factory.repo::<StrategyRequest, models::entities::strategies::Model>();
+
+        let mut strategies_req = StrategyRequest::default();
+        strategies_req.is_active = Some(true);
+
+        let active_strategies = Strategies::new(strategies_repo)
+            .select_many(strategies_req, None)
             .await
-            .unwrap_or_default();
+            .unwrap_or_default()
+            .into_iter()
+            .map(|s| s.id)
+            .collect::<Vec<_>>();
 
-        // Load actions from DB
-        let mut actions_request = Actions::default().with_env(env);
-        actions_request.model.is_active = Some(true);
+        // Load active actions from DB
+        let mut req = ActionRequest::default();
+        req.is_active = Some(true);
 
-        let actions = match actions_request.select_actions(None).await {
-            Ok(a) => a
+        let actions = match self.repo.select_many(req, None).await {
+            Ok(v) => v
                 .into_iter()
-                .filter(|act| active_strategies.models.contains_key(&act.strategy_id))
+                .filter(|a| active_strategies.contains(&a.strategy_id))
                 .collect::<Vec<_>>(),
             Err(err) => {
-                let _ = Actions::<Cache>::reset_actions_cache(env).await;
+                let _ = self.reset(env).await;
                 return Err(err);
             }
         };
 
         // RUNNING
-        if let Err(err) = Actions::<Cache>::set_status_cache(env, LifecycleState::Running).await {
-            let _ = Actions::<Cache>::reset_actions_cache(env).await;
-            return Err(Response {
-                code: 500,
-                message: err,
-            });
-        }
-
-        // Populate cache
-        if let Err(err) = Actions::<Cache>::set_actions_cache(env, actions).await {
-            let _ = Actions::<Cache>::reset_actions_cache(env).await;
-            return Err(Response {
-                code: 500,
-                message: err,
-            });
-        }
-
-        Ok(())
-    }
-
-    /* ===========================
-     * STOP ACTIVE ACTIONS
-     * ===========================
-     */
-
-    pub async fn stop_actions_core(self) -> Result<(), Response> {
-        let env = self.environment;
-
-        // STOPPING
-        if let Err(err) = Actions::<Cache>::set_status_cache(env, LifecycleState::Stopping).await {
-            let _ = Actions::<Cache>::reset_actions_cache(env).await;
-            return Err(Response {
-                code: 500,
-                message: err,
-            });
-        }
-
-        // Remove actions
-        if let Err(err) = Actions::<Cache>::remove_actions_cache(env).await {
-            let _ = Actions::<Cache>::reset_actions_cache(env).await;
-            return Err(Response {
-                code: 500,
-                message: err,
-            });
-        }
-
-        // OFF
-        if let Err(err) = Actions::<Cache>::set_status_cache(env, LifecycleState::Off).await {
-            let _ = Actions::<Cache>::reset_actions_cache(env).await;
-            return Err(Response {
-                code: 500,
-                message: err,
-            });
-        }
-
-        Ok(())
-    }
-
-    pub async fn reset_actions_core(self) -> Result<(), Response> {
-        Actions::<Cache>::reset_actions_cache(self.environment)
+        self.set_state(env, LifecycleState::Running)
             .await
-            .map_err(Response::server_error)
+            .map_err(Response::server_error)?;
+
+        if let Err(err) = self.set_all(env, actions).await {
+            let _ = self.reset(env).await;
+            return Err(Response::server_error(err));
+        }
+
+        Ok(())
     }
+}
 
-    /* ===========================
-     * MISC
-     * ===========================
-     */
+/* ======================================================
+ * STOP
+ * ======================================================
+ */
 
-    pub fn evaluate_action_core(
-        self,
+impl<R> Actions<R>
+where
+    Self: EntityCache<Environments>,
+{
+    pub async fn stop(&self, env: Environments) -> Result<(), Response> {
+        self.set_state(env, LifecycleState::Stopping)
+            .await
+            .map_err(Response::server_error)?;
+
+        self.remove_all(env).await.map_err(Response::server_error)?;
+
+        self.set_state(env, LifecycleState::Off)
+            .await
+            .map_err(Response::server_error)?;
+
+        Ok(())
+    }
+}
+
+/* ======================================================
+ * MISC
+ * ======================================================
+ */
+
+impl<R> Actions<R> {
+    pub fn evaluate_action(
+        &self,
         action: Model,
         pair: &pairs::Model,
         ticker: &Ticker,
         base_asset: &assets::Model,
         quote_asset: &assets::Model,
     ) -> Result<Model, String> {
-        self.next_phase::<Logic>().evaluate_action_logic(
-            action,
-            pair,
-            ticker,
-            base_asset,
-            quote_asset,
-        )
+        logic::actions::evaluate_action(action, pair, ticker, base_asset, quote_asset)
+    }
+}
+
+/* ======================================================
+ * TESTS
+ * ======================================================
+ */
+
+#[cfg(test)]
+mod core_tests {
+    use models::structs::ActionRequest;
+    use sea_orm::prelude::Decimal;
+
+    use crate::{handler::Actions, utils::MockRepo};
+
+    #[tokio::test]
+    async fn insert_action_ok() {
+        let repo = MockRepo::new();
+        let service = Actions::new(repo);
+
+        let req = ActionRequest {
+            id: Some(1),
+            strategy_id: Some(10),
+            is_active: Some(true),
+            is_sell: Some(false),
+            is_quote_asset: Some(false),
+            is_percentage: Some(false),
+            pair_id: Some(1),
+            value: Some(Decimal::ONE),
+            ..Default::default()
+        };
+
+        let result = service.insert(req).await;
+
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().id, 1);
     }
 }

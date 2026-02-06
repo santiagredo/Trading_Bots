@@ -1,3 +1,3 @@
-use crate::{handler::StrategiesOverview, utils::Cache};
+use crate::handler::StrategiesOverview;
 
-impl StrategiesOverview<Cache> {}
+impl StrategiesOverview {}

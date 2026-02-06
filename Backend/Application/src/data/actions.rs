@@ -1,94 +1,106 @@
+use crate::utils::handle_db_error;
 use chrono::Local;
 use function_name::named;
+use migration::async_trait::async_trait;
 use models::{
     entities::actions::{ActiveModel, Column, Entity, Model},
     enums::OrderDirection,
-    structs::{ErrorLogRequest, QueryOptions},
+    structs::{ActionRequest, QueryOptions},
 };
 use sea_orm::{
-    ActiveModelTrait, ActiveValue, ColumnTrait, Condition, DatabaseConnection, EntityTrait,
-    QueryFilter, QueryOrder, QuerySelect,
+    ActiveModelTrait, ActiveValue, ColumnTrait, Condition, EntityTrait, QueryFilter, QueryOrder,
+    QuerySelect,
 };
 
 use crate::{
-    handler::{Actions, ErrorLogs},
-    log_db_error,
-    utils::{Data, Response},
+    handler::ErrorLogs,
+    log_trait_db_error,
+    utils::{DbRepo, Delete, Insert, MockRepo, Response, Select, Update},
 };
 
-impl Actions<Data> {
+#[async_trait]
+impl Insert<ActionRequest, Model> for DbRepo {
     #[named]
-    pub async fn insert_action_data(self, db: &DatabaseConnection) -> Result<Model, Response> {
-        let now = Local::now();
+    async fn insert(&self, req: ActionRequest) -> Result<Model, Response> {
+        let req_for_log = req.clone();
+        let now = Local::now().naive_local();
 
-        let active_model_action = ActiveModel {
+        let active_model = ActiveModel {
             id: ActiveValue::NotSet,
-            strategy_id: ActiveValue::Set(self.model.strategy_id.unwrap_or_default()),
-            is_active: ActiveValue::Set(self.model.is_active.unwrap_or_default()),
-            is_sell: ActiveValue::Set(self.model.is_sell.unwrap_or_default()),
-            is_quote_asset: ActiveValue::Set(self.model.is_quote_asset.unwrap_or_default()),
-            is_percentage: ActiveValue::Set(self.model.is_percentage.unwrap_or_default()),
-            value: ActiveValue::Set(self.model.value.unwrap_or_default()),
-            pair_id: ActiveValue::Set(self.model.pair_id.unwrap_or_default()),
-            last_update: ActiveValue::Set(now.naive_local().into()),
+            strategy_id: ActiveValue::Set(req.strategy_id.unwrap_or_default()),
+            is_active: ActiveValue::Set(req.is_active.unwrap_or_default()),
+            is_sell: ActiveValue::Set(req.is_sell.unwrap_or_default()),
+            is_quote_asset: ActiveValue::Set(req.is_quote_asset.unwrap_or_default()),
+            is_percentage: ActiveValue::Set(req.is_percentage.unwrap_or_default()),
+            value: ActiveValue::Set(req.value.unwrap_or_default()),
+            pair_id: ActiveValue::Set(req.pair_id.unwrap_or_default()),
+            last_update: ActiveValue::Set(now.into()),
         };
 
-        match Entity::insert(active_model_action)
-            .exec_with_returning(db)
-            .await
-        {
-            Err(err) => log_db_error!(self, err),
+        match active_model.insert(&self.data).await {
+            Err(err) => {
+                let _ = ErrorLogs::new(self.clone())
+                    .insert(log_trait_db_error!(err, req_for_log))
+                    .await;
+
+                Err(handle_db_error(&err))
+            }
             Ok(val) => Ok(val),
         }
     }
+}
 
+#[async_trait]
+impl Select<ActionRequest, Model> for DbRepo {
     #[named]
-    pub async fn select_action_data(
-        self,
-        db: &DatabaseConnection,
-    ) -> Result<Option<Model>, Response> {
+    async fn select(&self, req: ActionRequest) -> Result<Option<Model>, Response> {
         let mut condition = Condition::all();
 
-        if self.model.id.is_some() {
-            condition = condition.add(Column::Id.eq(self.model.id.unwrap_or_default()))
+        if let Some(id) = req.id {
+            condition = condition.add(Column::Id.eq(id));
         }
 
-        if self.model.strategy_id.is_some() {
-            condition =
-                condition.add(Column::StrategyId.eq(self.model.strategy_id.unwrap_or_default()))
+        if let Some(strategy_id) = req.strategy_id {
+            condition = condition.add(Column::StrategyId.eq(strategy_id));
         }
 
-        if self.model.pair_id.is_some() {
-            condition = condition.add(Column::PairId.eq(self.model.pair_id.unwrap_or_default()))
+        if let Some(pair_id) = req.pair_id {
+            condition = condition.add(Column::PairId.eq(pair_id));
         }
 
-        match Entity::find().filter(condition).one(db).await {
-            Err(err) => log_db_error!(self, err),
+        match Entity::find().filter(condition).one(&self.data).await {
+            Err(err) => {
+                let _ = ErrorLogs::new(self.clone())
+                    .insert(log_trait_db_error!(err, req))
+                    .await;
+
+                Err(handle_db_error(&err))
+            }
             Ok(val) => Ok(val),
         }
     }
 
     #[named]
-    pub async fn select_actions_data(
-        self,
-        db: &DatabaseConnection,
+    async fn select_many(
+        &self,
+        req: ActionRequest,
         query: Option<QueryOptions>,
     ) -> Result<Vec<Model>, Response> {
         let mut condition = Condition::all();
 
-        if let Some(id) = self.model.id {
+        if let Some(id) = req.id {
             condition = condition.add(Column::Id.eq(id));
         }
 
-        if let Some(strategy_id) = self.model.strategy_id {
+        if let Some(strategy_id) = req.strategy_id {
             condition = condition.add(Column::StrategyId.eq(strategy_id));
         }
 
-        if let Some(is_active) = self.model.is_active {
+        if let Some(is_active) = req.is_active {
             condition = condition.add(Column::IsActive.eq(is_active));
         }
 
-        if let Some(pair_id) = self.model.pair_id {
+        if let Some(pair_id) = req.pair_id {
             condition = condition.add(Column::PairId.eq(pair_id));
         }
 
@@ -103,7 +115,7 @@ impl Actions<Data> {
                 stmt = stmt.offset(offset);
             }
 
-            if let Some(order_by) = q.order_by.and_then(|c| Self::parse_order_column(&c)) {
+            if let Some(order_by) = q.order_by.and_then(|val| parse_order_column(&val)) {
                 let direction = match q.order_direction.unwrap_or(OrderDirection::Asc) {
                     OrderDirection::Asc => sea_orm::Order::Asc,
                     OrderDirection::Desc => sea_orm::Order::Desc,
@@ -113,80 +125,190 @@ impl Actions<Data> {
             }
         }
 
-        match stmt.all(db).await {
-            Err(err) => log_db_error!(self, err),
+        match stmt.all(&self.data).await {
+            Err(err) => {
+                let _ = ErrorLogs::new(self.clone())
+                    .insert(log_trait_db_error!(err, req))
+                    .await;
+
+                Err(handle_db_error(&err))
+            }
             Ok(val) => Ok(val),
         }
     }
+}
 
-    fn parse_order_column(value: &str) -> Option<Column> {
-        match value {
-            "id" => Some(Column::Id),
-            "strategy_id" => Some(Column::StrategyId),
-            "is_active" => Some(Column::IsActive),
-            "is_sell" => Some(Column::IsSell),
-            "is_quote_asset" => Some(Column::IsQuoteAsset),
-            "is_percentage" => Some(Column::IsPercentage),
-            "value" => Some(Column::Value),
-            "pair_id" => Some(Column::PairId),
-            "last_update" => Some(Column::LastUpdate),
-            _ => None,
-        }
+fn parse_order_column(value: &str) -> Option<Column> {
+    match value {
+        "id" => Some(Column::Id),
+        "strategy_id" => Some(Column::StrategyId),
+        "is_active" => Some(Column::IsActive),
+        "is_sell" => Some(Column::IsSell),
+        "is_quote_asset" => Some(Column::IsQuoteAsset),
+        "is_percentage" => Some(Column::IsPercentage),
+        "value" => Some(Column::Value),
+        "pair_id" => Some(Column::PairId),
+        "last_update" => Some(Column::LastUpdate),
+        _ => None,
     }
+}
 
+#[async_trait]
+impl Update<ActionRequest, Model> for DbRepo {
     #[named]
-    pub async fn update_action_data(self, db: &DatabaseConnection) -> Result<Model, Response> {
-        let mut active_model_action = ActiveModel {
-            id: ActiveValue::Unchanged(self.model.id.unwrap_or_default()),
+    async fn update(&self, req: ActionRequest) -> Result<Model, Response> {
+        let mut active_model = ActiveModel {
+            id: ActiveValue::Unchanged(req.id.unwrap_or_default()),
+            last_update: ActiveValue::Set(Local::now().naive_local().into()),
             ..Default::default()
         };
 
-        if let Some(strategy_id) = self.model.strategy_id {
-            active_model_action.strategy_id = ActiveValue::Set(strategy_id);
+        if let Some(strategy_id) = req.strategy_id {
+            active_model.strategy_id = ActiveValue::Set(strategy_id);
         }
 
-        if let Some(is_active) = self.model.is_active {
-            active_model_action.is_active = ActiveValue::Set(is_active);
+        if let Some(is_active) = req.is_active {
+            active_model.is_active = ActiveValue::Set(is_active);
         }
 
-        if let Some(is_sell) = self.model.is_sell {
-            active_model_action.is_sell = ActiveValue::Set(is_sell);
+        if let Some(is_sell) = req.is_sell {
+            active_model.is_sell = ActiveValue::Set(is_sell);
         }
 
-        if let Some(is_quote_asset) = self.model.is_quote_asset {
-            active_model_action.is_quote_asset = ActiveValue::Set(is_quote_asset);
+        if let Some(is_quote_asset) = req.is_quote_asset {
+            active_model.is_quote_asset = ActiveValue::Set(is_quote_asset);
         }
 
-        if let Some(is_percentage) = self.model.is_percentage {
-            active_model_action.is_percentage = ActiveValue::Set(is_percentage);
+        if let Some(is_percentage) = req.is_percentage {
+            active_model.is_percentage = ActiveValue::Set(is_percentage);
         }
 
-        if let Some(value) = self.model.value {
-            active_model_action.value = ActiveValue::Set(value);
+        if let Some(value) = req.value {
+            active_model.value = ActiveValue::Set(value);
         }
 
-        if let Some(pair_id) = self.model.pair_id {
-            active_model_action.pair_id = ActiveValue::Set(pair_id);
+        if let Some(pair_id) = req.pair_id {
+            active_model.pair_id = ActiveValue::Set(pair_id);
         }
 
-        let now = Local::now();
+        match active_model.update(&self.data).await {
+            Err(err) => {
+                let _ = ErrorLogs::new(self.clone())
+                    .insert(log_trait_db_error!(err, req))
+                    .await;
 
-        active_model_action.last_update = ActiveValue::Set(now.naive_local().into());
-
-        match active_model_action.update(db).await {
-            Err(err) => log_db_error!(self, err),
+                Err(handle_db_error(&err))
+            }
             Ok(val) => Ok(val),
         }
     }
+}
 
+#[async_trait]
+impl Delete<ActionRequest> for DbRepo {
     #[named]
-    pub async fn delete_action_data(self, db: &DatabaseConnection) -> Result<u64, Response> {
-        match Entity::delete_by_id(self.model.id.unwrap_or_default())
-            .exec(db)
+    async fn delete(&self, req: ActionRequest) -> Result<u64, Response> {
+        match Entity::delete_by_id(req.id.unwrap_or_default())
+            .exec(&self.data)
             .await
         {
-            Err(err) => log_db_error!(self, err),
+            Err(err) => {
+                let _ = ErrorLogs::new(self.clone())
+                    .insert(log_trait_db_error!(err, req))
+                    .await;
+
+                Err(handle_db_error(&err))
+            }
             Ok(val) => Ok(val.rows_affected),
         }
+    }
+}
+
+#[async_trait]
+impl Insert<ActionRequest, Model> for MockRepo<Model> {
+    async fn insert(&self, req: ActionRequest) -> Result<Model, Response> {
+        let mut data = self.data.lock().unwrap();
+
+        let model = Model {
+            id: req.id.unwrap_or_default(),
+            strategy_id: req.strategy_id.unwrap_or_default(),
+            is_active: req.is_active.unwrap_or_default(),
+            is_sell: req.is_sell.unwrap_or_default(),
+            is_quote_asset: req.is_quote_asset.unwrap_or_default(),
+            is_percentage: req.is_percentage.unwrap_or_default(),
+            value: req.value.unwrap_or_default(),
+            pair_id: req.pair_id.unwrap_or_default(),
+            last_update: Local::now().naive_local().into(),
+        };
+
+        data.push(model.clone());
+        Ok(model)
+    }
+}
+
+#[async_trait]
+impl Select<ActionRequest, Model> for MockRepo<Model> {
+    async fn select(&self, req: ActionRequest) -> Result<Option<Model>, Response> {
+        let data = self.data.lock().unwrap();
+
+        Ok(data
+            .iter()
+            .find(|m| m.id == req.id.unwrap_or_default())
+            .cloned())
+    }
+
+    async fn select_many(
+        &self,
+        _req: ActionRequest,
+        query: Option<QueryOptions>,
+    ) -> Result<Vec<Model>, Response> {
+        let data = self.data.lock().unwrap();
+        let mut result = data.clone();
+
+        if let Some(q) = query {
+            if let Some(limit) = q.limit {
+                result.truncate(limit as usize);
+            }
+        }
+
+        Ok(result)
+    }
+}
+
+#[async_trait]
+impl Update<ActionRequest, Model> for MockRepo<Model> {
+    async fn update(&self, req: ActionRequest) -> Result<Model, Response> {
+        let mut data = self.data.lock().unwrap();
+
+        let id = req
+            .id
+            .ok_or(Response::not_found("Invalid mock update id".to_string()))?;
+
+        let model = data
+            .iter_mut()
+            .find(|m| m.id == id)
+            .ok_or(Response::not_found("Invalid mock update id".to_string()))?;
+
+        if let Some(is_active) = req.is_active {
+            model.is_active = is_active;
+        }
+
+        Ok(model.clone())
+    }
+}
+
+#[async_trait]
+impl Delete<ActionRequest> for MockRepo<Model> {
+    async fn delete(&self, req: ActionRequest) -> Result<u64, Response> {
+        let mut data = self.data.lock().unwrap();
+
+        let id = req
+            .id
+            .ok_or(Response::not_found("Invalid mock delete id".to_string()))?;
+
+        let before = data.len();
+        data.retain(|m| m.id != id);
+
+        Ok((before - data.len()) as u64)
     }
 }

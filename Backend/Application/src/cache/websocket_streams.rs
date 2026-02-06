@@ -3,12 +3,12 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use tokio_util::sync::CancellationToken;
 
-use crate::{handler::WebsocketStreams, utils::Cache};
+use crate::handler::WebsocketStreams;
 
 static WEBSOCKET_CANCELLATION_TOKEN: Lazy<Arc<RwLock<Option<CancellationToken>>>> =
     Lazy::new(|| Arc::new(RwLock::new(None)));
 
-impl WebsocketStreams<Cache> {
+impl WebsocketStreams {
     pub async fn set_cancellation_token_cache(token: CancellationToken) {
         let mut token_lock = WEBSOCKET_CANCELLATION_TOKEN.write().await;
 

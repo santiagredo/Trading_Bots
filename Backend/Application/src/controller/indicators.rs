@@ -3,20 +3,26 @@ use models::structs::{Environments, IndicatorRequest, QueryOptions};
 
 use crate::{
     handler::{Indicators, SubscribedIndicators},
-    utils::error_response,
+    utils::{error_response, DbRepo, EntityCache},
 };
 
-// db
+// ============================================
+// DATABASE OPERATIONS
+// ============================================
+
 #[post("/{env}")]
 pub async fn insert_indicator(
     env: web::Path<Environments>,
     web::Json(indicator): web::Json<IndicatorRequest>,
 ) -> impl Responder {
-    match Indicators::new(indicator)
-        .with_env(env.into_inner())
-        .insert_indicator()
-        .await
-    {
+    let repo = match DbRepo::new(env.into_inner()).await {
+        Ok(val) => val,
+        Err(err) => return error_response(err),
+    };
+
+    let service = Indicators::new(repo);
+
+    match service.insert(indicator).await {
         Ok(val) => HttpResponse::Ok().json(val),
         Err(err) => error_response(err),
     }
@@ -27,11 +33,14 @@ pub async fn select_indicator(
     env: web::Path<Environments>,
     query: web::Query<IndicatorRequest>,
 ) -> impl Responder {
-    match Indicators::new(query.into_inner())
-        .with_env(env.into_inner())
-        .select_indicator()
-        .await
-    {
+    let repo = match DbRepo::new(env.into_inner()).await {
+        Ok(val) => val,
+        Err(err) => return error_response(err),
+    };
+
+    let service = Indicators::new(repo);
+
+    match service.select(query.into_inner()).await {
         Ok(val) => HttpResponse::Ok().json(val),
         Err(err) => error_response(err),
     }
@@ -43,9 +52,15 @@ pub async fn select_indicators(
     indicator: web::Query<IndicatorRequest>,
     query: web::Query<QueryOptions>,
 ) -> impl Responder {
-    match Indicators::new(indicator.into_inner())
-        .with_env(env.into_inner())
-        .select_indicators(Some(query.into_inner()))
+    let repo = match DbRepo::new(env.into_inner()).await {
+        Ok(val) => val,
+        Err(err) => return error_response(err),
+    };
+
+    let service = Indicators::new(repo);
+
+    match service
+        .select_many(indicator.into_inner(), Some(query.into_inner()))
         .await
     {
         Ok(val) => HttpResponse::Ok().json(val),
@@ -58,11 +73,14 @@ pub async fn update_indicator(
     env: web::Path<Environments>,
     web::Json(indicator): web::Json<IndicatorRequest>,
 ) -> impl Responder {
-    match Indicators::new(indicator)
-        .with_env(env.into_inner())
-        .update_indicator()
-        .await
-    {
+    let repo = match DbRepo::new(env.into_inner()).await {
+        Ok(val) => val,
+        Err(err) => return error_response(err),
+    };
+
+    let service = Indicators::new(repo);
+
+    match service.update(indicator).await {
         Ok(val) => HttpResponse::Ok().json(val),
         Err(err) => error_response(err),
     }
@@ -73,52 +91,57 @@ pub async fn delete_indicator(
     env: web::Path<Environments>,
     web::Json(indicator): web::Json<IndicatorRequest>,
 ) -> impl Responder {
-    match Indicators::new(indicator)
-        .with_env(env.into_inner())
-        .delete_indicator()
-        .await
-    {
+    let repo = match DbRepo::new(env.into_inner()).await {
+        Ok(val) => val,
+        Err(err) => return error_response(err),
+    };
+
+    let service = Indicators::new(repo);
+
+    match service.delete(indicator).await {
         Ok(val) => HttpResponse::Ok().json(val),
         Err(err) => error_response(err),
     }
 }
 
-// cache
+// ============================================
+// CACHE OPERATIONS
+// ============================================
+
 #[get("/{env}/memory")]
 pub async fn get_indicator(
     env: web::Path<Environments>,
     query: web::Query<IndicatorRequest>,
 ) -> impl Responder {
-    let active_indicator = Indicators::new(query.into_inner())
-        .with_env(env.into_inner())
-        .get_indicator()
-        .await;
+    let indicator_id = match query.id {
+        Some(id) => id,
+        None => return HttpResponse::BadRequest().body("Indicator ID is required"),
+    };
 
-    match active_indicator {
-        None => HttpResponse::NotFound().finish(),
+    match Indicators::blank()
+        .get(env.into_inner(), indicator_id)
+        .await
+    {
         Some(val) => HttpResponse::Ok().json(val),
+        None => HttpResponse::NotFound().finish(),
     }
 }
 
 #[get("/{env}/memory/all")]
 pub async fn get_indicators(env: web::Path<Environments>) -> impl Responder {
-    let active_indicators = Indicators::default()
-        .with_env(env.into_inner())
-        .get_indicators()
-        .await;
-
-    match active_indicators {
-        None => HttpResponse::NotFound().finish(),
+    match Indicators::blank().get_all(env.into_inner()).await {
         Some(val) => HttpResponse::Ok().json(val),
+        None => HttpResponse::NotFound().finish(),
     }
 }
 
 #[get("/{env}/memory/subscribed_indicators/all")]
-pub async fn get_subscribed_indicators(query: web::Path<Environments>) -> impl Responder {
-    let request = SubscribedIndicators::new(query.into_inner());
-
-    match request.get_subscribed_indicators().await {
-        None => HttpResponse::NotFound().finish(),
+pub async fn get_subscribed_indicators(env: web::Path<Environments>) -> impl Responder {
+    match SubscribedIndicators::blank()
+        .get_all(env.into_inner())
+        .await
+    {
         Some(val) => HttpResponse::Ok().json(val),
+        None => HttpResponse::NotFound().finish(),
     }
 }

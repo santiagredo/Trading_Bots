@@ -1,58 +1,45 @@
+use crate::{
+    handler::StrategiesOverview,
+    utils::{handle_db_error, Response},
+};
 use models::{
     entities::{
         actions, indicators, pairs,
-        strategies::{self, Column},
+        strategies::{self},
     },
-    structs::StrategyRequest,
+    structs::{StrategyOverview, StrategyRequest},
 };
 use sea_orm::{ColumnTrait, Condition, DatabaseConnection, EntityTrait, QueryFilter};
 use tracing::error_span;
 
-use crate::{
-    handler::StrategiesOverview,
-    utils::{handle_db_error, Data, Response},
-};
-
-impl StrategiesOverview<Data> {
-    pub async fn select_strategy_overview_data(
+impl StrategiesOverview {
+    pub async fn select_strategy_overview(
         db: &DatabaseConnection,
         strategy: StrategyRequest,
-    ) -> Result<
-        (
-            Vec<strategies::Model>,
-            Vec<indicators::Model>,
-            Vec<actions::Model>,
-            Vec<pairs::Model>,
-        ),
-        Response,
-    > {
-        let mut condition = Condition::all();
+    ) -> Result<StrategyOverview, Response> {
+        let Some(strategy_id) = strategy.id else {
+            return Err(Response::bad_request(format!("Strategy id is null")));
+        };
 
-        if let Some(id) = strategy.id {
-            condition = condition.add(Column::Id.eq(id));
-        }
+        let mut strategy_overview = StrategyOverview::default();
 
-        if let Some(is_active) = strategy.is_active {
-            condition = condition.add(Column::IsActive.eq(is_active));
-        }
-
-        let strategies = match strategies::Entity::find().filter(condition).all(db).await {
+        let strategy = match strategies::Entity::find_by_id(strategy_id).one(db).await {
             Err(err) => {
-                error_span!("error - database", error = ?err);
+                // let _ = ErrorLogs::new(self.clone())
+                //     .insert(log_trait_db_error!(err, req))
+                //     .await;
 
                 return Err(handle_db_error(&err));
             }
-            Ok(val) => val,
+            Ok(None) => return Err(Response::not_found(format!("Strategy not found"))),
+            Ok(Some(val)) => val,
         };
 
-        let indicators = match indicators::Entity::find()
-            .filter(
-                Condition::all().add(
-                    indicators::Column::StrategyId
-                        .is_in(strategies.iter().map(|strat| strat.id.clone())),
-                ),
-            )
-            .all(db)
+        strategy_overview.strategy = strategy;
+
+        let indicator = match indicators::Entity::find()
+            .filter(Condition::all().add(indicators::Column::StrategyId.eq(strategy_id)))
+            .one(db)
             .await
         {
             Err(err) => {
@@ -63,11 +50,11 @@ impl StrategiesOverview<Data> {
             Ok(val) => val,
         };
 
-        let actions = match actions::Entity::find()
-            .filter(
-                actions::Column::StrategyId.is_in(strategies.iter().map(|strat| strat.id.clone())),
-            )
-            .all(db)
+        strategy_overview.indicator = indicator.unwrap_or_default();
+
+        let action = match actions::Entity::find()
+            .filter(actions::Column::StrategyId.eq(strategy_id))
+            .one(db)
             .await
         {
             Err(err) => {
@@ -78,9 +65,11 @@ impl StrategiesOverview<Data> {
             Ok(val) => val,
         };
 
-        let pairs = match pairs::Entity::find()
-            .filter(pairs::Column::Id.is_in(actions.iter().map(|action| action.pair_id)))
-            .all(db)
+        strategy_overview.action = action.unwrap_or_default();
+
+        let pair = match pairs::Entity::find()
+            .filter(pairs::Column::Id.eq(strategy_overview.action.pair_id))
+            .one(db)
             .await
         {
             Err(err) => {
@@ -91,6 +80,8 @@ impl StrategiesOverview<Data> {
             Ok(val) => val,
         };
 
-        Ok((strategies, indicators, actions, pairs))
+        strategy_overview.pair = pair.unwrap_or_default();
+
+        Ok(strategy_overview)
     }
 }

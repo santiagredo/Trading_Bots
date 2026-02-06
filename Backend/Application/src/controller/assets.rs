@@ -1,19 +1,28 @@
 use actix_web::{delete, get, patch, post, web, HttpResponse, Responder};
 use models::structs::{AssetRequest, Environments, QueryOptions};
 
-use crate::{handler::Assets, utils::error_response};
+use crate::{
+    handler::Assets,
+    utils::{error_response, DbRepo, EntityCache},
+};
 
-// db
+// ============================================
+// DATABASE OPERATIONS
+// ============================================
+
 #[post("/{env}")]
 pub async fn insert_asset(
     env: web::Path<Environments>,
     web::Json(asset): web::Json<AssetRequest>,
 ) -> impl Responder {
-    match Assets::new(asset)
-        .with_env(env.into_inner())
-        .insert_asset()
-        .await
-    {
+    let repo = match DbRepo::new(env.into_inner()).await {
+        Ok(val) => val,
+        Err(err) => return error_response(err),
+    };
+
+    let service = Assets::new(repo);
+
+    match service.insert(asset).await {
         Ok(val) => HttpResponse::Ok().json(val),
         Err(err) => error_response(err),
     }
@@ -24,11 +33,14 @@ pub async fn select_asset(
     env: web::Path<Environments>,
     asset: web::Query<AssetRequest>,
 ) -> impl Responder {
-    match Assets::new(asset.into_inner())
-        .with_env(env.into_inner())
-        .select_asset()
-        .await
-    {
+    let repo = match DbRepo::new(env.into_inner()).await {
+        Ok(val) => val,
+        Err(err) => return error_response(err),
+    };
+
+    let service = Assets::new(repo);
+
+    match service.select(asset.into_inner()).await {
         Ok(val) => HttpResponse::Ok().json(val),
         Err(err) => error_response(err),
     }
@@ -40,9 +52,15 @@ pub async fn select_assets(
     asset: web::Query<AssetRequest>,
     query: web::Query<QueryOptions>,
 ) -> impl Responder {
-    match Assets::new(asset.into_inner())
-        .with_env(env.into_inner())
-        .select_assets(Some(query.into_inner()))
+    let repo = match DbRepo::new(env.into_inner()).await {
+        Ok(val) => val,
+        Err(err) => return error_response(err),
+    };
+
+    let service = Assets::new(repo);
+
+    match service
+        .select_many(asset.into_inner(), Some(query.into_inner()))
         .await
     {
         Ok(val) => HttpResponse::Ok().json(val),
@@ -55,11 +73,14 @@ pub async fn update_asset(
     env: web::Path<Environments>,
     web::Json(asset): web::Json<AssetRequest>,
 ) -> impl Responder {
-    match Assets::new(asset)
-        .with_env(env.into_inner())
-        .update_asset()
-        .await
-    {
+    let repo = match DbRepo::new(env.into_inner()).await {
+        Ok(val) => val,
+        Err(err) => return error_response(err),
+    };
+
+    let service = Assets::new(repo);
+
+    match service.update(asset).await {
         Ok(val) => HttpResponse::Ok().json(val),
         Err(err) => error_response(err),
     }
@@ -70,27 +91,34 @@ pub async fn delete_asset(
     env: web::Path<Environments>,
     web::Json(asset): web::Json<AssetRequest>,
 ) -> impl Responder {
-    match Assets::new(asset)
-        .with_env(env.into_inner())
-        .delete_asset()
-        .await
-    {
+    let repo = match DbRepo::new(env.into_inner()).await {
+        Ok(val) => val,
+        Err(err) => return error_response(err),
+    };
+
+    let service = Assets::new(repo);
+
+    match service.delete(asset).await {
         Ok(val) => HttpResponse::Ok().json(val),
         Err(err) => error_response(err),
     }
 }
 
-// cache
+// ============================================
+// CACHE OPERATIONS
+// ============================================
+
 #[get("/{env}/memory")]
 pub async fn get_asset(
     env: web::Path<Environments>,
     asset: web::Query<AssetRequest>,
 ) -> impl Responder {
-    match Assets::new(asset.into_inner())
-        .with_env(env.into_inner())
-        .get_asset()
-        .await
-    {
+    let asset_id = match asset.id {
+        Some(id) => id,
+        None => return HttpResponse::BadRequest().body("Asset ID is required"),
+    };
+
+    match Assets::blank().get(env.into_inner(), asset_id).await {
         Some(val) => HttpResponse::Ok().json(val),
         None => HttpResponse::NotFound().finish(),
     }
@@ -98,11 +126,7 @@ pub async fn get_asset(
 
 #[get("/{env}/memory/all")]
 pub async fn get_assets(env: web::Path<Environments>) -> impl Responder {
-    match Assets::default()
-        .with_env(env.into_inner())
-        .get_assets()
-        .await
-    {
+    match Assets::blank().get_all(env.into_inner()).await {
         Some(val) => HttpResponse::Ok().json(val),
         None => HttpResponse::NotFound().finish(),
     }

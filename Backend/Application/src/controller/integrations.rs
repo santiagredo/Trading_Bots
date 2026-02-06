@@ -1,7 +1,10 @@
 use actix_web::{get, patch, web, HttpResponse, Responder};
 use models::structs::{Environments, IntegrationRequest, QueryOptions};
 
-use crate::{handler::Integrations, utils::error_response};
+use crate::{
+    handler::Integrations,
+    utils::{error_response, DbRepo, EntityCache},
+};
 
 #[get("/{env}/all")]
 pub async fn select_integrations(
@@ -9,9 +12,15 @@ pub async fn select_integrations(
     integration: web::Query<IntegrationRequest>,
     query: web::Query<QueryOptions>,
 ) -> impl Responder {
-    match Integrations::new(integration.into_inner())
-        .with_env(env.into_inner())
-        .select_integrations(Some(query.into_inner()))
+    let repo = match DbRepo::new(env.into_inner()).await {
+        Ok(val) => val,
+        Err(err) => return error_response(err),
+    };
+
+    let service = Integrations::new(repo);
+
+    match service
+        .select_many(integration.into_inner(), Some(query.into_inner()))
         .await
     {
         Ok(val) => HttpResponse::Ok().json(val),
@@ -24,24 +33,31 @@ pub async fn update_integration(
     env: web::Path<Environments>,
     web::Json(integration): web::Json<IntegrationRequest>,
 ) -> impl Responder {
-    match Integrations::new(integration)
-        .with_env(env.into_inner())
-        .update_integration()
-        .await
-    {
+    let repo = match DbRepo::new(env.into_inner()).await {
+        Ok(val) => val,
+        Err(err) => return error_response(err),
+    };
+
+    let service = Integrations::new(repo);
+
+    match service.update(integration).await {
         Ok(val) => HttpResponse::Ok().json(val),
         Err(err) => error_response(err),
     }
 }
 
-// cache
 #[get("/{env}/memory/all")]
 pub async fn get_integrations(env: web::Path<Environments>) -> impl Responder {
-    match Integrations::default()
-        .with_env(env.into_inner())
-        .get_integrations()
-        .await
-    {
+    let env = env.into_inner();
+
+    let repo = match DbRepo::new(env.clone()).await {
+        Ok(val) => val,
+        Err(err) => return error_response(err),
+    };
+
+    let service = Integrations::new(repo);
+
+    match service.get_all(env).await {
         Some(val) => HttpResponse::Ok().json(val),
         None => HttpResponse::NotFound().finish(),
     }

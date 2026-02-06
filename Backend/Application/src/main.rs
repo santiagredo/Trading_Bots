@@ -6,12 +6,12 @@ async fn main() -> std::io::Result<()> {
     let server = run()?;
     let handle = server.handle();
 
-    Engines::new(LifecycleState::Running)
-        .set_engine_status()
+    Engines::blank()
+        .set_engine_state(LifecycleState::Running)
         .await
         .unwrap();
 
-    let cancel_token = Engines::default().get_engine_token();
+    let cancel_token = Engines::blank().get_engine_token_core();
 
     tokio::select! {
         _ = server => {

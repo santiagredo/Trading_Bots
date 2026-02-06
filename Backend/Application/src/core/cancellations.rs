@@ -1,21 +1,24 @@
-use tokio_util::sync::CancellationToken;
-
 use crate::{
     handler::{Cancellations, Engines},
-    utils::{Cache, Core, Response},
+    utils::Response,
 };
+use models::structs::Environments;
+use tokio_util::sync::CancellationToken;
 
-impl Cancellations<Core> {
-    async fn set_runtime_token_core(self, token: CancellationToken) {
-        self.next_phase().set_runtime_token_cache(token).await
+impl Cancellations {
+    async fn set_runtime_token_core(self, environment: Environments, token: CancellationToken) {
+        self.set_runtime_token_cache(environment, token).await
     }
 
-    pub async fn get_runtime_token_core(&self) -> Option<CancellationToken> {
-        Cancellations::<Cache>::get_runtime_token_cache(self.environment).await
+    pub async fn get_runtime_token_core(&self, env: Environments) -> Option<CancellationToken> {
+        Cancellations::get_runtime_token_cache(env).await
     }
 
-    pub async fn start_runtime_core(self) -> Result<CancellationToken, Response> {
-        if Self::get_runtime_token_core(&self)
+    pub async fn start_runtime_core(
+        self,
+        env: Environments,
+    ) -> Result<CancellationToken, Response> {
+        if Self::get_runtime_token_core(&self, env)
             .await
             .is_some_and(|token| !token.is_cancelled())
         {
@@ -24,15 +27,15 @@ impl Cancellations<Core> {
             )));
         }
 
-        let global_token = Engines::default().get_engine_token();
+        let global_token = Engines::blank().get_engine_token_core();
         let runtime_token = global_token.child_token();
 
-        Self::set_runtime_token_core(self, runtime_token.clone()).await;
+        Self::set_runtime_token_core(self, env, runtime_token.clone()).await;
 
         Ok(runtime_token)
     }
 
-    pub async fn stop_runtime_core(self) {
-        self.next_phase().stop_runtime_cache().await
+    pub async fn stop_runtime_core(self, env: Environments) {
+        self.stop_runtime_cache(env).await
     }
 }

@@ -1,7 +1,6 @@
-use std::collections::{HashMap, HashSet};
-
-use application::{handler::SubscribedIndicators, utils::Cache};
+use application::handler::SubscribedIndicators;
 use models::{entities::indicators::Model, enums::LifecycleState, structs::Environments};
+use std::collections::{HashMap, HashSet};
 
 fn mock_indicator(symbol: &str, strategy_id: i32) -> Model {
     Model {
@@ -15,38 +14,32 @@ fn mock_indicator(symbol: &str, strategy_id: i32) -> Model {
 #[tokio::test]
 async fn full_subscribed_indicators_cache_flow_should_work_correctly() {
     let env = Environments::DEV;
+    let service = SubscribedIndicators::blank();
 
     /* ===========================
      * INITIAL STATE
      * ===========================
      */
 
-    // Reset cache
-    SubscribedIndicators::<Cache>::reset_subscribed_indicators_cache(env)
-        .await
-        .unwrap();
+    service.reset(env).await.unwrap();
 
-    // Status off
-    let status = SubscribedIndicators::new(env)
-        .get_subscribed_indicators_state()
-        .await;
+    let status = service.state(env).await;
     assert_eq!(status, LifecycleState::Off);
 
-    let cache = SubscribedIndicators::<Cache>::get_subscribed_indicators_cache(env).await;
-    assert!(cache.is_none() || cache.unwrap().is_empty());
+    let cache = service.get_all(env).await;
+    assert!(cache.is_none());
 
     /* ===========================
      * STARTING
      * ===========================
      */
 
-    SubscribedIndicators::<Cache>::set_status_cache(env, LifecycleState::Starting)
+    service
+        .set_state(env, LifecycleState::Starting)
         .await
         .unwrap();
 
-    let starting_status = SubscribedIndicators::new(env)
-        .get_subscribed_indicators_state()
-        .await;
+    let starting_status = service.state(env).await;
     assert_eq!(starting_status, LifecycleState::Starting);
 
     /* ===========================
@@ -60,42 +53,43 @@ async fn full_subscribed_indicators_cache_flow_should_work_correctly() {
         mock_indicator("ETHUSDT", 3),
     ];
 
-    let mut map: HashMap<String, HashSet<i32>> = HashMap::new();
-    for ind in &indicators {
-        map.entry(ind.symbol.clone())
+    let mut grouped: HashMap<String, HashSet<i32>> = HashMap::new();
+    for ind in indicators {
+        grouped
+            .entry(ind.symbol)
             .or_insert_with(HashSet::new)
             .insert(ind.strategy_id);
     }
 
-    SubscribedIndicators::<Cache>::set_status_cache(env, LifecycleState::Running)
+    let values: Vec<(String, Vec<i32>)> = grouped
+        .into_iter()
+        .map(|(k, v)| (k, v.into_iter().collect()))
+        .collect();
+
+    service
+        .set_state(env, LifecycleState::Running)
         .await
         .unwrap();
 
-    SubscribedIndicators::<Cache>::set_subscribed_indicators_cache(env, map)
-        .await
-        .unwrap();
+    service.set_all(env, values).await.unwrap();
 
-    let cache = SubscribedIndicators::<Cache>::get_subscribed_indicators_cache(env)
-        .await
-        .unwrap();
-    assert_eq!(cache.len(), 2);
-    assert!(cache.get("BTCUSDT").unwrap().contains(&1));
-    assert!(cache.get("BTCUSDT").unwrap().contains(&2));
-    assert!(cache.get("ETHUSDT").unwrap().contains(&3));
+    let cache = service.get_all(env).await.unwrap();
+    assert_eq!(cache.models.len(), 2);
+    assert!(cache.models.get("BTCUSDT").unwrap().contains(&1));
+    assert!(cache.models.get("BTCUSDT").unwrap().contains(&2));
+    assert!(cache.models.get("ETHUSDT").unwrap().contains(&3));
 
     /* ===========================
-     * INSERT INDIVIDUAL INDICATOR
+     * UPSERT INDIVIDUAL INDICATOR
      * ===========================
      */
 
-    let extra = mock_indicator("BTCUSDT", 99);
-    SubscribedIndicators::<Cache>::upsert_subscribed_indicator_cache(env, extra.clone())
+    service
+        .upsert(env, "BTCUSDT".into(), vec![99])
         .await
         .unwrap();
 
-    let btc = SubscribedIndicators::<Cache>::get_subscribed_indicator_cache(env, "BTCUSDT")
-        .await
-        .unwrap();
+    let btc = service.get(env, "BTCUSDT".into()).await.unwrap();
     assert!(btc.contains(&99));
 
     /* ===========================
@@ -103,23 +97,18 @@ async fn full_subscribed_indicators_cache_flow_should_work_correctly() {
      * ===========================
      */
 
-    SubscribedIndicators::<Cache>::set_status_cache(env, LifecycleState::Stopping)
+    service
+        .set_state(env, LifecycleState::Stopping)
         .await
         .unwrap();
 
-    SubscribedIndicators::<Cache>::remove_all_subscribed_indicators_cache(env)
-        .await
-        .unwrap();
+    service.remove_all(env).await.unwrap();
 
-    SubscribedIndicators::<Cache>::set_status_cache(env, LifecycleState::Off)
-        .await
-        .unwrap();
+    service.set_state(env, LifecycleState::Off).await.unwrap();
 
-    let final_cache = SubscribedIndicators::<Cache>::get_subscribed_indicators_cache(env).await;
-    assert!(final_cache.is_some_and(|val| val.is_empty()));
+    let final_cache = service.get_all(env).await;
+    assert!(final_cache.is_none());
 
-    let final_status = SubscribedIndicators::new(env)
-        .get_subscribed_indicators_state()
-        .await;
+    let final_status = service.state(env).await;
     assert_eq!(final_status, LifecycleState::Off);
 }

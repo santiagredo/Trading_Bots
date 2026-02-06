@@ -1,48 +1,94 @@
 use std::time::Duration;
 
-use application::{handler::Metrics, utils::Cache};
-use models::structs::Environments;
+use application::{handler::Metrics, utils::EntityCache};
+use models::{enums::LifecycleState, structs::Environments};
 
 #[tokio::test]
 async fn full_metrics_cache_flow_should_work_correctly() {
     let env = Environments::DEV;
-    let metrics = Metrics::default().with_env(env).next_phase::<Cache>();
+    let metrics = Metrics::blank();
 
-    // Initial state
-    assert!(metrics.get_metrics_cache().await.is_none());
+    /* ===========================
+     * INITIAL STATE
+     * ===========================
+     */
 
-    // Successful execution
-    Metrics::<Cache>::set_execution_metrics_cache(env, Duration::from_millis(100), true)
+    // Off => cache inaccesible
+    assert!(metrics.get_all(env).await.is_none());
+
+    /* ===========================
+     * START CACHE
+     * ===========================
+     */
+
+    metrics
+        .set_state(env, LifecycleState::Starting)
+        .await
+        .unwrap();
+
+    metrics
+        .set_state(env, LifecycleState::Running)
+        .await
+        .unwrap();
+
+    /* ===========================
+     * EXECUTIONS
+     * ===========================
+     */
+
+    metrics
+        .set_execution_metrics(env, Duration::from_millis(100), true)
         .await;
 
-    // Error execution
-    Metrics::<Cache>::set_execution_metrics_cache(env, Duration::from_millis(200), false)
+    metrics
+        .set_execution_metrics(env, Duration::from_millis(200), false)
         .await;
 
-    // Posting activity
-    Metrics::<Cache>::set_posting_metrics_cache(env, true).await;
-    Metrics::<Cache>::set_posting_metrics_cache(env, false).await;
+    /* ===========================
+     * POSTING
+     * ===========================
+     */
 
-    // Skipped
-    Metrics::<Cache>::set_skipped_metrics_cache(env).await;
+    metrics.set_posting_metrics(env, true).await;
+    metrics.set_posting_metrics(env, false).await;
 
-    let metrics = Metrics::default().with_env(env).next_phase::<Cache>();
+    /* ===========================
+     * SKIPPED
+     * ===========================
+     */
 
-    let metric = metrics.get_metrics_cache().await.unwrap();
+    metrics.set_skipped_metrics(env).await;
+
+    /* ===========================
+     * VALIDATE CACHE
+     * ===========================
+     */
+
+    let cache = metrics.get_all(env).await.unwrap();
+    let metric = cache.model;
 
     assert_eq!(metric.executions_ok, 1);
     assert_eq!(metric.executions_err, 1);
     assert_eq!(metric.consecutive_errors, 1);
-    assert_eq!(metric.max_execution_time, Duration::from_millis(200));
+    assert_eq!(metric.max_execution_time, 200);
     assert_eq!(metric.active_posting, 0);
     assert_eq!(metric.skipped_due_to_lock, 1);
 
-    // Persist
-    let persisted = Metrics::<Cache>::persist_metrics_cache(env).await;
-    assert!(persisted.is_some());
+    /* ===========================
+     * STOP
+     * ===========================
+     */
 
-    let metrics = Metrics::default().with_env(env).next_phase::<Cache>();
+    metrics
+        .set_state(env, LifecycleState::Stopping)
+        .await
+        .unwrap();
 
-    // Cache cleared
-    assert!(metrics.get_metrics_cache().await.is_none());
+    let removed = metrics.remove_all(env).await.unwrap();
+    assert_eq!(removed.len(), 1);
+
+    metrics.set_state(env, LifecycleState::Off).await.unwrap();
+
+    // Off => cache inaccesible
+    assert!(metrics.get_all(env).await.is_none());
 }

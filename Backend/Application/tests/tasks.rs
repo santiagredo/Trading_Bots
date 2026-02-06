@@ -1,4 +1,4 @@
-use application::{handler::Tasks, utils::Cache};
+use application::handler::Tasks;
 use models::{
     entities::tasks::Model,
     enums::{LifecycleState, TaskState},
@@ -25,16 +25,16 @@ async fn full_tasks_cache_flow_should_work_correctly() {
      * ===========================
      */
 
-    let reset = Tasks::<Cache>::reset_tasks_cache(env).await;
+    let reset = Tasks::reset_tasks_cache(env).await;
     assert!(reset.is_ok());
 
-    let off = Tasks::<Cache>::set_status_cache(env, LifecycleState::Off).await;
+    let off = Tasks::set_status_cache(env, LifecycleState::Off).await;
     assert!(off.is_err());
 
-    let status = Tasks::default().with_env(env).get_tasks_state().await;
+    let status = Tasks::new().get_tasks_state(env).await;
     assert_eq!(status, LifecycleState::Off);
 
-    let cache = Tasks::<Cache>::get_tasks_cache(env).await;
+    let cache = Tasks::get_tasks_cache(env).await;
     assert!(cache.is_some_and(|val| val.models.is_empty()));
 
     /* ===========================
@@ -42,18 +42,18 @@ async fn full_tasks_cache_flow_should_work_correctly() {
      * ===========================
      */
 
-    Tasks::<Cache>::set_status_cache(env, LifecycleState::Starting)
+    Tasks::set_status_cache(env, LifecycleState::Starting)
         .await
         .unwrap();
 
-    Tasks::<Cache>::set_status_cache(env, LifecycleState::Running)
+    Tasks::set_status_cache(env, LifecycleState::Running)
         .await
         .unwrap();
 
     let tasks = vec![mock_task(1, "BNUAB"), mock_task(2, "BNUEI")];
-    Tasks::<Cache>::set_tasks_cache(env, tasks).await.unwrap();
+    Tasks::set_tasks_cache(env, tasks).await.unwrap();
 
-    let cache = Tasks::<Cache>::get_tasks_cache(env).await.unwrap();
+    let cache = Tasks::get_tasks_cache(env).await.unwrap();
     assert_eq!(cache.models.len(), 2);
     assert_eq!(cache.status, LifecycleState::Running);
 
@@ -67,11 +67,9 @@ async fn full_tasks_cache_flow_should_work_correctly() {
      */
 
     let extra = mock_task(3, "CPUPS");
-    Tasks::<Cache>::upsert_task_cache(env, extra.clone())
-        .await
-        .unwrap();
+    Tasks::upsert_task_cache(env, extra.clone()).await.unwrap();
 
-    let single = Tasks::<Cache>::get_task_cache(env, 3).await.unwrap();
+    let single = Tasks::get_task_cache(env, 3).await.unwrap();
     assert_eq!(single.model, extra);
     assert_eq!(single.state, TaskState::Sleeping);
 
@@ -80,14 +78,11 @@ async fn full_tasks_cache_flow_should_work_correctly() {
      * ===========================
      */
 
-    let removed = Tasks::<Cache>::remove_task_cache(env, 3)
-        .await
-        .unwrap()
-        .unwrap();
+    let removed = Tasks::remove_task_cache(env, 3).await.unwrap().unwrap();
 
     assert_eq!(removed.model, extra);
 
-    let not_found = Tasks::<Cache>::get_task_cache(env, 3).await;
+    let not_found = Tasks::get_task_cache(env, 3).await;
     assert!(not_found.is_none());
 
     /* ===========================
@@ -95,16 +90,16 @@ async fn full_tasks_cache_flow_should_work_correctly() {
      * ===========================
      */
 
-    Tasks::<Cache>::set_status_cache(env, LifecycleState::Stopping)
+    Tasks::set_status_cache(env, LifecycleState::Stopping)
         .await
         .unwrap();
 
-    Tasks::<Cache>::remove_tasks_cache(env).await.unwrap();
+    Tasks::remove_tasks_cache(env).await.unwrap();
 
-    Tasks::<Cache>::set_status_cache(env, LifecycleState::Off)
+    Tasks::set_status_cache(env, LifecycleState::Off)
         .await
         .unwrap();
 
-    let final_cache = Tasks::<Cache>::get_tasks_cache(env).await;
+    let final_cache = Tasks::get_tasks_cache(env).await;
     assert!(final_cache.is_some_and(|val| val.models.is_empty()));
 }

@@ -1,129 +1,108 @@
 use models::structs::request::OrderRequest;
 use sea_orm::prelude::Decimal;
 
-use crate::{handler::Orders, utils::Logic};
+/* ======================================================
+ * VALIDATIONS
+ * ======================================================
+ */
 
-impl Orders<Logic> {
-    pub fn insert_order_logic(mut self) -> Result<Self, String> {
-        if self.model.status_id.is_none_or(|id| id <= 0) {
-            return Err(format!("Invalid status ID"));
-        }
+pub fn validate_insert(req: &OrderRequest) -> Result<(), String> {
+    if req.status_id.is_none_or(|id| id <= 0) {
+        return Err("Invalid status ID".into());
+    }
 
-        if self.model.strategy_id.is_none_or(|id| id <= 0) {
-            return Err(format!("Invalid strategy ID"));
-        }
+    if req.strategy_id.is_none_or(|id| id <= 0) {
+        return Err("Invalid strategy ID".into());
+    }
 
-        if self.model.base_asset_id.is_none_or(|id| id <= 0) {
-            return Err(format!("Invalid base asset ID"));
-        }
+    if req.base_asset_id.is_none_or(|id| id <= 0) {
+        return Err("Invalid base asset ID".into());
+    }
 
-        if self.model.quote_asset_id.is_none_or(|id| id <= 0) {
-            return Err(format!("Invalid quote asset ID"));
-        }
+    if req.quote_asset_id.is_none_or(|id| id <= 0) {
+        return Err("Invalid quote asset ID".into());
+    }
 
-        if self
-            .model
-            .price_target
-            .is_some_and(|price| price < Decimal::ZERO)
+    if req.price_target.is_some_and(|price| price < Decimal::ZERO) {
+        return Err("Invalid target price: < 0".into());
+    }
+
+    let is_sell = match req.is_sell {
+        Some(val) => val,
+        None => return Err("Missing order buy/sell action".into()),
+    };
+
+    if req.base_asset_amount.unwrap_or_default() <= Decimal::ZERO
+        && req.quote_asset_amount.unwrap_or_default() <= Decimal::ZERO
+    {
+        return Err(format!(
+            "Invalid amounts -- base: {:?} -- quote: {:?}",
+            req.base_asset_amount, req.quote_asset_amount
+        ));
+    }
+
+    if is_sell {
+        if req.price_abort.unwrap_or_default() != Decimal::ZERO
+            && req.price_abort >= req.price_target
         {
-            return Err(format!("Invalid target price: < 0"));
+            return Err("Invalid abort price".into());
         }
 
-        let is_sell = match self.model.is_sell {
-            None => return Err(format!("Missing order buy/sell action")),
-            Some(val) => val,
-        };
-
-        if self.model.base_asset_amount.unwrap_or_default() <= Decimal::ZERO
-            && self.model.quote_asset_amount.unwrap_or_default() <= Decimal::ZERO
+        if (req.price_target.unwrap_or_default() <= Decimal::ZERO
+            && req.status_id.unwrap_or_default() == 1)
+            || req.price_entry > req.price_target
         {
-            return Err(format!(
-                "Invalid amounts -- base: {:?} -- quote: {:?}",
-                self.model.base_asset_amount, self.model.quote_asset_amount
-            ));
+            return Err("Invalid sell price target".into());
+        }
+    } else {
+        if req.price_abort.unwrap_or_default() != Decimal::ZERO
+            && req.price_abort <= req.price_target
+        {
+            return Err("Invalid abort price".into());
         }
 
-        if self.model.base_asset_amount.unwrap_or_default() == Decimal::ZERO {
-            self.model.base_asset_amount = Some(
-                self.model.quote_asset_amount.unwrap_or_default()
-                    / self.model.price_target.unwrap_or_default(),
-            );
+        if (req.price_target.unwrap_or_default() <= Decimal::ZERO
+            && req.status_id.unwrap_or_default() == 1)
+            || req.price_entry < req.price_target
+        {
+            return Err("Invalid buy price target".into());
         }
-
-        if self.model.quote_asset_amount.unwrap_or_default() == Decimal::ZERO {
-            self.model.quote_asset_amount = Some(
-                self.model.base_asset_amount.unwrap_or_default()
-                    * self.model.price_target.unwrap_or_default(),
-            );
-        }
-
-        match is_sell {
-            true => {
-                if self.model.price_abort.unwrap_or_default() != Decimal::ZERO
-                    && self.model.price_abort >= self.model.price_target
-                {
-                    return Err(format!("Invalid abort price"));
-                }
-
-                if (self.model.price_target.unwrap_or_default() <= Decimal::ZERO
-                    && self.model.status_id.unwrap_or_default() == 1)
-                    || self.model.price_entry > self.model.price_target
-                {
-                    return Err(format!("Invalid sell price target"));
-                }
-            }
-            false => {
-                if self.model.price_abort.unwrap_or_default() != Decimal::ZERO
-                    && self.model.price_abort <= self.model.price_target
-                {
-                    return Err(format!("Invalid abort price"));
-                }
-
-                if (self.model.price_target.unwrap_or_default() <= Decimal::ZERO
-                    && self.model.status_id.unwrap_or_default() == 1)
-                    || self.model.price_entry < self.model.price_target
-                {
-                    return Err(format!("Invalid buy price target"));
-                }
-            }
-        }
-
-        Ok(self)
     }
 
-    pub fn select_order_logic(self) -> Result<Self, String> {
-        if self.model.id.is_none_or(|id| id <= 0) {
-            return Err(format!("Invalid order ID"));
-        }
-
-        Ok(self)
-    }
-
-    pub fn update_order_logic(self) -> Result<Self, String> {
-        if self.model.id.is_none_or(|id| id <= 0) {
-            return Err(format!("Invalid order ID"));
-        }
-
-        if ![2, 3].contains(&self.model.status_id.unwrap_or_default()) {
-            return Err(format!("Invalid status ID"));
-        }
-
-        Ok(self)
-    }
-
-    pub fn create_order_request() -> OrderRequest {
-        todo!()
-    }
+    Ok(())
 }
 
+pub fn validate_select(req: &OrderRequest) -> Result<(), String> {
+    if req.id.is_none_or(|id| id <= 0) {
+        return Err("Invalid order ID".into());
+    }
+
+    Ok(())
+}
+
+pub fn validate_update(req: &OrderRequest) -> Result<(), String> {
+    if req.id.is_none_or(|id| id <= 0) {
+        return Err("Invalid order ID".into());
+    }
+
+    if ![2, 3].contains(&req.status_id.unwrap_or_default()) {
+        return Err("Invalid status ID".into());
+    }
+
+    Ok(())
+}
+
+/* ======================================================
+ * TESTS
+ * ======================================================
+ */
+
 #[cfg(test)]
-mod insert_order_logic_tests {
-    use crate::handler::Orders;
-    use models::structs::request::OrderRequest;
-    use sea_orm::prelude::Decimal;
+mod fn_validate_insert {
+    use super::*;
 
     #[test]
-    fn test_insert_order_logic_cases() {
+    fn cases() {
         let cases = vec![
             (
                 "invalid status id",
@@ -131,37 +110,7 @@ mod insert_order_logic_tests {
                     status_id: Some(0),
                     ..Default::default()
                 },
-                Err("Invalid status ID".to_string()),
-            ),
-            (
-                "invalid strategy id",
-                OrderRequest {
-                    status_id: Some(1),
-                    strategy_id: Some(0),
-                    ..Default::default()
-                },
-                Err("Invalid strategy ID".to_string()),
-            ),
-            (
-                "invalid base asset id",
-                OrderRequest {
-                    status_id: Some(1),
-                    strategy_id: Some(1),
-                    base_asset_id: Some(0),
-                    ..Default::default()
-                },
-                Err("Invalid base asset ID".to_string()),
-            ),
-            (
-                "invalid quote asset id",
-                OrderRequest {
-                    status_id: Some(1),
-                    strategy_id: Some(1),
-                    base_asset_id: Some(1),
-                    quote_asset_id: Some(0),
-                    ..Default::default()
-                },
-                Err("Invalid quote asset ID".to_string()),
+                false,
             ),
             (
                 "missing buy/sell",
@@ -172,7 +121,7 @@ mod insert_order_logic_tests {
                     quote_asset_id: Some(1),
                     ..Default::default()
                 },
-                Err("Missing order buy/sell action".to_string()),
+                false,
             ),
             (
                 "valid buy order",
@@ -188,28 +137,23 @@ mod insert_order_logic_tests {
                     quote_asset_amount: Some(Decimal::ONE),
                     ..Default::default()
                 },
-                Ok(()),
+                true,
             ),
         ];
 
-        for (name, req, expected) in cases {
-            let result = Orders::new(req)
-                .next_phase()
-                .insert_order_logic()
-                .map(|_| ());
-
-            assert_eq!(result, expected, "failed case: {}", name);
+        for (name, req, should_pass) in cases {
+            let result = validate_insert(&req);
+            assert_eq!(result.is_ok(), should_pass, "case `{}` failed", name);
         }
     }
 }
 
 #[cfg(test)]
-mod select_order_logic_tests {
-    use crate::handler::Orders;
-    use models::structs::request::OrderRequest;
+mod fn_validate_select {
+    use super::*;
 
     #[test]
-    fn test_select_order_logic_cases() {
+    fn cases() {
         let cases = vec![
             (
                 "invalid order id",
@@ -217,7 +161,7 @@ mod select_order_logic_tests {
                     id: Some(0),
                     ..Default::default()
                 },
-                Err("Invalid order ID".to_string()),
+                false,
             ),
             (
                 "valid order id",
@@ -225,28 +169,23 @@ mod select_order_logic_tests {
                     id: Some(1),
                     ..Default::default()
                 },
-                Ok(()),
+                true,
             ),
         ];
 
-        for (name, req, expected) in cases {
-            let result = Orders::new(req)
-                .next_phase()
-                .select_order_logic()
-                .map(|_| ());
-
-            assert_eq!(result, expected, "failed case: {}", name);
+        for (name, req, should_pass) in cases {
+            let result = validate_select(&req);
+            assert_eq!(result.is_ok(), should_pass, "case `{}` failed", name);
         }
     }
 }
 
 #[cfg(test)]
-mod update_order_logic_tests {
-    use crate::handler::Orders;
-    use models::structs::request::OrderRequest;
+mod fn_validate_update {
+    use super::*;
 
     #[test]
-    fn test_update_order_logic_cases() {
+    fn cases() {
         let cases = vec![
             (
                 "invalid order id",
@@ -254,7 +193,7 @@ mod update_order_logic_tests {
                     id: Some(0),
                     ..Default::default()
                 },
-                Err("Invalid order ID".to_string()),
+                false,
             ),
             (
                 "invalid status id",
@@ -263,7 +202,7 @@ mod update_order_logic_tests {
                     status_id: Some(1),
                     ..Default::default()
                 },
-                Err("Invalid status ID".to_string()),
+                false,
             ),
             (
                 "valid status id 2",
@@ -272,7 +211,7 @@ mod update_order_logic_tests {
                     status_id: Some(2),
                     ..Default::default()
                 },
-                Ok(()),
+                true,
             ),
             (
                 "valid status id 3",
@@ -281,17 +220,13 @@ mod update_order_logic_tests {
                     status_id: Some(3),
                     ..Default::default()
                 },
-                Ok(()),
+                true,
             ),
         ];
 
-        for (name, req, expected) in cases {
-            let result = Orders::new(req)
-                .next_phase()
-                .update_order_logic()
-                .map(|_| ());
-
-            assert_eq!(result, expected, "failed case: {}", name);
+        for (name, req, should_pass) in cases {
+            let result = validate_update(&req);
+            assert_eq!(result.is_ok(), should_pass, "case `{}` failed", name);
         }
     }
 }

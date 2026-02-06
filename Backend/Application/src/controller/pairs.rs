@@ -1,19 +1,28 @@
 use actix_web::{get, patch, post, web, HttpResponse, Responder};
 use models::structs::{Environments, PairRequest, QueryOptions};
 
-use crate::{handler::Pairs, utils::error_response};
+use crate::{
+    handler::Pairs,
+    utils::{error_response, DbRepo, EntityCache},
+};
 
-// db
+// ============================================
+// DATABASE OPERATIONS
+// ============================================
+
 #[post("/{env}")]
 pub async fn insert_pair(
     env: web::Path<Environments>,
     web::Json(pair): web::Json<PairRequest>,
 ) -> impl Responder {
-    match Pairs::new(pair)
-        .with_env(env.into_inner())
-        .insert_pair()
-        .await
-    {
+    let repo = match DbRepo::new(env.into_inner()).await {
+        Ok(val) => val,
+        Err(err) => return error_response(err),
+    };
+
+    let service = Pairs::new(repo);
+
+    match service.insert(pair).await {
         Ok(val) => HttpResponse::Ok().json(val),
         Err(err) => error_response(err),
     }
@@ -22,13 +31,16 @@ pub async fn insert_pair(
 #[get("/{env}")]
 pub async fn select_pair(
     env: web::Path<Environments>,
-    query: web::Query<PairRequest>,
+    pair: web::Query<PairRequest>,
 ) -> impl Responder {
-    match Pairs::new(query.into_inner())
-        .with_env(env.into_inner())
-        .select_pair()
-        .await
-    {
+    let repo = match DbRepo::new(env.into_inner()).await {
+        Ok(val) => val,
+        Err(err) => return error_response(err),
+    };
+
+    let service = Pairs::new(repo);
+
+    match service.select(pair.into_inner()).await {
         Ok(val) => HttpResponse::Ok().json(val),
         Err(err) => error_response(err),
     }
@@ -40,9 +52,15 @@ pub async fn select_pairs(
     pair: web::Query<PairRequest>,
     query: web::Query<QueryOptions>,
 ) -> impl Responder {
-    match Pairs::new(pair.into_inner())
-        .with_env(env.into_inner())
-        .select_pairs(Some(query.into_inner()))
+    let repo = match DbRepo::new(env.into_inner()).await {
+        Ok(val) => val,
+        Err(err) => return error_response(err),
+    };
+
+    let service = Pairs::new(repo);
+
+    match service
+        .select_many(pair.into_inner(), Some(query.into_inner()))
         .await
     {
         Ok(val) => HttpResponse::Ok().json(val),
@@ -55,27 +73,34 @@ pub async fn update_pair(
     env: web::Path<Environments>,
     web::Json(pair): web::Json<PairRequest>,
 ) -> impl Responder {
-    match Pairs::new(pair)
-        .with_env(env.into_inner())
-        .update_pair()
-        .await
-    {
+    let repo = match DbRepo::new(env.into_inner()).await {
+        Ok(val) => val,
+        Err(err) => return error_response(err),
+    };
+
+    let service = Pairs::new(repo);
+
+    match service.update(pair).await {
         Ok(val) => HttpResponse::Ok().json(val),
         Err(err) => error_response(err),
     }
 }
 
-// cache
+// ============================================
+// CACHE OPERATIONS
+// ============================================
+
 #[get("/{env}/memory")]
 pub async fn get_pair(
     env: web::Path<Environments>,
     pair: web::Query<PairRequest>,
 ) -> impl Responder {
-    match Pairs::new(pair.into_inner())
-        .with_env(env.into_inner())
-        .get_pair()
-        .await
-    {
+    let pair_id = match pair.id {
+        Some(id) => id,
+        None => return HttpResponse::BadRequest().body("Pair ID is required"),
+    };
+
+    match Pairs::blank().get(env.into_inner(), pair_id).await {
         Some(val) => HttpResponse::Ok().json(val),
         None => HttpResponse::NotFound().finish(),
     }
@@ -83,11 +108,7 @@ pub async fn get_pair(
 
 #[get("/{env}/memory/all")]
 pub async fn get_pairs(env: web::Path<Environments>) -> impl Responder {
-    match Pairs::default()
-        .with_env(env.into_inner())
-        .get_pairs()
-        .await
-    {
+    match Pairs::blank().get_all(env.into_inner()).await {
         Some(val) => HttpResponse::Ok().json(val),
         None => HttpResponse::NotFound().finish(),
     }

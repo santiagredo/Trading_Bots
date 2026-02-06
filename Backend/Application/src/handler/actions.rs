@@ -1,55 +1,19 @@
-use std::{collections::HashMap, marker::PhantomData};
+use models::{entities::actions::Model, structs::ActionRequest};
 
-use models::{
-    entities::{actions::Model, assets, pairs},
-    enums::LifecycleState,
-    structs::{ActionRequest, Environments, QueryOptions, Ticker},
-};
-
-use crate::utils::{Core, Response, Types};
-
-#[derive(Debug, Default)]
-pub struct Actions<Phase = Types> {
-    phase: PhantomData<Phase>,
-    pub environment: Environments,
-    pub model: ActionRequest,
+#[derive(Debug, Clone)]
+pub struct Actions<R> {
+    pub repo: R,
 }
 
-impl<Phase> Actions<Phase> {
-    pub fn next_phase<Next>(self) -> Actions<Next> {
-        Actions {
-            phase: PhantomData::<Next>,
-            environment: self.environment,
-            model: self.model,
-        }
+impl<R> Actions<R> {
+    pub fn new(repo: R) -> Self {
+        Self { repo }
     }
 }
 
-impl Actions {
-    pub fn new(model: ActionRequest) -> Self {
-        Self {
-            phase: PhantomData::<Types>,
-            environment: Environments::DEV,
-            model,
-        }
-    }
-
-    pub fn default() -> Self {
-        Self {
-            phase: PhantomData::<Types>,
-            environment: Environments::DEV,
-            model: ActionRequest {
-                ..Default::default()
-            },
-        }
-    }
-
-    pub fn with_env(self, environment: Environments) -> Self {
-        Self {
-            phase: self.phase,
-            environment,
-            model: self.model,
-        }
+impl Actions<()> {
+    pub fn blank() -> Actions<()> {
+        Self { repo: () }
     }
 
     pub fn into_model(action: ActionRequest) -> Model {
@@ -64,69 +28,5 @@ impl Actions {
             pair_id: action.pair_id.unwrap_or_default(),
             last_update: action.last_update,
         }
-    }
-
-    // db
-    pub async fn insert_action(self) -> Result<Model, Response> {
-        self.next_phase().insert_action_core().await
-    }
-
-    pub async fn select_action(self) -> Result<Option<Model>, Response> {
-        self.next_phase().select_action_core().await
-    }
-
-    pub async fn select_actions(self, query: Option<QueryOptions>) -> Result<Vec<Model>, Response> {
-        self.next_phase().select_actions_core(query).await
-    }
-
-    pub async fn update_action(self) -> Result<Model, Response> {
-        self.next_phase().update_action_core().await
-    }
-
-    pub async fn delete_action(self) -> Result<u64, Response> {
-        self.next_phase().delete_action_core().await
-    }
-
-    // cache
-    pub async fn get_actions(self) -> Option<HashMap<i32, Model>> {
-        self.next_phase().get_actions_core().await
-    }
-
-    pub async fn get_action(self) -> Option<Model> {
-        self.next_phase().get_action_core().await
-    }
-
-    pub async fn get_actions_state(self) -> LifecycleState {
-        self.next_phase().get_actions_state_core().await
-    }
-
-    pub async fn start_actions(self) -> Result<(), Response> {
-        self.next_phase().start_actions_core().await
-    }
-
-    pub async fn stop_actions(self) -> Result<(), Response> {
-        self.next_phase().stop_actions_core().await
-    }
-
-    pub async fn reset_actions(self) -> Result<(), Response> {
-        self.next_phase().reset_actions_core().await
-    }
-
-    // misc
-    pub fn evaluate_action(
-        self,
-        action: Model,
-        pair: &pairs::Model,
-        ticker: &Ticker,
-        base_asset: &assets::Model,
-        quote_asset: &assets::Model,
-    ) -> Result<Model, String> {
-        self.next_phase::<Core>().evaluate_action_core(
-            action,
-            pair,
-            ticker,
-            base_asset,
-            quote_asset,
-        )
     }
 }

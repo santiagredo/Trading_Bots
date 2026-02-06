@@ -1,232 +1,167 @@
-use models::entities::assets;
+use models::structs::PairRequest;
 
-use crate::{handler::Pairs, utils::Logic};
-
-impl Pairs<Logic> {
-    pub fn insert_pair_logic(
-        mut self,
-        base_asset: Option<assets::Model>,
-        quote_asset: Option<assets::Model>,
-    ) -> Result<Self, String> {
-        if base_asset.as_ref().is_none_or(|model| model.id == 0) {
-            return Err("Invalid base asset".to_owned());
-        }
-
-        if quote_asset.as_ref().is_none_or(|model| model.id == 0) {
-            return Err("Invalid quote asset".to_owned());
-        }
-
-        self.model.symbol = Some(format!(
-            "{}{}",
-            base_asset.unwrap_or_default().ticker,
-            quote_asset.unwrap_or_default().ticker
-        ));
-
-        Ok(self)
+pub fn validate_insert(req: &PairRequest) -> Result<(), String> {
+    if req.base_asset_id.is_none_or(|id| id <= 0) {
+        return Err(format!("Invalid base asset id: {:?}", req.base_asset_id));
     }
 
-    pub fn update_pair_logic(
-        self,
-        base_asset: Option<assets::Model>,
-        quote_asset: Option<assets::Model>,
-    ) -> Result<Self, String> {
-        if self.model.id.is_none_or(|id| id <= 0) {
-            return Err("Invalid pair id".to_owned());
-        }
-
-        if base_asset.is_none_or(|model| model.id == 0) {
-            return Err("Invalid base asset".to_owned());
-        }
-
-        if quote_asset.is_none_or(|model| model.id == 0) {
-            return Err("Invalid quote asset".to_owned());
-        }
-
-        Ok(self)
+    if req.quote_asset_id.is_none_or(|id| id <= 0) {
+        return Err(format!("Invalid quote asset id: {:?}", req.quote_asset_id));
     }
+
+    if req.symbol.as_ref().is_none_or(|val| val.is_empty()) {
+        return Err(format!("Invalid symbol: {:?}", req.symbol));
+    }
+
+    Ok(())
+}
+
+pub fn validate_update(req: &PairRequest) -> Result<(), String> {
+    if req.base_asset_id.is_some_and(|id| id <= 0) {
+        return Err(format!("Invalid base asset id: {:?}", req.base_asset_id));
+    }
+
+    if req.quote_asset_id.is_some_and(|id| id <= 0) {
+        return Err(format!("Invalid quote asset id: {:?}", req.quote_asset_id));
+    }
+
+    if req.symbol.as_ref().is_some_and(|val| val.is_empty()) {
+        return Err(format!("Invalid symbol: {:?}", req.symbol));
+    }
+
+    Ok(())
 }
 
 #[cfg(test)]
-mod fn_insert_pair_logic {
-    use crate::handler::Pairs;
-    use crate::utils::Core;
-    use models::entities::assets;
+mod fn_validate_insert {
+    use super::*;
+    use models::structs::PairRequest;
 
     #[test]
-    fn insert_pair_cases() {
+    fn cases() {
         let cases = vec![
             (
-                "ok_valid_assets",
-                Some(assets::Model {
-                    id: 1,
-                    ticker: "BTC".into(),
+                "ok",
+                PairRequest {
+                    base_asset_id: Some(1),
+                    quote_asset_id: Some(2),
+                    symbol: Some("BTCUSDT".into()),
                     ..Default::default()
-                }),
-                Some(assets::Model {
-                    id: 2,
-                    ticker: "USDT".into(),
-                    ..Default::default()
-                }),
+                },
                 true,
             ),
             (
-                "err_invalid_base",
-                Some(assets::Model {
-                    id: 0,
-                    ticker: "BTC".into(),
+                "err_invalid_base_asset_id",
+                PairRequest {
+                    base_asset_id: Some(0),
+                    quote_asset_id: Some(2),
+                    symbol: Some("BTCUSDT".into()),
                     ..Default::default()
-                }),
-                Some(assets::Model {
-                    id: 2,
-                    ticker: "USDT".into(),
-                    ..Default::default()
-                }),
+                },
                 false,
             ),
             (
-                "err_invalid_quote",
-                Some(assets::Model {
-                    id: 1,
-                    ticker: "BTC".into(),
+                "err_invalid_quote_asset_id",
+                PairRequest {
+                    base_asset_id: Some(1),
+                    quote_asset_id: Some(0),
+                    symbol: Some("BTCUSDT".into()),
                     ..Default::default()
-                }),
-                Some(assets::Model {
-                    id: 0,
-                    ticker: "USDT".into(),
-                    ..Default::default()
-                }),
+                },
                 false,
             ),
             (
-                "err_missing_base",
-                None,
-                Some(assets::Model {
-                    id: 2,
-                    ticker: "USDT".into(),
+                "err_missing_symbol",
+                PairRequest {
+                    base_asset_id: Some(1),
+                    quote_asset_id: Some(2),
+                    symbol: None,
                     ..Default::default()
-                }),
+                },
                 false,
             ),
             (
-                "err_missing_quote",
-                Some(assets::Model {
-                    id: 1,
-                    ticker: "BTC".into(),
+                "err_empty_symbol",
+                PairRequest {
+                    base_asset_id: Some(1),
+                    quote_asset_id: Some(2),
+                    symbol: Some("".into()),
                     ..Default::default()
-                }),
-                None,
+                },
                 false,
             ),
         ];
 
-        for (name, base, quote, should_pass) in cases {
-            let pair = Pairs::default();
-
-            let result = pair
-                .next_phase::<Core>()
-                .next_phase()
-                .insert_pair_logic(base, quote);
-
-            assert_eq!(
-                result.is_ok(),
-                should_pass,
-                "case `{}` failed: expected {}, got {:?}",
-                name,
-                should_pass,
-                result
-            );
+        for (name, req, should_pass) in cases {
+            let result = validate_insert(&req);
+            assert_eq!(result.is_ok(), should_pass, "case `{}` failed", name);
         }
     }
 }
 
 #[cfg(test)]
-mod fn_update_pair_logic {
-    use crate::handler::Pairs;
-    use crate::utils::Core;
-    use models::entities::assets;
+mod fn_validate_update {
+    use super::*;
+    use models::structs::PairRequest;
 
     #[test]
-    fn update_pair_cases() {
+    fn cases() {
         let cases = vec![
             (
-                "ok_valid_update",
-                1,
-                Some(assets::Model {
-                    id: 1,
-                    ticker: "ETH".into(),
+                "ok_all_none",
+                PairRequest {
+                    base_asset_id: None,
+                    quote_asset_id: None,
+                    symbol: None,
                     ..Default::default()
-                }),
-                Some(assets::Model {
-                    id: 2,
-                    ticker: "USDT".into(),
-                    ..Default::default()
-                }),
+                },
                 true,
             ),
             (
-                "err_invalid_id",
-                0,
-                Some(assets::Model {
-                    id: 1,
-                    ticker: "ETH".into(),
+                "ok_partial_update",
+                PairRequest {
+                    base_asset_id: Some(1),
+                    quote_asset_id: None,
+                    symbol: Some("ETHUSDT".into()),
                     ..Default::default()
-                }),
-                Some(assets::Model {
-                    id: 2,
-                    ticker: "USDT".into(),
+                },
+                true,
+            ),
+            (
+                "err_invalid_base_asset_id",
+                PairRequest {
+                    base_asset_id: Some(0),
+                    quote_asset_id: None,
+                    symbol: None,
                     ..Default::default()
-                }),
+                },
                 false,
             ),
             (
-                "err_invalid_base",
-                1,
-                Some(assets::Model {
-                    id: 0,
-                    ticker: "ETH".into(),
+                "err_invalid_quote_asset_id",
+                PairRequest {
+                    base_asset_id: None,
+                    quote_asset_id: Some(0),
+                    symbol: None,
                     ..Default::default()
-                }),
-                Some(assets::Model {
-                    id: 2,
-                    ticker: "USDT".into(),
-                    ..Default::default()
-                }),
+                },
                 false,
             ),
             (
-                "err_invalid_quote",
-                1,
-                Some(assets::Model {
-                    id: 1,
-                    ticker: "ETH".into(),
+                "err_empty_symbol",
+                PairRequest {
+                    base_asset_id: None,
+                    quote_asset_id: None,
+                    symbol: Some("".into()),
                     ..Default::default()
-                }),
-                Some(assets::Model {
-                    id: 0,
-                    ticker: "USDT".into(),
-                    ..Default::default()
-                }),
+                },
                 false,
             ),
         ];
 
-        for (name, id, base, quote, should_pass) in cases {
-            let mut pair = Pairs::default();
-            pair.model.id = Some(id);
-
-            let result = pair
-                .next_phase::<Core>()
-                .next_phase()
-                .update_pair_logic(base, quote);
-
-            assert_eq!(
-                result.is_ok(),
-                should_pass,
-                "case `{}` failed: expected {}, got {:?}",
-                name,
-                should_pass,
-                result
-            );
+        for (name, req, should_pass) in cases {
+            let result = validate_update(&req);
+            assert_eq!(result.is_ok(), should_pass, "case `{}` failed", name);
         }
     }
 }

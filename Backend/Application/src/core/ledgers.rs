@@ -1,40 +1,46 @@
-use models::{entities::ledgers::Model, structs::QueryOptions};
-
 use crate::{
-    handler::{Ledgers, DBC},
-    utils::{handle_user_err, Core, Response},
+    handler::Ledgers,
+    logic,
+    utils::{handle_user_err, Repository, Response},
+};
+use models::{
+    entities::ledgers::Model,
+    structs::{LedgerRequest, QueryOptions},
 };
 
-impl Ledgers<Core> {
-    pub async fn insert_ledger_core(self) -> Result<Model, Response> {
-        let env = self.environment;
+/* ======================================================
+ * CRUD / DB
+ * ======================================================
+ */
 
-        let logic_type = self
-            .next_phase()
-            .insert_ledger_logic()
-            .map_err(handle_user_err)?;
-
-        logic_type
-            .next_phase()
-            .insert_ledger_data(&DBC::db(&env).await?)
-            .await
+impl<R> Ledgers<R>
+where
+    R: Repository<LedgerRequest, Model>,
+{
+    pub async fn insert(&self, req: LedgerRequest) -> Result<Model, Response> {
+        logic::ledgers::validate_insert(&req).map_err(handle_user_err)?;
+        self.repo.insert(req).await
     }
 
-    pub async fn select_ledger_core(self) -> Result<Option<Model>, Response> {
-        let env = self.environment;
-        self.next_phase()
-            .select_ledger_data(&DBC::db(&env).await?)
-            .await
+    pub async fn select(&self, req: LedgerRequest) -> Result<Option<Model>, Response> {
+        self.repo.select(req).await
     }
 
-    pub async fn select_ledgers_core(
-        self,
+    pub async fn select_many(
+        &self,
+        req: LedgerRequest,
         query: Option<QueryOptions>,
     ) -> Result<Vec<Model>, Response> {
-        let env = self.environment;
+        self.repo.select_many(req, query).await
+    }
 
-        self.next_phase()
-            .select_ledgers_data(&DBC::db(&env).await?, query)
-            .await
+    pub async fn update(&self, req: LedgerRequest) -> Result<Model, Response> {
+        // logic::ledgers::validate_update(&req).map_err(handle_user_err)?;
+        self.repo.update(req).await
+    }
+
+    pub async fn delete(&self, req: LedgerRequest) -> Result<u64, Response> {
+        // logic::ledgers::validate_delete(&req).map_err(handle_user_err)?;
+        self.repo.delete(req).await
     }
 }

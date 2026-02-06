@@ -1,16 +1,26 @@
 use actix_web::{get, web, HttpResponse, Responder};
-use models::structs::{Environments, QueryOptions};
+use models::structs::{Environments, MetricRequest, QueryOptions};
 
-use crate::{handler::Metrics, utils::error_response};
+use crate::{
+    handler::Metrics,
+    utils::{error_response, DbRepo},
+};
 
 #[get("/{env}")]
 pub async fn select_metrics(
     env: web::Path<Environments>,
+    metric: web::Query<MetricRequest>,
     query: web::Query<QueryOptions>,
 ) -> impl Responder {
-    let metrics = Metrics::default()
-        .with_env(env.into_inner())
-        .select_metrics(Some(query.into_inner()))
+    let repo = match DbRepo::new(env.into_inner()).await {
+        Ok(val) => val,
+        Err(err) => return error_response(err),
+    };
+
+    let service = Metrics::new(repo);
+
+    let metrics = service
+        .select_many(metric.into_inner(), Some(query.into_inner()))
         .await;
 
     match metrics {
@@ -20,11 +30,21 @@ pub async fn select_metrics(
 }
 
 #[get("/{env}/memory")]
-pub async fn get_metric(env: web::Path<Environments>) -> impl Responder {
-    let metrics = Metrics::default()
-        .with_env(env.into_inner())
-        .get_metric()
-        .await;
+pub async fn get_metric(
+    env: web::Path<Environments>,
+    metric: web::Query<MetricRequest>,
+) -> impl Responder {
+    let repo = match DbRepo::new(env.into_inner()).await {
+        Ok(val) => val,
+        Err(err) => return error_response(err),
+    };
 
-    HttpResponse::Ok().json(metrics)
+    let service = Metrics::new(repo);
+
+    let metrics = service.select(metric.into_inner()).await;
+
+    match metrics {
+        Ok(val) => HttpResponse::Ok().json(val),
+        Err(err) => error_response(err),
+    }
 }

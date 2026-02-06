@@ -1,90 +1,104 @@
+use crate::handler::ErrorLogs;
+use crate::utils::handle_db_error;
 use chrono::Local;
 use function_name::named;
+use migration::async_trait::async_trait;
 use models::{
-    entities::assets::{self, ActiveModel, Column, Entity, Model},
+    entities::assets::{ActiveModel, Column, Entity, Model},
     enums::OrderDirection,
-    structs::{ErrorLogRequest, QueryOptions},
+    structs::{AssetRequest, QueryOptions},
 };
 use sea_orm::{
-    ActiveModelTrait, ActiveValue, ColumnTrait, Condition, DatabaseConnection, EntityTrait,
-    QueryFilter, QueryOrder, QuerySelect,
+    ActiveModelTrait, ActiveValue, ColumnTrait, Condition, EntityTrait, QueryFilter, QueryOrder,
+    QuerySelect,
 };
 
 use crate::{
-    handler::{Assets, ErrorLogs},
-    log_db_error,
-    utils::{Data, Response},
+    log_trait_db_error,
+    utils::{DbRepo, Delete, Insert, MockRepo, Response, Select, Update},
 };
 
-impl Assets<Data> {
+#[async_trait]
+impl Insert<AssetRequest, Model> for DbRepo {
     #[named]
-    pub async fn insert_asset_data(self, db: &DatabaseConnection) -> Result<Model, Response> {
-        let active_model_asset = ActiveModel {
+    async fn insert(&self, req: AssetRequest) -> Result<Model, Response> {
+        let req_for_log = req.clone();
+
+        let now = Local::now().naive_local();
+
+        let active_model = ActiveModel {
             id: ActiveValue::NotSet,
-            name: ActiveValue::Set(self.model.name.clone().unwrap_or_default()),
-            ticker: ActiveValue::Set(self.model.ticker.clone().unwrap_or_default()),
-            free: ActiveValue::Set(self.model.free.unwrap_or_default()),
-            locked: ActiveValue::Set(self.model.locked.unwrap_or_default()),
-            last_update: ActiveValue::Set(Local::now().naive_local().into()),
+            name: ActiveValue::Set(req.name.unwrap_or_default()),
+            ticker: ActiveValue::Set(req.ticker.unwrap_or_default()),
+            free: ActiveValue::Set(req.free.unwrap_or_default()),
+            locked: ActiveValue::Set(req.locked.unwrap_or_default()),
+            last_update: ActiveValue::Set(now.into()),
         };
 
-        match Entity::insert(active_model_asset)
-            .exec_with_returning(db)
-            .await
-        {
-            Err(err) => log_db_error!(self, err),
+        match active_model.insert(&self.data).await {
+            Err(err) => {
+                let _ = ErrorLogs::new(self.clone())
+                    .insert(log_trait_db_error!(err, req_for_log))
+                    .await;
+
+                Err(handle_db_error(&err))
+            }
             Ok(val) => Ok(val),
         }
     }
+}
 
+#[async_trait]
+impl Select<AssetRequest, Model> for DbRepo {
     #[named]
-    pub async fn select_asset_data(
-        self,
-        db: &DatabaseConnection,
-    ) -> Result<Option<Model>, Response> {
+    async fn select(&self, req: AssetRequest) -> Result<Option<Model>, Response> {
         let mut condition = Condition::all();
 
-        if let Some(id) = self.model.id {
-            condition = condition.add(Column::Id.eq(id))
+        if let Some(id) = req.id {
+            condition = condition.add(Column::Id.eq(id));
         }
 
-        if let Some(name) = self.model.name.clone() {
-            condition = condition.add(Column::Name.eq(name))
+        if let Some(name) = req.name.as_ref() {
+            condition = condition.add(Column::Name.eq(name.clone()));
         }
 
-        if let Some(ticker) = self.model.ticker.clone() {
-            condition = condition.add(Column::Name.eq(ticker))
+        if let Some(ticker) = req.ticker.as_ref() {
+            condition = condition.add(Column::Ticker.eq(ticker.clone()));
         }
 
-        match Entity::find().filter(condition).one(db).await {
-            Err(err) => log_db_error!(self, err),
+        match Entity::find().filter(condition).one(&self.data).await {
+            Err(err) => {
+                let _ = ErrorLogs::new(self.clone())
+                    .insert(log_trait_db_error!(err, req))
+                    .await;
+
+                Err(handle_db_error(&err))
+            }
             Ok(val) => Ok(val),
         }
     }
 
     #[named]
-    pub async fn select_assets_data(
-        self,
-        db: &DatabaseConnection,
+    async fn select_many(
+        &self,
+        req: AssetRequest,
         query: Option<QueryOptions>,
     ) -> Result<Vec<Model>, Response> {
         let mut condition = Condition::all();
 
-        if let Some(id) = self.model.id {
+        if let Some(id) = req.id {
             condition = condition.add(Column::Id.eq(id));
         }
 
-        if let Some(name) = self.model.name.clone() {
+        if let Some(name) = req.name.clone() {
             condition = condition.add(Column::Name.eq(name));
         }
 
-        if let Some(ticker) = self.model.ticker.clone() {
+        if let Some(ticker) = req.ticker.clone() {
             condition = condition.add(Column::Ticker.eq(ticker));
         }
 
         let mut stmt = Entity::find().filter(condition);
-
-        stmt = stmt.order_by(Column::Name, sea_orm::Order::Asc);
 
         if let Some(q) = query {
             if let Some(limit) = q.limit {
@@ -95,7 +109,7 @@ impl Assets<Data> {
                 stmt = stmt.offset(offset);
             }
 
-            if let Some(order_by) = q.order_by.and_then(|c| Self::parse_order_column(&c)) {
+            if let Some(order_by) = q.order_by.and_then(|c| parse_order_column(&c)) {
                 let direction = match q.order_direction.unwrap_or(OrderDirection::Asc) {
                     OrderDirection::Asc => sea_orm::Order::Asc,
                     OrderDirection::Desc => sea_orm::Order::Desc,
@@ -105,67 +119,172 @@ impl Assets<Data> {
             }
         }
 
-        match stmt.all(db).await {
-            Err(err) => log_db_error!(self, err),
+        match stmt.all(&self.data).await {
+            Err(err) => {
+                let _ = ErrorLogs::new(self.clone())
+                    .insert(log_trait_db_error!(err, req))
+                    .await;
+
+                Err(handle_db_error(&err))
+            }
             Ok(val) => Ok(val),
         }
     }
+}
 
-    fn parse_order_column(value: &str) -> Option<Column> {
-        match value {
-            "id" => Some(Column::Id),
-            "name" => Some(Column::Name),
-            "ticker" => Some(Column::Ticker),
-            "free" => Some(Column::Free),
-            "locked" => Some(Column::Locked),
-            "last_update" => Some(Column::LastUpdate),
-            _ => None,
-        }
+fn parse_order_column(value: &str) -> Option<Column> {
+    match value {
+        "id" => Some(Column::Id),
+        "name" => Some(Column::Name),
+        "ticker" => Some(Column::Ticker),
+        "free" => Some(Column::Free),
+        "locked" => Some(Column::Locked),
+        "last_update" => Some(Column::LastUpdate),
+        _ => None,
     }
+}
 
+#[async_trait]
+impl Update<AssetRequest, Model> for DbRepo {
     #[named]
-    pub async fn update_asset_data(self, db: &DatabaseConnection) -> Result<Model, Response> {
-        let mut active_model_asset = assets::ActiveModel {
-            id: ActiveValue::Unchanged(self.model.id.unwrap_or_default()),
+    async fn update(&self, req: AssetRequest) -> Result<Model, Response> {
+        let mut active_model = ActiveModel {
+            id: ActiveValue::Unchanged(req.id.unwrap_or_default()),
+            last_update: ActiveValue::Set(Local::now().naive_local().into()),
             ..Default::default()
         };
 
-        if self.model.name.is_some() {
-            active_model_asset.name = ActiveValue::Set(self.model.name.clone().unwrap_or_default());
+        if let Some(name) = req.name.as_ref() {
+            active_model.name = ActiveValue::Set(name.clone());
         }
 
-        if self.model.ticker.is_some() {
-            active_model_asset.ticker =
-                ActiveValue::set(self.model.ticker.clone().unwrap_or_default());
-        }
-        if self.model.free.is_some() {
-            active_model_asset.free = ActiveValue::set(self.model.free.unwrap_or_default());
+        if let Some(ticker) = req.ticker.as_ref() {
+            active_model.ticker = ActiveValue::Set(ticker.clone());
         }
 
-        if self.model.locked.is_some() {
-            active_model_asset.locked = ActiveValue::set(self.model.locked.unwrap_or_default());
+        if let Some(free) = req.free {
+            active_model.free = ActiveValue::Set(free);
         }
 
-        if let Some(last_update) = self.model.last_update {
-            active_model_asset.last_update = ActiveValue::Set(last_update.into())
-        } else {
-            active_model_asset.last_update = ActiveValue::Set(Local::now().naive_local().into())
+        if let Some(locked) = req.locked {
+            active_model.locked = ActiveValue::Set(locked);
         }
 
-        match active_model_asset.update(db).await {
-            Err(err) => log_db_error!(self, err),
+        match active_model.update(&self.data).await {
+            Err(err) => {
+                let _ = ErrorLogs::new(self.clone())
+                    .insert(log_trait_db_error!(err, req))
+                    .await;
+
+                Err(handle_db_error(&err))
+            }
             Ok(val) => Ok(val),
         }
     }
+}
 
+#[async_trait]
+impl Delete<AssetRequest> for DbRepo {
     #[named]
-    pub async fn delete_asset_data(self, db: &DatabaseConnection) -> Result<u64, Response> {
-        match Entity::delete_by_id(self.model.id.unwrap_or_default())
-            .exec(db)
+    async fn delete(&self, req: AssetRequest) -> Result<u64, Response> {
+        match Entity::delete_by_id(req.id.unwrap_or_default())
+            .exec(&self.data)
             .await
         {
-            Err(err) => log_db_error!(self, err),
+            Err(err) => {
+                let _ = ErrorLogs::new(self.clone())
+                    .insert(log_trait_db_error!(err, req))
+                    .await;
+
+                Err(handle_db_error(&err))
+            }
             Ok(val) => Ok(val.rows_affected),
         }
+    }
+}
+
+#[async_trait]
+impl Insert<AssetRequest, Model> for MockRepo<Model> {
+    async fn insert(&self, req: AssetRequest) -> Result<Model, Response> {
+        let mut data = self.data.lock().unwrap();
+
+        let model = Model {
+            id: req.id.unwrap_or_default(),
+            name: req.name.unwrap_or_default(),
+            ticker: req.ticker.unwrap_or_default(),
+            free: req.free.unwrap_or_default(),
+            locked: req.locked.unwrap_or_default(),
+            last_update: Local::now().naive_local().into(),
+        };
+
+        data.push(model.clone());
+        Ok(model)
+    }
+}
+
+#[async_trait]
+impl Select<AssetRequest, Model> for MockRepo<Model> {
+    async fn select(&self, req: AssetRequest) -> Result<Option<Model>, Response> {
+        let data = self.data.lock().unwrap();
+
+        Ok(data
+            .iter()
+            .find(|m| m.id == req.id.unwrap_or_default())
+            .cloned())
+    }
+
+    async fn select_many(
+        &self,
+        _req: AssetRequest,
+        query: Option<QueryOptions>,
+    ) -> Result<Vec<Model>, Response> {
+        let data = self.data.lock().unwrap();
+        let mut result = data.clone();
+
+        if let Some(q) = query {
+            if let Some(limit) = q.limit {
+                result.truncate(limit as usize);
+            }
+        }
+
+        Ok(result)
+    }
+}
+
+#[async_trait]
+impl Update<AssetRequest, Model> for MockRepo<Model> {
+    async fn update(&self, req: AssetRequest) -> Result<Model, Response> {
+        let mut data = self.data.lock().unwrap();
+
+        let id = req
+            .id
+            .ok_or(Response::not_found("Invalid mock update id".to_string()))?;
+
+        let model = data
+            .iter_mut()
+            .find(|m| m.id == id)
+            .ok_or(Response::not_found("Invalid mock update id".to_string()))?;
+
+        if let Some(name) = req.name {
+            model.name = name;
+        }
+
+        Ok(model.clone())
+    }
+}
+
+#[async_trait]
+impl Delete<AssetRequest> for MockRepo<Model> {
+    async fn delete(&self, req: AssetRequest) -> Result<u64, Response> {
+        let mut data = self.data.lock().unwrap();
+
+        let id = req
+            .id
+            .ok_or(Response::not_found("Invalid mock delete id".to_string()))?;
+
+        let before = data.len();
+        data.retain(|m| m.id != id);
+
+        Ok((before - data.len()) as u64)
     }
 }

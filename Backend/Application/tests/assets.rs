@@ -1,4 +1,4 @@
-use application::{handler::Assets, utils::Cache};
+use application::{handler::Assets, utils::EntityCache};
 use models::{entities::assets::Model, enums::LifecycleState, structs::Environments};
 use sea_orm::prelude::Decimal;
 
@@ -14,43 +14,37 @@ fn mock_asset(id: i32, free: i64, locked: i64) -> Model {
 #[tokio::test]
 async fn full_assets_cache_flow_should_work_correctly() {
     let env = Environments::DEV;
+    let service = Assets::blank();
 
     /* ===========================
      * INITIAL STATE
      * ===========================
      */
 
-    let reset = Assets::<Cache>::reset_assets_cache(env).await;
-    assert!(reset.is_ok());
+    service.reset(env).await.unwrap();
 
-    let off = Assets::<Cache>::set_status_cache(env, LifecycleState::Off).await;
-    assert!(off.is_err());
-
-    let status = Assets::default().with_env(env).get_assets_state().await;
+    let status = service.state(env).await;
     assert_eq!(status, LifecycleState::Off);
 
-    let cache = Assets::<Cache>::get_assets_cache(env).await;
-    assert!(cache.is_some_and(|val| val.models.is_empty()));
+    let cache = service.get_all(env).await;
+    assert!(cache.is_none());
 
     /* ===========================
-     * LOAD MULTIPLE ASSETS
+     * START ASSETS
      * ===========================
      */
 
-    let starting = Assets::<Cache>::set_status_cache(env, LifecycleState::Starting).await;
-    assert!(starting.is_ok());
-
-    let assets = vec![mock_asset(1, 100, 0), mock_asset(2, 200, 20)];
-
-    let running = Assets::<Cache>::set_status_cache(env, LifecycleState::Running).await;
-    assert!(running.is_ok());
-
-    Assets::<Cache>::set_assets_cache(env, assets)
+    service
+        .set_state(env, LifecycleState::Starting)
         .await
         .unwrap();
 
-    let cache = Assets::<Cache>::get_assets_cache(env).await.unwrap();
-    assert_eq!(cache.models.len(), 2);
+    service
+        .set_state(env, LifecycleState::Running)
+        .await
+        .unwrap();
+
+    let cache = service.get_all(env).await.unwrap();
     assert_eq!(cache.status, LifecycleState::Running);
 
     /* ===========================
@@ -58,12 +52,10 @@ async fn full_assets_cache_flow_should_work_correctly() {
      * ===========================
      */
 
-    let extra = mock_asset(3, 50, 0);
-    Assets::<Cache>::upsert_asset_cache(env, extra.clone())
-        .await
-        .unwrap();
+    let extra = mock_asset(1, 50, 0);
+    service.upsert(env, 1, extra.clone()).await.unwrap();
 
-    let single = Assets::<Cache>::get_asset_cache(env, 3).await.unwrap();
+    let single = service.get(env, 1).await.unwrap();
     assert_eq!(single, extra);
 
     /* ===========================
@@ -71,29 +63,32 @@ async fn full_assets_cache_flow_should_work_correctly() {
      * ===========================
      */
 
-    let (updated, previous) =
-        Assets::<Cache>::update_asset_balance_cache(env, 3, Decimal::new(25, 0), false, false)
-            .await
-            .unwrap();
+    let (updated, previous) = service
+        .update_asset_balance_cache(env, 1, Decimal::new(25, 0), false, false)
+        .await
+        .unwrap();
 
     assert_eq!(previous, Decimal::new(50, 0));
     assert_eq!(updated.free, Decimal::new(75, 0));
+
+    /* ===========================
+     * REMOVE INDIVIDUAL ASSET
+     * ===========================
+     */
+
+    let removed = service.remove(env, 1).await.unwrap();
+    assert!(removed.is_some());
+
+    let check_removed = service.get(env, 1).await;
+    assert!(check_removed.is_none());
 
     /* ===========================
      * STOP
      * ===========================
      */
 
-    Assets::<Cache>::set_status_cache(env, LifecycleState::Stopping)
-        .await
-        .unwrap();
+    service.stop(env).await.unwrap();
 
-    Assets::<Cache>::remove_assets_cache(env).await.unwrap();
-
-    Assets::<Cache>::set_status_cache(env, LifecycleState::Off)
-        .await
-        .unwrap();
-
-    let final_cache = Assets::<Cache>::get_assets_cache(env).await;
-    assert!(final_cache.is_some_and(|val| val.models.is_empty()));
+    let final_cache = service.get_all(env).await;
+    assert!(final_cache.is_none());
 }

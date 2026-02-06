@@ -1,18 +1,15 @@
 use models::structs::Configuration;
 
-use crate::{
-    handler::Configurations,
-    utils::{Cache, Core, Data},
-};
+use crate::handler::Configurations;
 
-impl Configurations<Core> {
-    pub async fn select_configuration_core(self) -> Configuration {
-        if let Some(configuration) = Configurations::<Cache>::get_configuration_cache().await {
+impl Configurations {
+    pub async fn select_configuration(self) -> Configuration {
+        if let Some(configuration) = Configurations::get_configuration().await {
             return configuration;
         }
 
-        let configuration = Configurations::<Data>::select_configuration_data();
+        let configuration = Configurations::select();
 
-        Configurations::<Cache>::set_configuration_cache(configuration).await
+        Configurations::set_configuration(configuration).await
     }
 }

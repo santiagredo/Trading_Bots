@@ -1,19 +1,28 @@
 use actix_web::{delete, get, patch, post, web, HttpResponse, Responder};
 use models::structs::{ActionRequest, Environments, QueryOptions};
 
-use crate::{handler::Actions, utils::error_response};
+use crate::{
+    handler::Actions,
+    utils::{error_response, DbRepo, EntityCache},
+};
 
-// db
+// ============================================
+// DATABASE OPERATIONS
+// ============================================
+
 #[post("/{env}")]
 pub async fn insert_action(
     env: web::Path<Environments>,
     web::Json(action): web::Json<ActionRequest>,
 ) -> impl Responder {
-    match Actions::new(action)
-        .with_env(env.into_inner())
-        .insert_action()
-        .await
-    {
+    let repo = match DbRepo::new(env.into_inner()).await {
+        Ok(val) => val,
+        Err(err) => return error_response(err),
+    };
+
+    let service = Actions::new(repo);
+
+    match service.insert(action).await {
         Ok(val) => HttpResponse::Ok().json(val),
         Err(err) => error_response(err),
     }
@@ -24,11 +33,14 @@ pub async fn select_action(
     env: web::Path<Environments>,
     action: web::Query<ActionRequest>,
 ) -> impl Responder {
-    match Actions::new(action.into_inner())
-        .with_env(env.into_inner())
-        .select_action()
-        .await
-    {
+    let repo = match DbRepo::new(env.into_inner()).await {
+        Ok(val) => val,
+        Err(err) => return error_response(err),
+    };
+
+    let service = Actions::new(repo);
+
+    match service.select(action.into_inner()).await {
         Ok(val) => HttpResponse::Ok().json(val),
         Err(err) => error_response(err),
     }
@@ -40,9 +52,15 @@ pub async fn select_actions(
     action: web::Query<ActionRequest>,
     query: web::Query<QueryOptions>,
 ) -> impl Responder {
-    match Actions::new(action.into_inner())
-        .with_env(env.into_inner())
-        .select_actions(Some(query.into_inner()))
+    let repo = match DbRepo::new(env.into_inner()).await {
+        Ok(val) => val,
+        Err(err) => return error_response(err),
+    };
+
+    let service = Actions::new(repo);
+
+    match service
+        .select_many(action.into_inner(), Some(query.into_inner()))
         .await
     {
         Ok(val) => HttpResponse::Ok().json(val),
@@ -55,11 +73,14 @@ pub async fn update_action(
     env: web::Path<Environments>,
     web::Json(action): web::Json<ActionRequest>,
 ) -> impl Responder {
-    match Actions::new(action)
-        .with_env(env.into_inner())
-        .update_action()
-        .await
-    {
+    let repo = match DbRepo::new(env.into_inner()).await {
+        Ok(val) => val,
+        Err(err) => return error_response(err),
+    };
+
+    let service = Actions::new(repo);
+
+    match service.update(action).await {
         Ok(val) => HttpResponse::Ok().json(val),
         Err(err) => error_response(err),
     }
@@ -70,27 +91,34 @@ pub async fn delete_action(
     env: web::Path<Environments>,
     web::Json(action): web::Json<ActionRequest>,
 ) -> impl Responder {
-    match Actions::new(action)
-        .with_env(env.into_inner())
-        .delete_action()
-        .await
-    {
+    let repo = match DbRepo::new(env.into_inner()).await {
+        Ok(val) => val,
+        Err(err) => return error_response(err),
+    };
+
+    let service = Actions::new(repo);
+
+    match service.delete(action).await {
         Ok(val) => HttpResponse::Ok().json(val),
         Err(err) => error_response(err),
     }
 }
 
-// cache
+// ============================================
+// CACHE OPERATIONS
+// ============================================
+
 #[get("/{env}/memory")]
 pub async fn get_action(
     env: web::Path<Environments>,
     action: web::Query<ActionRequest>,
 ) -> impl Responder {
-    match Actions::new(action.into_inner())
-        .with_env(env.into_inner())
-        .get_action()
-        .await
-    {
+    let action_id = match action.id {
+        Some(id) => id,
+        None => return HttpResponse::BadRequest().body("Action ID is required"),
+    };
+
+    match Actions::blank().get(env.into_inner(), action_id).await {
         Some(val) => HttpResponse::Ok().json(val),
         None => HttpResponse::NotFound().finish(),
     }
@@ -98,11 +126,7 @@ pub async fn get_action(
 
 #[get("/{env}/memory/all")]
 pub async fn get_actions(env: web::Path<Environments>) -> impl Responder {
-    match Actions::default()
-        .with_env(env.into_inner())
-        .get_actions()
-        .await
-    {
+    match Actions::blank().get_all(env.into_inner()).await {
         Some(val) => HttpResponse::Ok().json(val),
         None => HttpResponse::NotFound().finish(),
     }

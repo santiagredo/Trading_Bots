@@ -1,28 +1,26 @@
-use models::structs::{CacheRuntimes, Environments};
-
-use crate::{
-    handler::Runtimes,
-    utils::{Core, Response},
+use crate::{handler::Runtimes, utils::Response};
+use models::{
+    enums::LifecycleState,
+    structs::{CacheRuntimes, Environments},
 };
 
-impl Runtimes<Core> {
+impl Runtimes {
     pub async fn get_runtimes_status_core(self) -> CacheRuntimes {
-        self.next_phase().get_runtimes_status_cache().await
+        self.get_runtimes_status_cache().await
     }
 
     pub async fn set_runtime_status_core(
         self,
         environment: Environments,
+        state: LifecycleState,
     ) -> Result<CacheRuntimes, Response> {
-        self.next_phase()
-            .set_runtime_status_cache(environment)
+        self.set_runtime_status_cache(environment, state)
             .await
             .map_err(|err| Response::server_error(err))
     }
 
     pub async fn reset_runtime_core(self, environment: Environments) -> Result<(), Response> {
-        self.next_phase()
-            .reset_runtime_cache(environment)
+        self.reset_runtime_cache(environment)
             .await
             .map_err(|err| Response::server_error(err))
     }

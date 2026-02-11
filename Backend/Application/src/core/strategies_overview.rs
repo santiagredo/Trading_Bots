@@ -54,7 +54,7 @@ impl StrategiesOverview {
             return None;
         };
 
-        let Some(order_status) = OrderStatus::new().get_statuses(environment).await else {
+        let Some(order_status) = OrderStatus::blank().get_all(environment).await else {
             return None;
         };
 
@@ -66,7 +66,7 @@ impl StrategiesOverview {
             base_asset: base_asset,
             quote_asset: quote_asset,
             ticker,
-            order_status,
+            order_status: order_status.models,
         };
 
         Some(strategy_overview)

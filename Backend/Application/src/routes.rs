@@ -13,7 +13,7 @@ use crate::controller::{
     select_integrations, select_integrations_settings, select_ledger, select_ledgers,
     select_metrics, select_order, select_orders, select_pair, select_pairs, select_record_types,
     select_status, select_strategies, select_strategies_overview, select_strategy, select_tasks,
-    shutdown_engine, start_everything, start_tasks_manually, stop_everything, stop_tasks,
+    shutdown_engine, start_everything, start_tasks, stop_everything, stop_tasks,
     update_action, update_asset, update_indicator, update_integration, update_integration_setting,
     update_order, update_pair, update_strategy, update_task,
 };
@@ -102,7 +102,7 @@ pub fn routes_config(cfg: &mut web::ServiceConfig) {
             .service(select_tasks)
             .service(get_tasks)
             .service(update_task)
-            .service(start_tasks_manually)
+            .service(start_tasks)
             .service(stop_tasks),
     )
     .service(web::scope("/configurations").service(select_configuration))

@@ -1,16 +1,13 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use chrono::{Local, NaiveDateTime};
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    enums::{LifecycleState, TimestampedState},
-    structs::Environments,
-};
+use crate::enums::{LifecycleState, TimestampedState};
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct CacheSubscribedIndicators {
-    pub models: HashMap<String, HashSet<i32>>,
+    pub models: HashMap<String, i32>,
     pub startup_date: NaiveDateTime,
     pub last_update_date: NaiveDateTime,
     pub status: LifecycleState,
@@ -24,7 +21,7 @@ impl CacheSubscribedIndicators {
             models: HashMap::new(),
             startup_date: now,
             last_update_date: now,
-            status: LifecycleState::Off,
+            status: LifecycleState::Running,
         }
     }
 }
@@ -41,34 +38,16 @@ impl TimestampedState for CacheSubscribedIndicators {
     }
 }
 
-#[derive(Default)]
-pub struct CacheSubscribedIndicatorsEnvironments {
-    pub environments: HashMap<Environments, CacheSubscribedIndicators>,
-}
-
-impl CacheSubscribedIndicatorsEnvironments {
-    pub fn new() -> CacheSubscribedIndicatorsEnvironments {
-        CacheSubscribedIndicatorsEnvironments {
-            environments: HashMap::from([
-                (Environments::DEV, CacheSubscribedIndicators::new()),
-                (Environments::PROD, CacheSubscribedIndicators::new()),
-            ]),
-        }
-    }
-}
-
-impl CacheSubscribedIndicatorsEnvironments {
-    pub fn get_or_create(&mut self, env: Environments) -> &mut CacheSubscribedIndicators {
-        self.environments
-            .entry(env)
-            .or_insert_with(CacheSubscribedIndicators::new)
+impl CacheSubscribedIndicators {
+    pub fn get_or_create(&mut self, symbol: String) -> &mut i32 {
+        self.models.entry(symbol).or_insert_with(|| 0)
     }
 
-    pub fn get_mut(&mut self, env: &Environments) -> Option<&mut CacheSubscribedIndicators> {
-        self.environments.get_mut(env)
+    pub fn get_mut(&mut self, symbol: &str) -> Option<&mut i32> {
+        self.models.get_mut(symbol)
     }
 
-    pub fn get(&self, env: &Environments) -> Option<&CacheSubscribedIndicators> {
-        self.environments.get(env)
+    pub fn get(&self, symbol: &str) -> Option<&i32> {
+        self.models.get(symbol)
     }
 }

@@ -7,8 +7,8 @@ pub struct TaskRequest {
     pub nick: Option<String>,
     pub description: Option<String>,
     pub is_active: Option<bool>,
-    pub cooldown: Option<i32>,
-    pub delay: Option<i32>,
+    pub cooldown: Option<i64>,
+    pub delay: Option<i64>,
     pub last_update: Option<NaiveDateTime>,
     pub last_execution: Option<NaiveDateTime>,
 }

@@ -25,14 +25,4 @@ impl AssetRequest {
             last_update: asset.last_update,
         }
     }
-
-    pub fn update_values(mut self, is_locked: bool, value: Decimal) -> Self {
-        if is_locked {
-            self.locked = Some(value);
-        } else {
-            self.free = Some(value);
-        }
-
-        self
-    }
 }

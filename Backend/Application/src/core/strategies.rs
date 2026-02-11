@@ -1,18 +1,14 @@
 use crate::{
     guard::StrategiesExecutionGuard,
-    handler::{
-        Binance, Orders, Senders, Strategies, StrategiesOverview, SubscribedIndicators, Tickers,
-    },
+    handler::{Binance, Indicators, Orders, Senders, Strategies, StrategiesOverview, Tickers},
     static_strings::{ORDERS_ENDPOINT, ORDERS_TEST_ENDPOINT},
     utils::{EntityCache, RepoFactory, Repository, Response},
 };
-
 use models::{
     entities::strategies::Model,
     enums::LifecycleState,
     structs::{CacheStrategy, Environments, QueryOptions, StrategyOverview, StrategyRequest},
 };
-use tokio_util::sync::CancellationToken;
 
 impl<R> Strategies<R>
 where
@@ -48,11 +44,10 @@ where
     R: Repository<StrategyRequest, Model> + Send + Sync + 'static + Clone,
     // Self: EntityCache<Environments, i32, Model, CacheStrategies> + Send + Sync + 'static,
 {
-    pub async fn start_strategies(
+    pub async fn start(
         &self,
         factory: RepoFactory,
         env: Environments,
-        token: &CancellationToken,
         senders: Senders,
     ) -> Result<(), Response> {
         /* ===========================
@@ -109,44 +104,40 @@ where
 
         let mut tickers_receiver = senders.event_sender.subscribe();
 
-        let cancellation_token = token.clone();
+        let abort_handle = tokio::spawn(async move {
+            while let Ok(ticker_evt) = tickers_receiver.recv().await {
+                let Some(ticker) = Tickers::get_ticker(ticker_evt.symbol).await else {
+                    continue;
+                };
 
-        tokio::spawn(async move {
-            loop {
-                tokio::select! {
-                    _ = cancellation_token.cancelled() => {
-                        break;
-                    }
+                let subscribed: Vec<i32> = Indicators::blank()
+                    .get_all(env)
+                    .await
+                    .unwrap_or_default()
+                    .models
+                    .into_iter()
+                    .filter(|(_, val)| val.symbol == ticker.symbol)
+                    .map(|(_, model)| model.strategy_id)
+                    .collect();
 
-                    msg = tickers_receiver.recv() => {
-                        let Ok(ticker_evt) = msg else {
-                            continue;
-                        };
-
-                        let Some(ticker) = Tickers::get_ticker(ticker_evt.symbol).await else {
-                            continue;
-                        };
-
-                        let subscribed = SubscribedIndicators::blank().get_all(env)
-                            .await
-                            .and_then(|m| m.models.get(&ticker.symbol).cloned())
-                            .unwrap_or_default();
-
-                        for strategy_id in subscribed {
-                            if let Some(overview) = StrategiesOverview::get_strategy_overview(
-                                env,
-                                &strategy_id,
-                                ticker.symbol.clone(),
-                            )
-                            .await
-                            {
-                                Self::evaluate_strategy_runtime(factory.clone(), env, overview).await;
-                            }
-                        }
+                for strategy_id in subscribed {
+                    if let Some(overview) = StrategiesOverview::get_strategy_overview(
+                        env,
+                        &strategy_id,
+                        ticker.symbol.clone(),
+                    )
+                    .await
+                    {
+                        Self::evaluate_strategy_runtime(factory.clone(), env, overview).await;
                     }
                 }
             }
-        });
+        })
+        .abort_handle();
+
+        self.set_abort_handle(env, abort_handle)
+            .await
+            .map_err(Response::server_error)?;
 
         Ok(())
     }
@@ -253,7 +244,7 @@ where
      * ===========================
      */
 
-    pub async fn stop_strategies(&self, environment: Environments) -> Result<(), Response> {
+    pub async fn stop(&self, environment: Environments) -> Result<(), Response> {
         // STOPPING
         self.set_state(environment, LifecycleState::Stopping)
             .await
@@ -268,6 +259,10 @@ where
             message: e,
         })?;
 
+        self.abort_handle(environment)
+            .await
+            .map_err(Response::server_error)?;
+
         // OFF
         self.set_state(environment, LifecycleState::Off)
             .await
@@ -277,17 +272,5 @@ where
             })?;
 
         Ok(())
-    }
-
-    /* ===========================
-     * RESET ACTIVE STRATEGIES
-     * ===========================
-     */
-
-    pub async fn reset_strategies(&self, environment: Environments) -> Result<(), Response> {
-        self.reset(environment).await.map_err(|e| Response {
-            code: 500,
-            message: e,
-        })
     }
 }

@@ -64,3 +64,62 @@ impl LedgerRequest {
         self
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sea_orm::prelude::Decimal;
+
+    fn mock_asset(id: i32, free: i64, locked: i64) -> assets::Model {
+        assets::Model {
+            id,
+            free: Decimal::new(free, 0),
+            locked: Decimal::new(locked, 0),
+            ..Default::default()
+        }
+    }
+
+    fn mock_order(id: i32, is_sell: bool) -> orders::Model {
+        orders::Model {
+            id,
+            is_sell,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn ledger_request_from_asset_order_and_update_free_balance() {
+        // Arrange
+        let asset = mock_asset(1, 125, 50);
+        let order = mock_order(10, false);
+
+        let previous_balance = Decimal::new(100, 0);
+        let amount = Decimal::new(25, 0);
+        let new_balance = Decimal::new(125, 0);
+
+        // Act
+        let ledger = LedgerRequest::from_asset(&asset)
+            .from_order(&order)
+            .update_values(
+                false, // is_locked = false -> free
+                amount,
+                previous_balance,
+                new_balance,
+            );
+
+        // Assert - IDs
+        assert_eq!(ledger.asset_id, Some(1));
+        assert_eq!(ledger.order_id, Some(10));
+        assert_eq!(ledger.record_type_id, Some(1)); // buy
+
+        // Assert - Free balance
+        assert_eq!(ledger.free_amount, Some(amount));
+        assert_eq!(ledger.free_previous_balance, Some(previous_balance));
+        assert_eq!(ledger.free_new_balance, Some(new_balance));
+
+        // Assert - Locked untouched
+        assert_eq!(ledger.locked_amount, Some(Decimal::new(50, 0)));
+        assert_eq!(ledger.locked_previous_balance, Some(Decimal::new(50, 0)));
+        assert_eq!(ledger.locked_new_balance, Some(Decimal::new(50, 0)));
+    }
+}

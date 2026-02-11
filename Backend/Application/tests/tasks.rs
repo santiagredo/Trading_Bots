@@ -1,8 +1,8 @@
-use application::handler::Tasks;
+use application::{handler::Tasks, utils::EntityCache};
 use models::{
     entities::tasks::Model,
     enums::{LifecycleState, TaskState},
-    structs::Environments,
+    structs::{CacheTask, Environments},
 };
 
 fn mock_task(id: i32, nick: &str) -> Model {
@@ -25,35 +25,43 @@ async fn full_tasks_cache_flow_should_work_correctly() {
      * ===========================
      */
 
-    let reset = Tasks::reset_tasks_cache(env).await;
+    let reset = Tasks::blank().reset(env).await;
     assert!(reset.is_ok());
 
-    let off = Tasks::set_status_cache(env, LifecycleState::Off).await;
+    let off = Tasks::blank().set_state(env, LifecycleState::Off).await;
     assert!(off.is_err());
 
-    let status = Tasks::new().get_tasks_state(env).await;
+    let status = Tasks::blank().state(env).await;
     assert_eq!(status, LifecycleState::Off);
 
-    let cache = Tasks::get_tasks_cache(env).await;
-    assert!(cache.is_some_and(|val| val.models.is_empty()));
+    let cache = Tasks::blank().get_all(env).await;
+    assert!(cache.is_none(), "{cache:?}");
 
     /* ===========================
      * LOAD MULTIPLE TASKS
      * ===========================
      */
 
-    Tasks::set_status_cache(env, LifecycleState::Starting)
+    Tasks::blank()
+        .set_state(env, LifecycleState::Starting)
         .await
         .unwrap();
 
-    Tasks::set_status_cache(env, LifecycleState::Running)
+    Tasks::blank()
+        .set_state(env, LifecycleState::Running)
         .await
         .unwrap();
 
-    let tasks = vec![mock_task(1, "BNUAB"), mock_task(2, "BNUEI")];
-    Tasks::set_tasks_cache(env, tasks).await.unwrap();
+    let tasks = vec![mock_task(1, "BNUAB"), mock_task(2, "BNUEI")]
+        .into_iter()
+        .map(|task| CacheTask {
+            model: task,
+            state: TaskState::Sleeping,
+        })
+        .collect();
+    Tasks::blank().set_all(env, tasks).await.unwrap();
 
-    let cache = Tasks::get_tasks_cache(env).await.unwrap();
+    let cache = Tasks::blank().get_all(env).await.unwrap();
     assert_eq!(cache.models.len(), 2);
     assert_eq!(cache.status, LifecycleState::Running);
 
@@ -66,11 +74,17 @@ async fn full_tasks_cache_flow_should_work_correctly() {
      * ===========================
      */
 
-    let extra = mock_task(3, "CPUPS");
-    Tasks::upsert_task_cache(env, extra.clone()).await.unwrap();
+    let extra = CacheTask {
+        model: mock_task(3, "CPUPS"),
+        state: TaskState::Sleeping,
+    };
+    Tasks::blank()
+        .upsert(env, extra.model.id, extra.clone())
+        .await
+        .unwrap();
 
-    let single = Tasks::get_task_cache(env, 3).await.unwrap();
-    assert_eq!(single.model, extra);
+    let single = Tasks::blank().get(env, 3).await.unwrap();
+    assert_eq!(single.model, extra.model);
     assert_eq!(single.state, TaskState::Sleeping);
 
     /* ===========================
@@ -78,11 +92,11 @@ async fn full_tasks_cache_flow_should_work_correctly() {
      * ===========================
      */
 
-    let removed = Tasks::remove_task_cache(env, 3).await.unwrap().unwrap();
+    let removed = Tasks::blank().remove(env, 3).await.unwrap().unwrap();
 
-    assert_eq!(removed.model, extra);
+    assert_eq!(removed.model, extra.model);
 
-    let not_found = Tasks::get_task_cache(env, 3).await;
+    let not_found = Tasks::blank().get(env, 3).await;
     assert!(not_found.is_none());
 
     /* ===========================
@@ -90,16 +104,18 @@ async fn full_tasks_cache_flow_should_work_correctly() {
      * ===========================
      */
 
-    Tasks::set_status_cache(env, LifecycleState::Stopping)
+    Tasks::blank()
+        .set_state(env, LifecycleState::Stopping)
         .await
         .unwrap();
 
-    Tasks::remove_tasks_cache(env).await.unwrap();
+    Tasks::blank().remove_all(env).await.unwrap();
 
-    Tasks::set_status_cache(env, LifecycleState::Off)
+    Tasks::blank()
+        .set_state(env, LifecycleState::Off)
         .await
         .unwrap();
 
-    let final_cache = Tasks::get_tasks_cache(env).await;
-    assert!(final_cache.is_some_and(|val| val.models.is_empty()));
+    let final_cache = Tasks::blank().get_all(env).await;
+    assert!(final_cache.is_none(), "{final_cache:?}");
 }

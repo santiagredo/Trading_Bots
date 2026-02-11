@@ -7,7 +7,7 @@ use models::{
     structs::{CacheStrategies, CacheStrategiesEnvironments, CacheStrategy, Environments},
 };
 use once_cell::sync::Lazy;
-use tokio::sync::RwLock;
+use tokio::{sync::RwLock, task::AbortHandle};
 
 use crate::{handler::Strategies, utils::EntityCache};
 
@@ -227,6 +227,32 @@ impl<R> Strategies<R> {
 
         strategy.model.last_execution = Some(now);
         env_cache.last_update_date = now;
+
+        Ok(())
+    }
+
+    pub async fn set_abort_handle(
+        &self,
+        env: Environments,
+        abort_handle: AbortHandle,
+    ) -> Result<(), String> {
+        let mut cache = ACTIVE_STRATEGIES.write().await;
+        let env_cache = cache.get_mut(&env).ok_or("Environment not initialized")?;
+
+        env_cache.abort_handle = Some(abort_handle);
+
+        Ok(())
+    }
+
+    pub async fn abort_handle(&self, env: Environments) -> Result<(), String> {
+        let mut cache = ACTIVE_STRATEGIES.write().await;
+        let env_cache = cache.get_mut(&env).ok_or("Environment not initialized")?;
+
+        let handle = env_cache.abort_handle.take();
+
+        if let Some(handle) = handle {
+            handle.abort();
+        }
 
         Ok(())
     }

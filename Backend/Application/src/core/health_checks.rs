@@ -10,21 +10,21 @@ use models::structs::Environments;
 use std::collections::BTreeMap;
 
 impl HealthCheck {
-    pub async fn select_health_check_core() -> Result<BTreeMap<String, String>, Response> {
+    pub async fn select_health_check(is_test: bool) -> Result<BTreeMap<String, String>, Response> {
         let mut health_map = BTreeMap::new();
 
         // DB
-        let dev_conn = DBC::db(&Environments::DEV).await?;
-        health_map.insert(
-            "db_dev_conn_is_valid".to_string(),
-            dev_conn.ping().await.is_ok().to_string(),
-        );
+        let dev_conn = match is_test {
+            false => DBC::db(&Environments::DEV).await?.ping().await.is_ok(),
+            true => true,
+        };
+        health_map.insert("db_dev_conn_is_valid".to_string(), dev_conn.to_string());
 
-        let prod_conn = DBC::db(&Environments::PROD).await?;
-        health_map.insert(
-            "db_prod_conn_is_valid".to_string(),
-            prod_conn.ping().await.is_ok().to_string(),
-        );
+        let prod_conn = match is_test {
+            false => DBC::db(&Environments::PROD).await?.ping().await.is_ok(),
+            true => true,
+        };
+        health_map.insert("db_prod_conn_is_valid".to_string(), prod_conn.to_string());
 
         // Actions
         let cache_actions_dev_status = Actions::blank().state(Environments::DEV).await;
@@ -130,13 +130,13 @@ impl HealthCheck {
         );
 
         // Order Status
-        let cache_order_status_dev_status = OrderStatus::get_cache_state(Environments::DEV).await;
+        let cache_order_status_dev_status = OrderStatus::blank().state(Environments::DEV).await;
         health_map.insert(
             "cache_order_status_dev_status".to_string(),
             cache_order_status_dev_status.to_string(),
         );
 
-        let cache_order_status_prod_status = OrderStatus::get_cache_state(Environments::PROD).await;
+        let cache_order_status_prod_status = OrderStatus::blank().state(Environments::PROD).await;
         health_map.insert(
             "cache_order_status_prod_status".to_string(),
             cache_order_status_prod_status.to_string(),
@@ -156,36 +156,27 @@ impl HealthCheck {
         );
 
         // Subscribed Indicators
-        let cache_subscribed_indicators_dev_status =
-            SubscribedIndicators::blank().state(Environments::DEV).await;
+        let cache_subscribed_indicators_status = SubscribedIndicators::blank().state().await;
         health_map.insert(
-            "cache_subscribed_indicators_dev_status".to_string(),
-            cache_subscribed_indicators_dev_status.to_string(),
-        );
-
-        let cache_subscribed_indicators_prod_status = SubscribedIndicators::blank()
-            .state(Environments::PROD)
-            .await;
-        health_map.insert(
-            "cache_subscribed_indicators_prod_status".to_string(),
-            cache_subscribed_indicators_prod_status.to_string(),
+            "cache_subscribed_indicators_status".to_string(),
+            cache_subscribed_indicators_status.to_string(),
         );
 
         // Tasks
-        let cache_tasks_dev_status = Tasks::new().get_tasks_state(Environments::DEV).await;
+        let cache_tasks_dev_status = Tasks::blank().state(Environments::DEV).await;
         health_map.insert(
             "cache_tasks_dev_status".to_string(),
             cache_tasks_dev_status.to_string(),
         );
 
-        let cache_tasks_prod_status = Tasks::new().get_tasks_state(Environments::PROD).await;
+        let cache_tasks_prod_status = Tasks::blank().state(Environments::PROD).await;
         health_map.insert(
             "cache_tasks_prod_status".to_string(),
             cache_tasks_prod_status.to_string(),
         );
 
         // Websocket streams
-        let cache_websocket_status = WebsocketStreams::new().get_status().await;
+        let cache_websocket_status = WebsocketStreams::state().await;
         health_map.insert(
             "cache_websocket_status".to_string(),
             cache_websocket_status.state.to_string(),

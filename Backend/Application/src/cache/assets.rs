@@ -310,6 +310,60 @@ mod tests {
         stop_env(service, env).await;
     }
 
+    async fn scenario_set_asset_balance_increases_free(service: &Assets<()>, env: Environments) {
+        start_env(service, env).await;
+
+        // Arrange
+        let asset = mock_asset(1, 100, 50);
+        service.set_all(env, vec![asset]).await.unwrap();
+
+        // Act
+        let (updated, previous) = service
+            .set_asset_balance(
+                env,
+                1,
+                Decimal::new(25, 0),
+                false, // locked = false
+                false, // sell = false
+            )
+            .await
+            .unwrap();
+
+        // Assert
+        assert_eq!(previous, Decimal::new(100, 0));
+        assert_eq!(updated.free, Decimal::new(125, 0));
+        assert_eq!(updated.locked, Decimal::new(50, 0));
+
+        let cached = service.get(env, 1).await.unwrap();
+        assert_eq!(cached.free, Decimal::new(125, 0));
+
+        stop_env(service, env).await;
+    }
+
+    async fn scenario_set_asset_balance_decreases_locked(service: &Assets<()>, env: Environments) {
+        start_env(service, env).await;
+
+        let asset = mock_asset(2, 100, 50);
+        service.set_all(env, vec![asset]).await.unwrap();
+
+        let (updated, previous) = service
+            .set_asset_balance(
+                env,
+                2,
+                Decimal::new(20, 0),
+                true, // locked
+                true, // sell
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(previous, Decimal::new(50, 0));
+        assert_eq!(updated.locked, Decimal::new(30, 0));
+        assert_eq!(updated.free, Decimal::new(100, 0));
+
+        stop_env(service, env).await;
+    }
+
     #[tokio::test]
     async fn cache_assets_unit_responsibilities() {
         let env = Environments::DEV;
@@ -321,5 +375,7 @@ mod tests {
         scenario_remove_asset(&service, env).await;
         scenario_get_assets_state(&service, env).await;
         scenario_cannot_remove_assets_when_running(&service, env).await;
+        scenario_set_asset_balance_increases_free(&service, env).await;
+        scenario_set_asset_balance_decreases_locked(&service, env).await;
     }
 }

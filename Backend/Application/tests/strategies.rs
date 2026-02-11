@@ -23,7 +23,7 @@ async fn full_strategies_flow_should_work_correctly() {
      * ===========================
      */
 
-    service.reset_strategies(env).await.unwrap();
+    service.reset(env).await.unwrap();
 
     let status = service.state(env).await;
     assert_eq!(status, LifecycleState::Off);

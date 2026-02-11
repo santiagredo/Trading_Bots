@@ -135,13 +135,9 @@ pub async fn get_indicators(env: web::Path<Environments>) -> impl Responder {
     }
 }
 
-#[get("/{env}/memory/subscribed_indicators/all")]
-pub async fn get_subscribed_indicators(env: web::Path<Environments>) -> impl Responder {
-    match SubscribedIndicators::blank()
-        .get_all(env.into_inner())
-        .await
-    {
-        Some(val) => HttpResponse::Ok().json(val),
-        None => HttpResponse::NotFound().finish(),
-    }
+#[get("/memory/subscribed_indicators/all")]
+pub async fn get_subscribed_indicators() -> impl Responder {
+    let sub_ind = SubscribedIndicators::blank().get_all().await;
+
+    HttpResponse::Ok().json(sub_ind)
 }

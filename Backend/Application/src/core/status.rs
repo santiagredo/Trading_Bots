@@ -1,57 +1,53 @@
 use crate::{
-    handler::{OrderStatus, DBC},
-    utils::Response,
+    handler::OrderStatus,
+    utils::{AnyRepo, EntityCache, RepoFactory, Repository, Response},
 };
 use models::{entities::status::Model, enums::LifecycleState, structs::Environments};
-use std::collections::HashMap;
 
-impl OrderStatus {
-    /* ===========================
-     * DB
-     * ===========================
-     */
+/* ======================================================
+ * CRUD / DB
+ * ======================================================
+ */
 
-    pub async fn select(env: Environments) -> Result<Vec<Model>, Response> {
-        Self::select_status_data(&DBC::db(&env).await?).await
+impl<R> OrderStatus<R>
+where
+    R: Repository<Model, Model>,
+{
+    pub async fn select(&self, req: Model) -> Result<Option<Model>, Response> {
+        self.repo.select(req).await
     }
-
-    /* ===========================
-     * CACHE (READ)
-     * ===========================
-     */
-
-    pub async fn get_statuses(self, env: Environments) -> Option<HashMap<i32, Model>> {
-        OrderStatus::get_status_cache(env).await.map(|c| c.models)
+    pub async fn select_many(&self, req: Model) -> Result<Vec<Model>, Response> {
+        self.repo.select_many(req, None).await
     }
+}
 
-    pub async fn get_status_state(self, env: Environments) -> LifecycleState {
-        OrderStatus::get_cache_state(env).await
-    }
+/* ======================================================
+ * START / LOAD CACHE
+ * ======================================================
+ */
 
-    /* ===========================
-     * START ACTIVE STATUS
-     * ===========================
-     */
-
-    pub async fn start_status(self, env: Environments) -> Result<(), Response> {
+impl OrderStatus<AnyRepo<Model, Model>>
+where
+    Self: EntityCache<Environments>,
+{
+    pub async fn start(&self, factory: RepoFactory, env: Environments) -> Result<(), Response> {
         // =========================
         // STARTING
         // =========================
-        if let Err(err) = OrderStatus::set_status_cache(env, LifecycleState::Starting).await {
-            return Err(Response {
-                code: 500,
-                message: err,
-            });
-        }
+        self.set_state(env, LifecycleState::Starting)
+            .await
+            .map_err(Response::server_error)?;
 
         // =========================
         // Load statuses from DB
         // =========================
+        let repo = factory.repo();
+        let service = OrderStatus::new(repo);
 
-        let statuses = match Self::select(env).await {
-            Ok(s) => s,
+        let statuses = match service.select_many(Model::default()).await {
+            Ok(v) => v,
             Err(err) => {
-                let _ = OrderStatus::reset_status_cache(env).await;
+                let _ = self.reset(env).await;
                 return Err(err);
             }
         };
@@ -59,73 +55,42 @@ impl OrderStatus {
         // =========================
         // RUNNING
         // =========================
-        if let Err(err) = OrderStatus::set_status_cache(env, LifecycleState::Running).await {
-            let _ = OrderStatus::reset_status_cache(env).await;
-            return Err(Response {
-                code: 500,
-                message: err,
-            });
-        }
+        self.set_state(env, LifecycleState::Running)
+            .await
+            .map_err(Response::server_error)?;
 
         // =========================
         // Populate cache
         // =========================
-        if let Err(err) = OrderStatus::set_statuses_cache(env, statuses).await {
-            let _ = OrderStatus::reset_status_cache(env).await;
-            return Err(Response {
-                code: 500,
-                message: err,
-            });
+        if let Err(err) = self.set_all(env, statuses).await {
+            let _ = self.reset(env).await;
+            return Err(Response::server_error(err));
         }
 
         Ok(())
     }
+}
 
-    /* ===========================
-     * STOP ACTIVE STATUS
-     * ===========================
-     */
+/* ======================================================
+ * STOP
+ * ======================================================
+ */
 
-    pub async fn stop_status(self, env: Environments) -> Result<(), Response> {
-        // =========================
-        // STOPPING
-        // =========================
-        if let Err(err) = OrderStatus::set_status_cache(env, LifecycleState::Stopping).await {
-            let _ = OrderStatus::reset_status_cache(env).await;
-            return Err(Response {
-                code: 500,
-                message: err,
-            });
-        }
-
-        // =========================
-        // Remove statuses
-        // =========================
-        if let Err(err) = OrderStatus::remove_statuses_cache(env).await {
-            let _ = OrderStatus::reset_status_cache(env).await;
-            return Err(Response {
-                code: 500,
-                message: err,
-            });
-        }
-
-        // =========================
-        // OFF
-        // =========================
-        if let Err(err) = OrderStatus::set_status_cache(env, LifecycleState::Off).await {
-            let _ = OrderStatus::reset_status_cache(env).await;
-            return Err(Response {
-                code: 500,
-                message: err,
-            });
-        }
-
-        Ok(())
-    }
-
-    pub async fn reset_status(self, env: Environments) -> Result<(), Response> {
-        OrderStatus::reset_status_cache(env)
+impl<R> OrderStatus<R>
+where
+    Self: EntityCache<Environments>,
+{
+    pub async fn stop(&self, env: Environments) -> Result<(), Response> {
+        self.set_state(env, LifecycleState::Stopping)
             .await
-            .map_err(Response::server_error)
+            .map_err(Response::server_error)?;
+
+        self.remove_all(env).await.map_err(Response::server_error)?;
+
+        self.set_state(env, LifecycleState::Off)
+            .await
+            .map_err(Response::server_error)?;
+
+        Ok(())
     }
 }

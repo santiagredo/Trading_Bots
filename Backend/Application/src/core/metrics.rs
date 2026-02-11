@@ -46,28 +46,7 @@ where
  * ======================================================
  */
 
-impl Metrics<AnyRepo<MetricRequest, Model>>
-where
-    Self: EntityCache<Environments>,
-{
-    pub async fn start(
-        &self,
-        // factory: RepoFactory,
-        env: Environments,
-    ) -> Result<(), Response> {
-        // STARTING
-        self.set_state(env, LifecycleState::Starting)
-            .await
-            .map_err(Response::server_error)?;
-
-        // RUNNING
-        self.set_state(env, LifecycleState::Running)
-            .await
-            .map_err(Response::server_error)?;
-
-        Ok(())
-    }
-}
+impl Metrics<AnyRepo<MetricRequest, Model>> where Self: EntityCache<Environments> {}
 
 impl<R> Metrics<R>
 where
@@ -103,7 +82,25 @@ impl<R> Metrics<R>
 where
     Self: EntityCache<Environments>,
 {
-    pub async fn stop_metrics(&self, env: Environments) -> Result<(), Response> {
+    pub async fn start(
+        &self,
+        // factory: RepoFactory,
+        env: Environments,
+    ) -> Result<(), Response> {
+        // STARTING
+        self.set_state(env, LifecycleState::Starting)
+            .await
+            .map_err(Response::server_error)?;
+
+        // RUNNING
+        self.set_state(env, LifecycleState::Running)
+            .await
+            .map_err(Response::server_error)?;
+
+        Ok(())
+    }
+
+    pub async fn stop(&self, env: Environments) -> Result<(), Response> {
         self.set_state(env, LifecycleState::Stopping)
             .await
             .map_err(Response::server_error)?;

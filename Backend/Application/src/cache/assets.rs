@@ -9,7 +9,7 @@ use models::{
 };
 use once_cell::sync::Lazy;
 use sea_orm::prelude::Decimal;
-use tokio::sync::RwLock;
+use tokio::{sync::RwLock, task::AbortHandle};
 
 use crate::{handler::Assets, utils::EntityCache};
 
@@ -174,6 +174,32 @@ where
 
         // env_cache.last_update_date = Local::now().naive_local();
         Ok((asset.clone(), previous))
+    }
+
+    pub async fn set_abort_handle(
+        &self,
+        env: Environments,
+        abort_handle: AbortHandle,
+    ) -> Result<(), String> {
+        let mut cache = ACTIVE_ASSETS.write().await;
+        let env_cache = cache.get_mut(&env).ok_or("Environment not initialized")?;
+
+        env_cache.abort_handle = Some(abort_handle);
+
+        Ok(())
+    }
+
+    pub async fn abort_handle(&self, env: Environments) -> Result<(), String> {
+        let mut cache = ACTIVE_ASSETS.write().await;
+        let env_cache = cache.get_mut(&env).ok_or("Environment not initialized")?;
+
+        let handle = env_cache.abort_handle.take();
+
+        if let Some(handle) = handle {
+            handle.abort();
+        }
+
+        Ok(())
     }
 }
 

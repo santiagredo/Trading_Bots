@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use chrono::{Local, NaiveDateTime};
 use serde::{Deserialize, Serialize};
+use tokio::task::AbortHandle;
 
 use crate::{
     entities::tasks::Model,
@@ -9,10 +10,12 @@ use crate::{
     structs::Environments,
 };
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct CacheTask {
     pub model: Model,
     pub state: TaskState,
+    #[serde(skip, default)]
+    pub abort_handle: Option<AbortHandle>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

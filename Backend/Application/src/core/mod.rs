@@ -1,7 +1,7 @@
 pub mod actions;
 pub mod assets;
 pub mod binance;
-pub mod cancellations;
+// pub mod cancellations;
 pub mod coin_paprika;
 pub mod configurations;
 pub mod database_connections;

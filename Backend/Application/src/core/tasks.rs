@@ -8,7 +8,6 @@ use models::{
     enums::{LifecycleState, TaskState},
     structs::{CacheTask, Environments, QueryOptions, TaskRequest},
 };
-use tokio_util::sync::CancellationToken;
 
 /* ======================================================
  * DB / CORE
@@ -42,12 +41,7 @@ impl Tasks<crate::utils::AnyRepo<TaskRequest, Model>>
 where
     Self: EntityCache<Environments>,
 {
-    pub async fn start(
-        &self,
-        factory: RepoFactory,
-        env: Environments,
-        cancellation_token: &CancellationToken,
-    ) -> Result<(), Response> {
+    pub async fn start(&self, factory: RepoFactory, env: Environments) -> Result<(), Response> {
         if self.state(env).await == LifecycleState::Running {
             return Ok(());
         }
@@ -68,29 +62,26 @@ where
             }
         };
 
-        for task in tasks.iter() {
-            Self::run_task(
-                factory.clone(),
-                env,
-                task.clone(),
-                cancellation_token.clone(),
-            );
-        }
+        let mut cache_tasks = Vec::new();
 
-        let tasks = tasks
-            .into_iter()
-            .map(|task| CacheTask {
+        for task in tasks.into_iter() {
+            let abort_handle = Self::run_task(factory.clone(), env, task.clone());
+
+            let cache_task = CacheTask {
                 model: task,
                 state: TaskState::Sleeping,
-            })
-            .collect();
+                abort_handle,
+            };
+
+            cache_tasks.push(cache_task);
+        }
 
         // RUNNING
         self.set_state(env, LifecycleState::Running)
             .await
             .map_err(Response::server_error)?;
 
-        if let Err(err) = self.set_all(env, tasks).await {
+        if let Err(err) = self.set_all(env, cache_tasks).await {
             let _ = self.reset(env).await;
             return Err(Response::server_error(err));
         }
@@ -106,14 +97,25 @@ where
 
 impl<R> Tasks<R>
 where
-    Self: EntityCache<Environments>,
+    R: Send + Sync,
 {
     pub async fn stop(&self, env: Environments) -> Result<(), Response> {
         self.set_state(env, LifecycleState::Stopping)
             .await
             .map_err(Response::server_error)?;
 
-        self.remove_all(env).await.map_err(Response::server_error)?;
+        let cache_tasks: Vec<CacheTask> = self
+            .remove_all(env)
+            .await
+            .map_err(Response::server_error)?
+            .into_values()
+            .collect();
+
+        for task in cache_tasks {
+            if let Some(abort_handle) = task.abort_handle {
+                abort_handle.abort();
+            }
+        }
 
         self.set_state(env, LifecycleState::Off)
             .await

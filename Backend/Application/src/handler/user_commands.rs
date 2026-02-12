@@ -1,16 +1,13 @@
-use std::time::Instant;
-
 use crate::{
     handler::{
-        Actions, Assets, Cancellations, Indicators, Integrations, IntegrationsSettings, Metrics,
-        OrderStatus, Pairs, Runtimes, Senders, Strategies, SubscribedIndicators, Tasks,
-        WebsocketStreams,
+        Actions, Assets, Indicators, Integrations, IntegrationsSettings, Metrics, OrderStatus,
+        Pairs, Runtimes, Senders, Strategies, SubscribedIndicators, Tasks, WebsocketStreams,
     },
     utils::{EntityCache, RepoFactory, Response},
 };
 use models::{enums::LifecycleState, structs::Environments};
 use serde::{Deserialize, Serialize};
-use tokio_util::sync::CancellationToken;
+use std::time::Instant;
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum StartupStep {
@@ -77,7 +74,6 @@ impl StartupStep {
         self,
         factory: RepoFactory,
         environment: Environments,
-        runtime_token: &CancellationToken,
     ) -> Result<(), Response> {
         match self {
             StartupStep::Runtimes => Ok(()),
@@ -87,9 +83,7 @@ impl StartupStep {
 
                 let repo = factory.repo();
 
-                Assets::new(repo)
-                    .start(factory, environment, runtime_token, senders)
-                    .await
+                Assets::new(repo).start(factory, environment, senders).await
             }
 
             StartupStep::Pairs => {
@@ -101,9 +95,7 @@ impl StartupStep {
             StartupStep::Tasks => {
                 let repo = factory.repo();
 
-                Tasks::new(repo)
-                    .start(factory, environment, runtime_token)
-                    .await
+                Tasks::new(repo).start(factory, environment).await
             }
 
             StartupStep::OrderStatus => {
@@ -226,18 +218,6 @@ impl UserCommands {
                 reset_result: None,
             })?;
 
-        let runtime_token = match Cancellations::new().get_runtime_token(environment).await {
-            Some(val) => val,
-            None => Cancellations::new()
-                .start_runtime(environment)
-                .await
-                .map_err(|e| StartupError {
-                    step: StartupStep::Assets,
-                    response: e,
-                    reset_result: None,
-                })?,
-        };
-
         let factory = match is_test {
             true => RepoFactory::mock(),
             false => {
@@ -252,14 +232,8 @@ impl UserCommands {
         };
 
         for step in STARTUP_SEQUENCE {
-            if let Err(err) = step
-                .execute(factory.clone(), environment, &runtime_token.child_token())
-                .await
-            {
-                let reset_result =
-                    UserCommands::reset_everything(environment, runtime_token.clone())
-                        .await
-                        .err();
+            if let Err(err) = step.execute(factory.clone(), environment).await {
+                let reset_result = UserCommands::reset_everything(environment).await.err();
 
                 return Err(StartupError {
                     step: *step,
@@ -296,8 +270,6 @@ impl UserCommands {
                 response: Some(e),
             });
         }
-
-        Cancellations::new().stop_runtime_core(environment).await;
 
         for step in STOP_SEQUENCE {
             if let Err(err) = step.stop(environment).await {
@@ -338,16 +310,10 @@ impl UserCommands {
         Self::start_everything(is_test, environment).await
     }
 
-    pub async fn reset_everything(
-        environment: Environments,
-        runtime_token: CancellationToken,
-    ) -> Result<(), String> {
+    pub async fn reset_everything(environment: Environments) -> Result<(), String> {
         let start = std::time::Instant::now();
         let now = chrono::Local::now().naive_local();
         let mut errors = Vec::new();
-
-        // Cancel runtime token
-        runtime_token.cancel();
 
         // Stop WebSocket
         WebsocketStreams::abort_handle().await;

@@ -57,6 +57,7 @@ async fn full_tasks_cache_flow_should_work_correctly() {
         .map(|task| CacheTask {
             model: task,
             state: TaskState::Sleeping,
+            ..Default::default()
         })
         .collect();
     Tasks::blank().set_all(env, tasks).await.unwrap();
@@ -77,6 +78,7 @@ async fn full_tasks_cache_flow_should_work_correctly() {
     let extra = CacheTask {
         model: mock_task(3, "CPUPS"),
         state: TaskState::Sleeping,
+        abort_handle: None,
     };
     Tasks::blank()
         .upsert(env, extra.model.id, extra.clone())

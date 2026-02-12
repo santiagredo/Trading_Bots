@@ -9,7 +9,6 @@ use models::{
     structs::{AssetRequest, Environments, LedgerRequest, QueryOptions},
 };
 use sea_orm::prelude::Decimal;
-use tokio_util::sync::CancellationToken;
 
 /* ======================================================
  * CRUD / DB
@@ -62,7 +61,6 @@ where
         &self,
         factory: RepoFactory,
         env: Environments,
-        token: &CancellationToken,
         senders: Senders,
     ) -> Result<(), Response> {
         // STARTING
@@ -91,78 +89,83 @@ where
 
         // Runtime
         let mut orders_receiver = senders.order_sender.subscribe();
-        let cancellation_token = token.clone();
         let repo = self.repo.clone();
 
-        tokio::spawn(async move {
+        let abort_handle = tokio::spawn(async move {
             // Create a blank Assets instance without repo for cache access
             let service = Assets::new(repo);
 
             let ledgers_repo = factory.repo::<LedgerRequest, ledgers::Model>();
 
-            loop {
-                tokio::select! {
-                    _ = cancellation_token.cancelled() => break,
-                    msg = orders_receiver.recv() => {
-                        let Ok((environment, order)) = msg else { continue };
+            while let Ok((environment, order)) = orders_receiver.recv().await {
+                // BASE ASSET
+                let Ok((base_model, base_prev)) = service
+                    .set_asset_balance(
+                        environment,
+                        order.base_asset_id,
+                        order.base_asset_amount,
+                        false,
+                        order.is_sell,
+                    )
+                    .await
+                else {
+                    continue;
+                };
 
-                        // BASE ASSET
-                        let Ok((base_model, base_prev)) = service
-                            .set_asset_balance(
-                                environment,
-                                order.base_asset_id,
-                                order.base_asset_amount,
-                                false,
-                                order.is_sell,
-                            )
-                            .await else { continue };
+                let base_req = AssetRequest::from_model(&base_model);
+                let base_ledger = LedgerRequest::from_asset(&base_model)
+                    .from_order(&order)
+                    .update_values(
+                        false,
+                        order.base_asset_amount,
+                        base_prev,
+                        base_req.free.unwrap_or_default(),
+                    );
 
-                        let base_req = AssetRequest::from_model(&base_model);
-                        let base_ledger = LedgerRequest::from_asset(&base_model)
-                            .from_order(&order)
-                            .update_values(
-                                false,
-                                order.base_asset_amount,
-                                base_prev,
-                                base_req.free.unwrap_or_default(),
-                            );
-
-                        if service.update(base_req).await.is_err() {
-                            continue;
-                        }
-
-                        let _ = Ledgers::new(ledgers_repo.clone()).insert(base_ledger).await;
-
-                        // QUOTE ASSET
-                        let Ok((quote_model, quote_prev)) = service
-                            .set_asset_balance(
-                                environment,
-                                order.quote_asset_id,
-                                order.quote_asset_amount,
-                                false,
-                                !order.is_sell,
-                            )
-                            .await else { continue };
-
-                        let quote_req = AssetRequest::from_model(&quote_model);
-                        let quote_ledger = LedgerRequest::from_asset(&quote_model)
-                            .from_order(&order)
-                            .update_values(
-                                false,
-                                order.quote_asset_amount,
-                                quote_prev,
-                                quote_req.free.unwrap_or_default(),
-                            );
-
-                        if service.update(quote_req).await.is_err() {
-                            continue;
-                        }
-
-                        let _ = Ledgers::new(ledgers_repo.clone()).insert(quote_ledger).await;
-                    }
+                if service.update(base_req).await.is_err() {
+                    continue;
                 }
+
+                let _ = Ledgers::new(ledgers_repo.clone()).insert(base_ledger).await;
+
+                // QUOTE ASSET
+                let Ok((quote_model, quote_prev)) = service
+                    .set_asset_balance(
+                        environment,
+                        order.quote_asset_id,
+                        order.quote_asset_amount,
+                        false,
+                        !order.is_sell,
+                    )
+                    .await
+                else {
+                    continue;
+                };
+
+                let quote_req = AssetRequest::from_model(&quote_model);
+                let quote_ledger = LedgerRequest::from_asset(&quote_model)
+                    .from_order(&order)
+                    .update_values(
+                        false,
+                        order.quote_asset_amount,
+                        quote_prev,
+                        quote_req.free.unwrap_or_default(),
+                    );
+
+                if service.update(quote_req).await.is_err() {
+                    continue;
+                }
+
+                let _ = Ledgers::new(ledgers_repo.clone())
+                    .insert(quote_ledger)
+                    .await;
             }
-        });
+        })
+        .abort_handle();
+
+        self.set_abort_handle(env, abort_handle)
+            .await
+            .map_err(Response::server_error)?;
 
         Ok(())
     }
@@ -219,7 +222,7 @@ where
 
 impl<R> Assets<R>
 where
-    Self: EntityCache<Environments>,
+    R: Send + Sync,
 {
     pub async fn stop(&self, env: Environments) -> Result<(), Response> {
         self.set_state(env, LifecycleState::Stopping)
@@ -227,6 +230,10 @@ where
             .map_err(Response::server_error)?;
 
         self.remove_all(env).await.map_err(Response::server_error)?;
+
+        self.abort_handle(env)
+            .await
+            .map_err(Response::server_error)?;
 
         self.set_state(env, LifecycleState::Off)
             .await

@@ -1,13 +1,12 @@
-use chrono::{Local, NaiveDateTime};
-use std::collections::HashMap;
-
-use serde::{Deserialize, Serialize};
-
 use crate::{
     entities::assets::Model,
     enums::{LifecycleState, TimestampedState},
     structs::Environments,
 };
+use chrono::{Local, NaiveDateTime};
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use tokio::task::AbortHandle;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct CacheAssets {
@@ -15,6 +14,8 @@ pub struct CacheAssets {
     pub startup_date: NaiveDateTime,
     pub last_update_date: NaiveDateTime,
     pub status: LifecycleState,
+    #[serde(skip, default)]
+    pub abort_handle: Option<AbortHandle>,
 }
 
 impl CacheAssets {
@@ -26,6 +27,7 @@ impl CacheAssets {
             startup_date: now,
             last_update_date: now,
             status: LifecycleState::Off,
+            abort_handle: None,
         }
     }
 }

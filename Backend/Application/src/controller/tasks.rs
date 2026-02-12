@@ -1,10 +1,9 @@
+use crate::{
+    handler::Tasks,
+    utils::{error_response, DbRepo, EntityCache, RepoFactory},
+};
 use actix_web::{get, patch, post, web, HttpResponse, Responder};
 use models::structs::{Environments, QueryOptions, TaskRequest};
-
-use crate::{
-    handler::{Cancellations, Tasks},
-    utils::{error_response, DbRepo, EntityCache, RepoFactory, Response},
-};
 
 // ============================================
 // DATABASE OPERATIONS
@@ -89,12 +88,7 @@ pub async fn start_tasks(env: web::Path<Environments>) -> impl Responder {
 
     let repo = factory.repo();
 
-    let runtime_token = match Cancellations::new().get_runtime_token(env).await {
-        None => return error_response(Response::not_found("Runtime token".to_string())),
-        Some(val) => val,
-    };
-
-    match Tasks::new(repo).start(factory, env, &runtime_token).await {
+    match Tasks::new(repo).start(factory, env).await {
         Ok(_) => HttpResponse::Ok().finish(),
         Err(err) => error_response(err),
     }

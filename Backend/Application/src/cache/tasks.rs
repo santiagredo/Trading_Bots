@@ -1,5 +1,7 @@
-use std::{collections::HashMap, future::Future, mem, sync::Arc, time::Duration};
-
+use crate::{
+    handler::{Binance, CoinPaprika, Metrics, Tasks},
+    utils::{EntityCache, RepoFactory},
+};
 use chrono::{Local, Timelike};
 use migration::async_trait::async_trait;
 use models::{
@@ -10,13 +12,8 @@ use models::{
     },
 };
 use once_cell::sync::Lazy;
-use tokio::{sync::RwLock, time::sleep};
-use tokio_util::sync::CancellationToken;
-
-use crate::{
-    handler::{Binance, CoinPaprika, Metrics, Tasks},
-    utils::{EntityCache, RepoFactory},
-};
+use std::{collections::HashMap, future::Future, mem, sync::Arc, time::Duration};
+use tokio::{sync::RwLock, task::AbortHandle, time::sleep};
 
 static ACTIVE_TASKS: Lazy<Arc<RwLock<CacheTasksEnvironments>>> =
     Lazy::new(|| Arc::new(RwLock::new(CacheTasksEnvironments::new())));
@@ -140,9 +137,9 @@ where
         factory: RepoFactory,
         environment: Environments,
         task: Model,
-        cancellation_token: CancellationToken,
         task_fn: F,
-    ) where
+    ) -> AbortHandle
+    where
         F: Fn(RepoFactory, Environments) -> Fut + Send + Sync + 'static,
         Fut: Future<Output = ()> + Send + 'static,
     {
@@ -152,72 +149,65 @@ where
 
         tokio::spawn(async move {
             loop {
-                tokio::select! {
-                    _ = cancellation_token.cancelled() => break,
-                    _ = sleep(Duration::from_secs(delay)) => {
-                        task_fn(factory.clone(), environment).await;
+                sleep(Duration::from_secs(delay)).await;
 
-                        let now = Local::now().naive_local();
+                task_fn(factory.clone(), environment).await;
 
-                        let repo = factory.repo::<TaskRequest, Model>();
-                        let service = Tasks::new(repo);
+                let now = Local::now().naive_local();
 
-                        let _ = service.update(
-                            TaskRequest {
-                                id: Some(task_id),
-                                last_execution: Some(now),
-                                ..Default::default()
-                            }
-                        ).await;
+                let repo = factory.repo::<TaskRequest, Model>();
+                let service = Tasks::new(repo);
 
-                        sleep(Duration::from_secs(cooldown)).await;
-                    }
-                }
+                let _ = service
+                    .update(TaskRequest {
+                        id: Some(task_id),
+                        last_execution: Some(now),
+                        ..Default::default()
+                    })
+                    .await;
+
+                sleep(Duration::from_secs(cooldown)).await;
             }
-        });
+        })
+        .abort_handle()
     }
 
     pub fn run_task(
         factory: RepoFactory,
         environment: Environments,
         task: Model,
-        cancellation_token: CancellationToken,
-    ) {
+    ) -> Option<AbortHandle> {
         match task.nick.as_str() {
-            "BNUAB" => Self::spawn_task(
+            "BNUAB" => Some(Self::spawn_task(
                 factory,
                 environment,
                 task,
-                cancellation_token,
                 |factory, env| async move {
                     Binance::update_account_balances(factory, env).await;
                 },
-            ),
-            "BNUEI" => Self::spawn_task(
+            )),
+            "BNUEI" => Some(Self::spawn_task(
                 factory,
                 environment,
                 task,
-                cancellation_token,
                 |factory, env| async move {
                     Binance::update_exchange_information(factory, env).await;
                 },
-            ),
-            "CPUPS" => Self::spawn_task(
+            )),
+            "CPUPS" => Some(Self::spawn_task(
                 factory,
                 environment,
                 task,
-                cancellation_token,
                 |factory, env| async move {
                     CoinPaprika::new()
                         .update_pairs_statistics(factory, env)
                         .await;
                 },
-            ),
-            "CMPER" => Self::spawn_task(
+            )),
+            "CMPER" => Some(Self::spawn_task(
                 factory,
                 environment,
                 task,
-                cancellation_token,
                 |factory, env| async move {
                     let now = Local::now();
                     let next_hour = (now + chrono::Duration::hours(1))
@@ -231,8 +221,8 @@ where
                     let repo = factory.repo::<MetricRequest, critical_metrics::Model>();
                     let _ = Metrics::new(repo).persist(env).await;
                 },
-            ),
-            _ => {}
+            )),
+            _ => None,
         }
     }
 }

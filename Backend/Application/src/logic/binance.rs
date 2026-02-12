@@ -150,33 +150,28 @@ pub fn map_new_order(
         }),
 
         BinanceRestResponse::Full(full) => {
-            let fills = full.fills.unwrap_or_default();
+            let executed_qty = Decimal::from_str(&full.executed_qty).unwrap_or_default();
 
-            let weighted_average_price = {
-                let total_qty = fills.iter().fold(Decimal::ZERO, |acc, f| {
-                    acc + Decimal::from_str(&f.qty).unwrap_or_default()
+            let cummulative_quote_qty =
+                Decimal::from_str(&full.cummulative_quote_qty).unwrap_or_default();
+
+            let commission = full
+                .fills
+                .unwrap_or_default()
+                .into_iter()
+                .fold(Decimal::ZERO, |acc, f| {
+                    acc + Decimal::from_str(&f.commission).unwrap_or_default()
                 });
-                if total_qty.is_zero() {
-                    Decimal::ZERO
-                } else {
-                    fills.iter().fold(Decimal::ZERO, |acc, f| {
-                        acc + (Decimal::from_str(&f.price).unwrap_or_default()
-                            * Decimal::from_str(&f.qty).unwrap_or_default())
-                    }) / total_qty
-                }
+
+            let avg_price = if executed_qty.is_zero() {
+                Decimal::ZERO
+            } else {
+                cummulative_quote_qty / executed_qty
             };
 
-            let commission = fills.iter().fold(Decimal::ZERO, |acc, f| {
-                acc + Decimal::from_str(&f.commission).unwrap_or_default()
-            });
-
-            let cummulative_quote_asset_amount =
-                Decimal::from_str(&full.cummulative_quote_qty).unwrap_or_default() + commission;
-
-            order.base_asset_amount =
-                Some(Decimal::from_str(&full.executed_qty).unwrap_or_default());
-            order.quote_asset_amount = Some(cummulative_quote_asset_amount);
-            order.price_entry = Some(weighted_average_price);
+            order.base_asset_amount = Some(executed_qty);
+            order.quote_asset_amount = Some(cummulative_quote_qty + commission);
+            order.price_entry = Some(avg_price);
 
             Ok(())
         }

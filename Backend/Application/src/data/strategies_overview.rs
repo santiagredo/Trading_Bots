@@ -37,9 +37,9 @@ impl StrategiesOverview {
 
         strategy_overview.strategy = strategy;
 
-        let indicator = match indicators::Entity::find()
+        let indicators = match indicators::Entity::find()
             .filter(Condition::all().add(indicators::Column::StrategyId.eq(strategy_id)))
-            .one(db)
+            .all(db)
             .await
         {
             Err(err) => {
@@ -50,7 +50,7 @@ impl StrategiesOverview {
             Ok(val) => val,
         };
 
-        strategy_overview.indicator = indicator.unwrap_or_default();
+        strategy_overview.indicators = indicators;
 
         let action = match actions::Entity::find()
             .filter(actions::Column::StrategyId.eq(strategy_id))

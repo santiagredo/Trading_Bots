@@ -19,7 +19,18 @@ where
     R: Repository<ActionRequest, Model>,
 {
     pub async fn insert(&self, req: ActionRequest) -> Result<Model, Response> {
-        logic::actions::validate_insert(&req).map_err(handle_user_err)?;
+        let actions = self
+            .select_many(
+                ActionRequest {
+                    strategy_id: req.strategy_id,
+                    ..Default::default()
+                },
+                None,
+            )
+            .await?;
+
+        logic::actions::validate_insert(&req, actions).map_err(handle_user_err)?;
+
         self.repo.insert(req).await
     }
 

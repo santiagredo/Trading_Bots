@@ -30,9 +30,15 @@ impl StrategiesOverview {
             }
         };
 
-        let Some(indicator) = Indicators::blank().get(environment, *strategy_id).await else {
+        let Some(indicators) = Indicators::blank().get_all(environment).await else {
             return None;
         };
+
+        let indicators = indicators
+            .models
+            .into_values()
+            .filter(|ind| ind.strategy_id == *strategy_id)
+            .collect();
 
         let Some(action) = Actions::blank().get(environment, *strategy_id).await else {
             return None;
@@ -60,7 +66,7 @@ impl StrategiesOverview {
 
         let strategy_overview = StrategyOverview {
             strategy,
-            indicator,
+            indicators,
             action,
             pair,
             base_asset: base_asset,
@@ -92,15 +98,17 @@ impl StrategiesOverview {
         }
 
         // evalute indicator
-        match logic::indicators::evaluate_indicator(
-            &strategy_overview.indicator,
-            &strategy_overview.ticker,
-            &strategy_overview.pair,
-        ) {
-            Err(err) => return Err(err),
-            Ok(false) => return Err(format!("Indicator not met")),
-            Ok(true) => (),
-        };
+        for indicator in &strategy_overview.indicators {
+            match logic::indicators::evaluate_indicator(
+                &indicator,
+                &strategy_overview.ticker,
+                &strategy_overview.pair,
+            ) {
+                Err(err) => return Err(err),
+                Ok(false) => return Err(format!("Indicator not met")),
+                Ok(true) => (),
+            };
+        }
 
         // evaluate and modify action
         let action = match Actions::blank().evaluate_action(

@@ -1,7 +1,10 @@
 use std::str::FromStr;
 
 use models::{
-    entities::{actions, assets, pairs},
+    entities::{
+        actions::{self, Model},
+        assets, pairs,
+    },
     structs::{ActionRequest, Ticker},
 };
 use sea_orm::prelude::Decimal;
@@ -11,7 +14,11 @@ use sea_orm::prelude::Decimal;
  * ======================================================
  */
 
-pub fn validate_insert(req: &ActionRequest) -> Result<(), String> {
+pub fn validate_insert(req: &ActionRequest, stored_actions: Vec<Model>) -> Result<(), String> {
+    if req.strategy_id.is_none_or(|strat_id| strat_id <= 0) {
+        return Err("Missing Strategy id".into());
+    }
+
     if req.is_sell.is_none() {
         return Err("Missing Is Sell property".into());
     }
@@ -26,6 +33,10 @@ pub fn validate_insert(req: &ActionRequest) -> Result<(), String> {
 
     if req.value.is_none_or(|v| v == Decimal::ZERO) {
         return Err("Missing or invalid Value property".into());
+    }
+
+    if !stored_actions.is_empty() {
+        return Err("An Action already exists for this strategy".into());
     }
 
     Ok(())
@@ -151,40 +162,72 @@ mod fn_validate_insert {
             (
                 "ok",
                 ActionRequest {
+                    strategy_id: Some(1),
                     is_sell: Some(true),
                     is_quote_asset: Some(true),
                     is_percentage: Some(false),
                     value: Some(Decimal::ONE),
                     ..Default::default()
                 },
+                vec![], // no stored actions
                 true,
+            ),
+            (
+                "err_missing_strategy_id",
+                ActionRequest {
+                    strategy_id: None,
+                    is_sell: Some(true),
+                    is_quote_asset: Some(true),
+                    is_percentage: Some(false),
+                    value: Some(Decimal::ONE),
+                    ..Default::default()
+                },
+                vec![],
+                false,
             ),
             (
                 "err_missing_is_sell",
                 ActionRequest {
+                    strategy_id: Some(1),
                     is_sell: None,
                     is_quote_asset: Some(true),
                     is_percentage: Some(false),
                     value: Some(Decimal::ONE),
                     ..Default::default()
                 },
+                vec![],
                 false,
             ),
             (
                 "err_value_zero",
                 ActionRequest {
+                    strategy_id: Some(1),
                     is_sell: Some(true),
                     is_quote_asset: Some(true),
                     is_percentage: Some(false),
                     value: Some(Decimal::ZERO),
                     ..Default::default()
                 },
+                vec![],
+                false,
+            ),
+            (
+                "err_action_already_exists",
+                ActionRequest {
+                    strategy_id: Some(1),
+                    is_sell: Some(true),
+                    is_quote_asset: Some(true),
+                    is_percentage: Some(false),
+                    value: Some(Decimal::ONE),
+                    ..Default::default()
+                },
+                vec![Model::default()], // simula que ya existe una acción
                 false,
             ),
         ];
 
-        for (name, req, should_pass) in cases {
-            let result = validate_insert(&req);
+        for (name, req, stored_actions, should_pass) in cases {
+            let result = validate_insert(&req, stored_actions);
             assert_eq!(result.is_ok(), should_pass, "case `{}` failed", name);
         }
     }

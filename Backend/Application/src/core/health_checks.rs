@@ -1,8 +1,8 @@
 use crate::{
     handler::{
         Actions, Assets, Configurations, Engines, HealthCheck, Indicators, Integrations,
-        IntegrationsSettings, Metrics, OrderStatus, Pairs, Strategies, SubscribedIndicators, Tasks,
-        WebsocketStreams, DBC,
+        IntegrationsSettings, Metrics, OrderStatus, Pairs, Runtimes, Strategies,
+        SubscribedIndicators, Tasks, WebsocketStreams, DBC,
     },
     utils::{EntityCache, Response},
 };
@@ -186,13 +186,60 @@ impl HealthCheck {
         let engine = Engines::blank().get_engine_cache().await;
         health_map.insert(
             "engine_startup_date".to_string(),
-            engine.startup_date.to_string(),
+            engine.startup_date.format("%Y-%m-%d %H:%M:%S").to_string(),
         );
         health_map.insert(
             "engine_last_update_date".to_string(),
-            engine.last_update_date.to_string(),
+            engine
+                .last_update_date
+                .format("%Y-%m-%d %H:%M:%S")
+                .to_string(),
         );
         health_map.insert("engine_status".to_string(), engine.status.to_string());
+
+        // Runtimes
+        let runtimes = Runtimes::new().get_runtimes_status().await;
+        health_map.insert(
+            "runtime_dev_startup_date".to_string(),
+            runtimes
+                .dev
+                .startup_date
+                .format("%Y-%m-%d %H:%M:%S")
+                .to_string(),
+        );
+        health_map.insert(
+            "runtime_dev_last_update_date".to_string(),
+            runtimes
+                .dev
+                .last_update_date
+                .format("%Y-%m-%d %H:%M:%S")
+                .to_string(),
+        );
+        health_map.insert(
+            "runtime_dev_status".to_string(),
+            runtimes.dev.status.to_string(),
+        );
+
+        health_map.insert(
+            "runtime_prod_startup_date".to_string(),
+            runtimes
+                .prod
+                .startup_date
+                .format("%Y-%m-%d %H:%M:%S")
+                .to_string(),
+        );
+        health_map.insert(
+            "runtime_prod_last_update_date".to_string(),
+            runtimes
+                .prod
+                .last_update_date
+                .format("%Y-%m-%d %H:%M:%S")
+                .to_string(),
+        );
+        health_map.insert(
+            "runtime_prod_status".to_string(),
+            runtimes.prod.status.to_string(),
+        );
 
         Ok(health_map)
     }

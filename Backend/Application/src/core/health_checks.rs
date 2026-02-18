@@ -1,6 +1,6 @@
 use crate::{
     handler::{
-        Actions, Assets, Configurations, HealthCheck, Indicators, Integrations,
+        Actions, Assets, Configurations, Engines, HealthCheck, Indicators, Integrations,
         IntegrationsSettings, Metrics, OrderStatus, Pairs, Strategies, SubscribedIndicators, Tasks,
         WebsocketStreams, DBC,
     },
@@ -181,6 +181,18 @@ impl HealthCheck {
             "cache_websocket_status".to_string(),
             cache_websocket_status.state.to_string(),
         );
+
+        // Engine
+        let engine = Engines::blank().get_engine_cache().await;
+        health_map.insert(
+            "engine_startup_date".to_string(),
+            engine.startup_date.to_string(),
+        );
+        health_map.insert(
+            "engine_last_update_date".to_string(),
+            engine.last_update_date.to_string(),
+        );
+        health_map.insert("engine_status".to_string(), engine.status.to_string());
 
         Ok(health_map)
     }

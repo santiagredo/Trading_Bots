@@ -50,8 +50,38 @@ impl Insert<IntegrationRequest, Model> for DbRepo {
 
 #[async_trait]
 impl Select<IntegrationRequest, Model> for DbRepo {
-    async fn select(&self, _req: IntegrationRequest) -> Result<Option<Model>, Response> {
-        Ok(None)
+    #[named]
+    async fn select(&self, req: IntegrationRequest) -> Result<Option<Model>, Response> {
+        let mut condition = Condition::all();
+
+        if let Some(id) = req.id {
+            condition = condition.add(Column::Id.eq(id));
+        }
+
+        if let Some(name) = req.name.clone() {
+            condition = condition.add(Column::Name.eq(name));
+        }
+
+        if let Some(code) = req.code.clone() {
+            condition = condition.add(Column::Code.eq(code));
+        }
+
+        if let Some(is_enabled) = req.is_enabled {
+            condition = condition.add(Column::IsEnabled.eq(is_enabled));
+        }
+
+        let stmt = Entity::find().filter(condition);
+
+        match stmt.one(&self.data).await {
+            Err(err) => {
+                let _ = ErrorLogs::new(self.clone())
+                    .insert(log_trait_db_error!(err, req))
+                    .await;
+
+                Err(handle_db_error(&err))
+            }
+            Ok(val) => Ok(val),
+        }
     }
 
     #[named]

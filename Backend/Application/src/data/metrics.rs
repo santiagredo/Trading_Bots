@@ -88,7 +88,10 @@ impl Select<MetricRequest, Model> for DbRepo {
             condition = condition.add(Column::Id.eq(req.id));
         }
 
-        let mut stmt = Entity::find().filter(condition);
+        let mut stmt = Entity::find()
+            .limit(20)
+            .order_by(Column::Id, sea_orm::Order::Desc)
+            .filter(condition);
 
         if let Some(q) = query {
             if let Some(limit) = q.limit {

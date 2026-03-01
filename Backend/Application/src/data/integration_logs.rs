@@ -93,7 +93,10 @@ impl Select<IntegrationLogRequest, Model> for DbRepo {
             condition = condition.add(Column::StatusCode.eq(status_code));
         }
 
-        let mut stmt = Entity::find().filter(condition);
+        let mut stmt = Entity::find()
+            .limit(20)
+            .order_by(Column::Id, sea_orm::Order::Desc)
+            .filter(condition);
 
         if let Some(q) = query {
             if let Some(limit) = q.limit {
@@ -112,9 +115,6 @@ impl Select<IntegrationLogRequest, Model> for DbRepo {
 
                 stmt = stmt.order_by(order_by, direction);
             }
-        } else {
-            // comportamiento por defecto
-            stmt = stmt.limit(20).order_by(Column::Id, sea_orm::Order::Desc);
         }
 
         match stmt.all(&self.data).await {

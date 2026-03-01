@@ -116,9 +116,10 @@ impl Select<LedgerRequest, Model> for DbRepo {
             condition = condition.add(Column::AssetId.eq(asset_id));
         }
 
-        let mut stmt = Entity::find().filter(condition);
-
-        stmt = stmt.order_by(Column::Id, sea_orm::Order::Desc);
+        let mut stmt = Entity::find()
+            .limit(20)
+            .order_by(Column::Id, sea_orm::Order::Desc)
+            .filter(condition);
 
         if let Some(q) = query {
             if let Some(limit) = q.limit {

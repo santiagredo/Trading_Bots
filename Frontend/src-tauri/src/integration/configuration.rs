@@ -2,7 +2,7 @@ use std::process::{Command, Stdio};
 
 use crate::{
     models::structs::ConfigurationRequest,
-    static_strings::{BACKEND_URL, CONFIGURATIONS, HEALTH_CHECK, SHUTDOWN},
+    static_strings::{BACKEND_URL, CONFIGURATIONS, HEALTH_CHECK, SHUTDOWN, ENGINES},
 };
 
 use reqwest::Response;
@@ -39,7 +39,7 @@ async fn start_engine(app: &AppHandle) -> Result<(), String> {
 
 async fn stop_engine() -> Result<(), String> {
     let response = reqwest::Client::new()
-        .post(format!("{BACKEND_URL}{CONFIGURATIONS}{SHUTDOWN}"))
+        .post(format!("{BACKEND_URL}{ENGINES}{SHUTDOWN}"))
         .send()
         .await
         .map_err(|err| err.to_string())?;

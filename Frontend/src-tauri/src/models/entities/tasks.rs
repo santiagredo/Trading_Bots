@@ -22,6 +22,8 @@ pub struct Model {
     pub is_active: bool,
     pub cooldown: i64,
     pub delay: i64,
+    pub last_update: Option<DateTime>,
+    pub last_execution: Option<DateTime>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveColumn)]
@@ -32,6 +34,8 @@ pub enum Column {
     IsActive,
     Cooldown,
     Delay,
+    LastUpdate,
+    LastExecution,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DerivePrimaryKey)]
@@ -59,6 +63,8 @@ impl ColumnTrait for Column {
             Self::IsActive => ColumnType::Boolean.def(),
             Self::Cooldown => ColumnType::BigInteger.def(),
             Self::Delay => ColumnType::BigInteger.def(),
+            Self::LastUpdate => ColumnType::DateTime.def().null(),
+            Self::LastExecution => ColumnType::DateTime.def().null(),
         }
     }
 }

@@ -1,18 +1,22 @@
 import { useCallback, useMemo, useState } from "react";
-import { CacheStrategy, Strategy } from "@/interfaces/entities/strategy";
+import {
+    CacheStrategy,
+    CacheStrategies,
+    Strategy,
+} from "@/interfaces/entities/strategy";
 import { strategyService } from "@/lib/services/strategies";
 import { StrategyUI } from "@/interfaces/strategy-ui";
 import { RuntimeStatus } from "@/types/runtime-status";
 
 export function useStrategies(env: string) {
     const [strategies, setStrategies] = useState<Strategy[]>([]);
-    const [activeStrategies, setActiveStrategies] = useState<
-        Record<string, CacheStrategy>
-    >({});
+    const [runtime, setRuntime] = useState<CacheStrategies | null>(null);
+
+    const activeStrategies = runtime?.models ?? {};
 
     const uiStrategies = useMemo(
         () => mergeStrategies(strategies, activeStrategies),
-        [strategies, activeStrategies]
+        [strategies, activeStrategies],
     );
 
     const [loading, setLoading] = useState(false);
@@ -41,14 +45,14 @@ export function useStrategies(env: string) {
             const result = await strategyService.getActiveAll(env, filter);
 
             if (result.ok) {
-                setActiveStrategies(result.data);
+                setRuntime(result.data ?? null);
             } else {
                 setError(String(result.error));
             }
 
             setLoading(false);
         },
-        [env]
+        [env],
     );
 
     const create = useCallback(
@@ -67,7 +71,7 @@ export function useStrategies(env: string) {
             setLoading(false);
             return result;
         },
-        [env]
+        [env],
     );
 
     const update = useCallback(
@@ -79,7 +83,9 @@ export function useStrategies(env: string) {
 
             if (result.ok) {
                 setStrategies((prev) =>
-                    prev.map((s) => (s.id === result.data.id ? result.data : s))
+                    prev.map((s) =>
+                        s.id === result.data.id ? result.data : s,
+                    ),
                 );
             } else {
                 setError(String(result.error));
@@ -88,7 +94,7 @@ export function useStrategies(env: string) {
             setLoading(false);
             return result;
         },
-        [env]
+        [env],
     );
 
     const remove = useCallback(
@@ -105,7 +111,7 @@ export function useStrategies(env: string) {
 
             if (result.ok) {
                 setStrategies((prev) =>
-                    prev.filter((s) => s.id !== strategy.id)
+                    prev.filter((s) => s.id !== strategy.id),
                 );
             } else {
                 setError(String(result.error));
@@ -114,7 +120,7 @@ export function useStrategies(env: string) {
             setLoading(false);
             return result;
         },
-        [env]
+        [env],
     );
 
     const startActive = useCallback(async () => {
@@ -153,7 +159,8 @@ export function useStrategies(env: string) {
 
     return {
         strategies,
-        activeStrategies,
+        runtime, 
+        activeStrategies, 
         uiStrategies,
         loading,
         error,
@@ -174,7 +181,7 @@ export function useStrategies(env: string) {
 
 function mergeStrategies(
     db: Strategy[],
-    memory: Record<string, CacheStrategy> | undefined
+    memory: Record<number, CacheStrategy> | undefined,
 ): StrategyUI[] {
     const memoryMap = new Map<number, CacheStrategy>();
 
@@ -190,14 +197,14 @@ function mergeStrategies(
         const mem = dbStrategy.id ? memoryMap.get(dbStrategy.id) : undefined;
 
         let runtimeStatus: RuntimeStatus = "not_loaded";
-        let is_posting: boolean | undefined = undefined;
-        let last_error_date: string | null | undefined = undefined;
+        let state = undefined;
         let last_error_message: string | null | undefined = undefined;
+        let last_update_date: string | undefined = undefined;
 
         if (mem) {
-            is_posting = mem.is_posting;
-            last_error_date = mem.last_error_date;
-            last_error_message = mem.last_error_message;
+            state = mem.state;
+            last_error_message = mem.last_error_message ?? null;
+            last_update_date = mem.last_update_date;
 
             runtimeStatus =
                 mem.model?.last_update !== dbStrategy.last_update
@@ -208,9 +215,9 @@ function mergeStrategies(
         return {
             ...dbStrategy,
             runtimeStatus,
-            is_posting,
-            last_error_date,
+            state,
             last_error_message,
+            last_update_date,
         } as StrategyUI;
     });
 }

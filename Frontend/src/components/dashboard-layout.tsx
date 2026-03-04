@@ -23,6 +23,7 @@ import {
     Target,
     ListTodo,
     Logs,
+    Blocks,
 } from "lucide-react";
 
 const menuItems = [
@@ -45,6 +46,7 @@ const menuItems = [
     },
     { name: "Strategies", href: "/strategies", icon: Target },
     { name: "Tasks", href: "/tasks", icon: ListTodo },
+    { name: "Integrations", href: "/integrations", icon: Blocks },
 ];
 
 interface DashboardLayoutProps {
@@ -61,7 +63,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
             <aside
                 className={cn(
                     "flex flex-col border-r border-border bg-card transition-all duration-300",
-                    sidebarOpen ? "w-64" : "w-16"
+                    sidebarOpen ? "w-64" : "w-16",
                 )}
             >
                 <div className="flex h-16 items-center justify-between border-b border-border px-4">
@@ -85,28 +87,31 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
 
                 <nav className="flex-1 overflow-y-auto p-2">
                     <ul className="space-y-1">
-                        {menuItems.map((item) => {
-                            const Icon = item.icon;
-                            const isActive = location.pathname === item.href;
-                            return (
-                                <li key={item.name}>
-                                    <button
-                                        onClick={() => navigate(item.href)}
-                                        className={cn(
-                                            "flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors",
-                                            isActive
-                                                ? "bg-primary text-primary-foreground"
-                                                : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
-                                        )}
-                                    >
-                                        <Icon className="h-4 w-4 shrink-0" />
-                                        {sidebarOpen && (
-                                            <span>{item.name}</span>
-                                        )}
-                                    </button>
-                                </li>
-                            );
-                        })}
+                        {menuItems
+                            .sort((a, b) => a.name.localeCompare(b.name))
+                            .map((item) => {
+                                const Icon = item.icon;
+                                const isActive =
+                                    location.pathname === item.href;
+                                return (
+                                    <li key={item.name}>
+                                        <button
+                                            onClick={() => navigate(item.href)}
+                                            className={cn(
+                                                "flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors",
+                                                isActive
+                                                    ? "bg-primary text-primary-foreground"
+                                                    : "text-muted-foreground hover:bg-accent hover:text-accent-foreground",
+                                            )}
+                                        >
+                                            <Icon className="h-4 w-4 shrink-0" />
+                                            {sidebarOpen && (
+                                                <span>{item.name}</span>
+                                            )}
+                                        </button>
+                                    </li>
+                                );
+                            })}
                     </ul>
                 </nav>
             </aside>

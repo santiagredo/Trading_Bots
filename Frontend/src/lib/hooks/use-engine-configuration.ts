@@ -1,29 +1,21 @@
 import { useCallback, useState } from "react";
-
-import { Configuration } from "@/interfaces/configuration";
 import { CacheHealthCheck } from "@/interfaces/health-check";
 import { configurationService } from "../services/configuration";
 import { format_datetime } from "../utils";
 
 export function useEngineConfiguration() {
     /* =======================
-     * configuration state
-     * ======================= */
-
-    const [configuration, setConfiguration] = useState<Configuration>({});
-
-    /* =======================
      * health / runtime state
      * ======================= */
 
     const [healthCheck, setHealthCheck] = useState<CacheHealthCheck | null>(
-        null
+        null,
     );
 
     const [engineRunning, setEngineRunning] = useState<boolean>(false);
 
     const [lastRefresh, setLastRefresh] = useState<string>(
-        format_datetime(new Date())
+        format_datetime(new Date()),
     );
 
     /* =======================
@@ -36,21 +28,6 @@ export function useEngineConfiguration() {
     /* =======================
      * loaders
      * ======================= */
-
-    const loadConfiguration = useCallback(async () => {
-        setLoading(true);
-        setError(null);
-
-        const result = await configurationService.getConfiguration();
-
-        if (result.ok) {
-            setConfiguration(result.data);
-        } else {
-            setError(String(result.error));
-        }
-
-        setLoading(false);
-    }, []);
 
     const loadHealthCheck = useCallback(async () => {
         setLoading(true);
@@ -69,26 +46,6 @@ export function useEngineConfiguration() {
 
         setLastRefresh(format_datetime(new Date()));
         setLoading(false);
-    }, []);
-
-    /* =======================
-     * mutations
-     * ======================= */
-
-    const saveConfiguration = useCallback(async (config: Configuration) => {
-        setLoading(true);
-        setError(null);
-
-        const result = await configurationService.saveConfiguration(config);
-
-        if (result.ok) {
-            setConfiguration(result.data);
-        } else {
-            setError(String(result.error));
-        }
-
-        setLoading(false);
-        return result;
     }, []);
 
     const saveEngineState = useCallback(async () => {
@@ -110,12 +67,6 @@ export function useEngineConfiguration() {
      * ======================= */
 
     return {
-        // configuration
-        configuration,
-        loadConfiguration,
-        saveConfiguration,
-        setConfiguration,
-
         // health / runtime
         healthCheck,
         loadHealthCheck,

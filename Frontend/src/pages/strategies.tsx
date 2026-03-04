@@ -1,5 +1,3 @@
-"use client";
-
 import { useState } from "react";
 import { DashboardLayout } from "@/components/dashboard-layout";
 import { PageHeader } from "@/components/page-header";
@@ -154,7 +152,7 @@ export default function StrategiesPage() {
             ),
         },
         {
-            key: "last_error_date",
+            key: "last_update_date",
             label: "Last runtime error date",
             render: (error_date) => (
                 <p className="font-medium">

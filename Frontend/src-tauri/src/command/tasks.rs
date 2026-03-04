@@ -3,7 +3,7 @@ use crate::core::{
     stop_active_tasks_core, update_task_core,
 };
 use crate::models::entities::tasks::Model;
-use crate::models::structs::TaskRequest;
+use crate::models::structs::{CacheTasks, TaskRequest};
 
 // db
 #[tauri::command]
@@ -23,7 +23,7 @@ pub async fn update_task(env: String, task: TaskRequest) -> Result<Model, String
 
 // cache
 #[tauri::command]
-pub async fn select_active_tasks(env: String) -> Result<Option<Vec<Model>>, String> {
+pub async fn select_active_tasks(env: String) -> Result<Option<CacheTasks>, String> {
     select_active_tasks_core(env).await
 }
 

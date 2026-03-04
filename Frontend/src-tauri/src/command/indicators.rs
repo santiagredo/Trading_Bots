@@ -7,7 +7,10 @@ use crate::{
         select_indicators_core, start_active_indicators_core, stop_active_indicators_core,
         update_indicator_core,
     },
-    models::{entities::indicators::Model, structs::IndicatorRequest},
+    models::{
+        entities::indicators::Model,
+        structs::{CacheIndicators, IndicatorRequest},
+    },
 };
 
 // db
@@ -52,7 +55,7 @@ pub async fn get_active_indicator(
 }
 
 #[tauri::command]
-pub async fn get_active_indicators(env: String) -> Result<Vec<Model>, String> {
+pub async fn get_active_indicators(env: String) -> Result<Option<CacheIndicators>, String> {
     get_active_indicators_core(env).await
 }
 

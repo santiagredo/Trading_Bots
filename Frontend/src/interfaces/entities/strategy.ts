@@ -1,3 +1,5 @@
+import { LifecycleState } from "@/types/life-cycle-state";
+
 export interface Strategy {
     id?: number;
     name?: string;
@@ -12,8 +14,15 @@ export interface Strategy {
 }
 
 export interface CacheStrategy {
-    is_posting?: boolean;
-    model?: Strategy;
-    last_error_date?: string | null;
+    model: Strategy;
+    state: LifecycleState;
+    last_update_date: string;
     last_error_message?: string | null;
+}
+
+export interface CacheStrategies {
+    models: Record<number, CacheStrategy>;
+    startup_date: string;
+    last_update_date: string;
+    status: LifecycleState;
 }

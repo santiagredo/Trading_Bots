@@ -1,20 +1,30 @@
 import { useCallback, useMemo, useState } from "react";
-import { Indicator } from "@/interfaces/entities/indicator";
+import { CacheIndicators, Indicator } from "@/interfaces/entities/indicator";
 import { indicatorService } from "@/lib/services/indicators";
 import { RuntimeStatus } from "@/types/runtime-status";
 
 export function useIndicators(env: string) {
     const [indicators, setIndicators] = useState<Indicator[]>([]);
-    const [activeIndicators, setActiveIndicators] = useState<Indicator[]>([]);
+    const [activeCache, setActiveCache] = useState<CacheIndicators | null>(
+        null,
+    );
     const [subscribedIndicators, setSubscribedIndicators] = useState<Record<
         string,
         number[]
     > | null>(null);
 
+    // Derivado desde cache real
+    const activeIndicators = useMemo<Indicator[]>(() => {
+        if (!activeCache) return [];
+        return Object.values(activeCache.models);
+    }, [activeCache]);
+
+    const runtimeState = activeCache?.status ?? "Stopped";
+
     const uiIndicators = useMemo(
         () =>
             mergeIndicators(indicators, activeIndicators, subscribedIndicators),
-        [indicators, activeIndicators, subscribedIndicators]
+        [indicators, activeIndicators, subscribedIndicators],
     );
 
     const [loading, setLoading] = useState(false);
@@ -42,7 +52,7 @@ export function useIndicators(env: string) {
         const result = await indicatorService.getActiveAll(env);
 
         if (result.ok) {
-            setActiveIndicators(result.data);
+            setActiveCache(result.data);
         } else {
             setError(String(result.error));
         }
@@ -81,7 +91,7 @@ export function useIndicators(env: string) {
             setLoading(false);
             return result;
         },
-        [env]
+        [env],
     );
 
     const update = useCallback(
@@ -93,7 +103,9 @@ export function useIndicators(env: string) {
 
             if (result.ok) {
                 setIndicators((prev) =>
-                    prev.map((i) => (i.id === result.data.id ? result.data : i))
+                    prev.map((i) =>
+                        i.id === result.data.id ? result.data : i,
+                    ),
                 );
             } else {
                 setError(String(result.error));
@@ -102,7 +114,7 @@ export function useIndicators(env: string) {
             setLoading(false);
             return result;
         },
-        [env]
+        [env],
     );
 
     const remove = useCallback(
@@ -119,11 +131,20 @@ export function useIndicators(env: string) {
 
             if (result.ok) {
                 setIndicators((prev) =>
-                    prev.filter((i) => i.id !== indicator.id)
+                    prev.filter((i) => i.id !== indicator.id),
                 );
-                setActiveIndicators((prev) =>
-                    prev.filter((i) => i.id !== indicator.id)
-                );
+
+                setActiveCache((prev) => {
+                    if (!prev) return prev;
+
+                    const updatedModels = { ...prev.models };
+                    delete updatedModels[String(indicator.id)];
+
+                    return {
+                        ...prev,
+                        models: updatedModels,
+                    };
+                });
             } else {
                 setError(String(result.error));
             }
@@ -131,7 +152,7 @@ export function useIndicators(env: string) {
             setLoading(false);
             return result;
         },
-        [env]
+        [env],
     );
 
     const startActive = useCallback(async () => {
@@ -156,7 +177,7 @@ export function useIndicators(env: string) {
         const result = await indicatorService.stopActive(env);
 
         if (result.ok) {
-            setActiveIndicators([]);
+            setActiveCache(null);
             setSubscribedIndicators(null);
         } else {
             setError(String(result.error));
@@ -172,8 +193,10 @@ export function useIndicators(env: string) {
     return {
         indicators,
         activeIndicators,
+        activeCache,
         subscribedIndicators,
         uiIndicators,
+        runtimeState,
         loading,
         error,
 
@@ -193,10 +216,11 @@ export function useIndicators(env: string) {
 }
 
 // helpers
+
 function mergeIndicators(
     db: Indicator[],
     memory: Indicator[],
-    subscribed: Record<string, number[]> | null
+    subscribed: Record<string, number[]> | null,
 ) {
     const memoryMap = new Map<number, Indicator>();
 
@@ -233,7 +257,7 @@ function mergeIndicators(
 
 function isIndicatorSubscribed(
     indicatorId: number,
-    subscribed: Record<string, number[]> | null
+    subscribed: Record<string, number[]> | null,
 ): boolean {
     if (!subscribed) return false;
 

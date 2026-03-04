@@ -1,17 +1,15 @@
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { Save } from "lucide-react";
-
 import { DashboardLayout } from "@/components/dashboard-layout";
 import { PageHeader } from "@/components/page-header";
 import {
     Card,
     CardContent,
-    CardDescription,
+    // CardDescription,
     CardHeader,
     CardTitle,
 } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
-import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
 import Loading from "@/components/ui/loading";
@@ -23,16 +21,7 @@ export default function ConfigurationPage() {
     const { error: toastError, success } = useToastContext();
 
     const {
-        // configuration
-        configuration,
-        loadConfiguration,
-        saveConfiguration,
-        setConfiguration,
-
-        // health / runtime
-        // healthCheck,
         loadHealthCheck,
-        // lastRefresh,
 
         engineRunning,
         setEngineRunning,
@@ -43,12 +32,9 @@ export default function ConfigurationPage() {
         error,
     } = useEngineConfiguration();
 
-    const [showSecrets, setShowSecrets] = useState(false);
-
     useEffect(() => {
         loadHealthCheck();
-        loadConfiguration();
-    }, [loadHealthCheck, loadConfiguration]);
+    }, [loadHealthCheck]);
 
     useEffect(() => {
         if (error) toastError("Error", error);
@@ -63,26 +49,7 @@ export default function ConfigurationPage() {
                 return;
             }
 
-            if (
-                engineRunning &&
-                (configuration.api_key !== "" ||
-                    configuration.secret_pass !== "")
-            ) {
-                const configResult = await saveConfiguration(configuration);
-
-                if (!configResult.ok) {
-                    toastError(
-                        "Configuration error",
-                        String(configResult.error)
-                    );
-                    return;
-                }
-            }
-
-            success(
-                "Changes saved",
-                "Engine state and configuration saved successfully"
-            );
+            success("Changes saved", "Engine state saved successfully");
         } catch (e) {
             toastError("Unexpected error", String(e));
         }
@@ -135,61 +102,6 @@ export default function ConfigurationPage() {
                                             onCheckedChange={setEngineRunning}
                                         />
                                     )}
-                                </div>
-                            </CardContent>
-                        </Card>
-
-                        {/* =======================
-                         * Binance
-                         * ======================= */}
-                        <Card>
-                            <CardHeader>
-                                <CardTitle>Binance</CardTitle>
-                                <CardDescription>
-                                    Configure your Binance credentials
-                                </CardDescription>
-                            </CardHeader>
-
-                            <CardContent className="space-y-6">
-                                <div className="grid gap-2">
-                                    <Label>API Key</Label>
-                                    <Input
-                                        type={showSecrets ? "text" : "password"}
-                                        value={configuration?.api_key ?? ""}
-                                        onChange={(e) =>
-                                            setConfiguration((prev) => ({
-                                                ...prev,
-                                                api_key: e.target.value,
-                                            }))
-                                        }
-                                    />
-                                </div>
-
-                                <div className="grid gap-2">
-                                    <Label>Secret pass</Label>
-                                    <Input
-                                        type={showSecrets ? "text" : "password"}
-                                        value={configuration?.secret_pass ?? ""}
-                                        onChange={(e) =>
-                                            setConfiguration((prev) => ({
-                                                ...prev,
-                                                secret_pass: e.target.value,
-                                            }))
-                                        }
-                                    />
-                                </div>
-
-                                <div className="flex justify-end">
-                                    <Button
-                                        type="button"
-                                        size="sm"
-                                        variant="ghost"
-                                        onClick={() =>
-                                            setShowSecrets((v) => !v)
-                                        }
-                                    >
-                                        {showSecrets ? "Hide" : "Show"}
-                                    </Button>
                                 </div>
                             </CardContent>
                         </Card>

@@ -1,11 +1,11 @@
-import { Action } from "@/interfaces/entities/action";
+import { Action, CacheActions } from "@/interfaces/entities/action";
 import { Result } from "@/types/result";
 import { invoke } from "@tauri-apps/api/core";
 
 // db
 async function insert_action(
     env: string,
-    action: Action
+    action: Action,
 ): Promise<Result<Action>> {
     try {
         action.id = 0;
@@ -23,7 +23,7 @@ async function insert_action(
 
 async function select_action(
     env: string,
-    action?: Action
+    action?: Action,
 ): Promise<Result<Action>> {
     try {
         const data = await invoke<Action>("select_action", {
@@ -51,7 +51,7 @@ async function select_actions(env: string): Promise<Result<Action[]>> {
 
 async function update_action(
     env: string,
-    action: Action
+    action: Action,
 ): Promise<Result<Action>> {
     try {
         const data = await invoke<Action>("update_action", {
@@ -67,7 +67,7 @@ async function update_action(
 
 async function delete_action(
     env: string,
-    action: Action
+    action: Action,
 ): Promise<Result<number>> {
     try {
         const data = await invoke<number>("delete_action", {
@@ -84,7 +84,7 @@ async function delete_action(
 // cache
 async function get_active_action(
     env: string,
-    action?: Action
+    action?: Action,
 ): Promise<Result<Action>> {
     try {
         const data = await invoke<Action>("get_active_action", {
@@ -98,9 +98,11 @@ async function get_active_action(
     }
 }
 
-async function get_active_actions(env: string): Promise<Result<Action[]>> {
+async function get_active_actions(
+    env: string,
+): Promise<Result<CacheActions | null>> {
     try {
-        const data = await invoke<Action[]>("get_active_actions", {
+        const data = await invoke<CacheActions | null>("get_active_actions", {
             env,
         });
 
@@ -155,7 +157,7 @@ export const actionService = {
     getActive: (env: string, action?: Action): Promise<Result<Action>> =>
         get_active_action(env, action),
 
-    getActiveAll: (env: string): Promise<Result<Action[]>> =>
+    getActiveAll: (env: string): Promise<Result<CacheActions | null>> =>
         get_active_actions(env),
 
     startActive: (env: string): Promise<Result<void>> =>

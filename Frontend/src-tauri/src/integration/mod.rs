@@ -42,3 +42,6 @@ pub use strategies_overview::*;
 
 pub mod tasks;
 pub use tasks::*;
+
+pub mod integrations_settings;
+pub use integrations_settings::*;

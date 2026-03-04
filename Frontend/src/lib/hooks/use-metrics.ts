@@ -1,10 +1,10 @@
 import { useCallback, useState } from "react";
-import { CriticalMetric, Metric } from "@/interfaces/entities/metric";
+import { Metric } from "@/interfaces/entities/metric";
 import { metricService } from "@/lib/services/metrics";
 
 export function useMetrics(env: string) {
     const [metrics, setMetrics] = useState<Metric[]>([]);
-    const [activeMetric, setActiveMetric] = useState<CriticalMetric | null>(
+    const [activeMetric, setActiveMetric] = useState<Metric | null>(
         null
     );
 

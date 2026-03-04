@@ -4,7 +4,10 @@ use crate::{
         start_active_tasks_integration, stop_active_tasks_integration,
         update_task_integration_integration,
     },
-    models::{entities::tasks::Model, structs::TaskRequest},
+    models::{
+        entities::tasks::Model,
+        structs::{CacheTasks, TaskRequest},
+    },
     utils::handle_response,
 };
 
@@ -31,9 +34,9 @@ pub async fn update_task_core(env: String, task: TaskRequest) -> Result<Model, S
 }
 
 // cache
-pub async fn select_active_tasks_core(env: String) -> Result<Option<Vec<Model>>, String> {
+pub async fn select_active_tasks_core(env: String) -> Result<Option<CacheTasks>, String> {
     let response = select_active_tasks_integration(env).await?;
-    handle_response::<Option<Vec<Model>>>(response).await
+    handle_response::<Option<CacheTasks>>(response).await
 }
 
 pub async fn start_active_tasks_core(env: String) -> Result<(), String> {

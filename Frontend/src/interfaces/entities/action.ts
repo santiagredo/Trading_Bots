@@ -1,3 +1,5 @@
+import { LifecycleState } from "@/types/life-cycle-state";
+
 export interface Action {
     id?: number;
     strategy_id?: number;
@@ -8,4 +10,11 @@ export interface Action {
     value?: number;
     pair_id?: number;
     last_update?: string;
+}
+
+export interface CacheActions {
+    models: Record<string, Action>;
+    startup_date: string;
+    last_update_date: string;
+    status: LifecycleState;
 }

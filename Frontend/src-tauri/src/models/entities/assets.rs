@@ -21,6 +21,7 @@ pub struct Model {
     pub ticker: String,
     pub free: Decimal,
     pub locked: Decimal,
+    pub last_update: Option<DateTime>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveColumn)]
@@ -30,6 +31,7 @@ pub enum Column {
     Ticker,
     Free,
     Locked,
+    LastUpdate,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DerivePrimaryKey)]
@@ -58,6 +60,7 @@ impl ColumnTrait for Column {
             Self::Ticker => ColumnType::Text.def(),
             Self::Free => ColumnType::Decimal(Some((18u32, 8u32))).def(),
             Self::Locked => ColumnType::Decimal(Some((18u32, 8u32))).def(),
+            Self::LastUpdate => ColumnType::DateTime.def().null(),
         }
     }
 }

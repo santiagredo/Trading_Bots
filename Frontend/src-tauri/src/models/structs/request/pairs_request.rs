@@ -9,6 +9,7 @@ pub struct PairRequest {
     pub quote_asset_id: Option<i32>,
     pub symbol: Option<String>,
     pub update_date: Option<NaiveDateTime>,
+    pub last_price: Option<Decimal>,
     pub all_time_high_price: Option<Decimal>,
     pub all_time_high_date: Option<NaiveDateTime>,
     pub percent_from_all_time_high: Option<Decimal>,

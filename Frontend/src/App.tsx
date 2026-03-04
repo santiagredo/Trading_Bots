@@ -17,6 +17,7 @@ import StrategiesPage from "./pages/strategies";
 import TasksPage from "./pages/tasks";
 import { AppLoading } from "./components/app-loading";
 import { ToastProvider } from "./components/toast-provider";
+import IntegrationsPage from "./pages/integrations";
 
 export default function App() {
     return (
@@ -45,6 +46,10 @@ export default function App() {
                     />
                     <Route path="/strategies" element={<StrategiesPage />} />
                     <Route path="/tasks" element={<TasksPage />} />
+                    <Route
+                        path="/integrations"
+                        element={<IntegrationsPage />}
+                    />
                 </Routes>
             </BrowserRouter>
         </ToastProvider>

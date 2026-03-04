@@ -8,7 +8,10 @@ use crate::{
         start_active_indicators_integration, stop_active_indicators_integration,
         update_indicator_integration,
     },
-    models::{entities::indicators::Model, structs::IndicatorRequest},
+    models::{
+        entities::indicators::Model,
+        structs::{CacheIndicators, IndicatorRequest},
+    },
     utils::handle_response,
 };
 
@@ -67,15 +70,10 @@ pub async fn get_active_indicator_core(
     Ok(result)
 }
 
-pub async fn get_active_indicators_core(env: String) -> Result<Vec<Model>, String> {
+pub async fn get_active_indicators_core(env: String) -> Result<Option<CacheIndicators>, String> {
     let response = get_active_indicators_integration(env).await?;
 
-    let models = handle_response::<Option<HashMap<i32, Model>>>(response)
-        .await?
-        .unwrap_or_default()
-        .into_iter()
-        .map(|(_, val)| val)
-        .collect();
+    let models = handle_response::<Option<CacheIndicators>>(response).await?;
 
     Ok(models)
 }

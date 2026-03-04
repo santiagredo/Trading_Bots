@@ -1,16 +1,13 @@
 import { useCallback, useMemo, useState } from "react";
-import { Task } from "@/interfaces/entities/task";
+import { CacheTask, CacheTasks, Task } from "@/interfaces/entities/task";
 import { taskService } from "@/lib/services/tasks";
 import { RuntimeStatus } from "@/types/runtime-status";
 
 export function useTasks(env: string) {
     const [tasks, setTasks] = useState<Task[]>([]);
-    const [activeTasks, setActiveTasks] = useState<Task[]>([]);
+    const [cache, setCache] = useState<CacheTasks | null>(null);
 
-    const uiTasks = useMemo(
-        () => mergeTasks(tasks, activeTasks),
-        [tasks, activeTasks]
-    );
+    const uiTasks = useMemo(() => mergeTasks(tasks, cache), [tasks, cache]);
 
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -37,7 +34,7 @@ export function useTasks(env: string) {
         const result = await taskService.getActive(env);
 
         if (result.ok) {
-            setActiveTasks(result.data);
+            setCache(result.data);
         } else {
             setError(String(result.error));
         }
@@ -54,7 +51,9 @@ export function useTasks(env: string) {
 
             if (result.ok) {
                 setTasks((prev) =>
-                    prev.map((t) => (t.id === result.data.id ? result.data : t))
+                    prev.map((t) =>
+                        t.id === result.data.id ? result.data : t,
+                    ),
                 );
             } else {
                 setError(String(result.error));
@@ -63,7 +62,7 @@ export function useTasks(env: string) {
             setLoading(false);
             return result;
         },
-        [env]
+        [env],
     );
 
     const startActive = useCallback(async () => {
@@ -102,7 +101,7 @@ export function useTasks(env: string) {
 
     return {
         tasks,
-        activeTasks,
+        cache,
         uiTasks,
         loading,
         error,
@@ -118,28 +117,38 @@ export function useTasks(env: string) {
     };
 }
 
-function mergeTasks(db: Task[], memory: Task[]) {
-    const memoryMap = new Map<number, Task>();
+// ======================================================
+// Merge DB + Cache
+// ======================================================
 
-    for (const m of memory) {
-        if (m.id != null) {
-            memoryMap.set(m.id, m);
-        }
+function mergeTasks(db: Task[], cache: CacheTasks | null) {
+    if (!cache) {
+        return db.map((t) => ({
+            ...t,
+            runtimeStatus: "not_loaded" as RuntimeStatus,
+        }));
+    }
+
+    const memoryMap = new Map<number, CacheTask>();
+
+    for (const key in cache.models) {
+        const id = Number(key);
+        memoryMap.set(id, cache.models[id]);
     }
 
     return db.map((dbTask) => {
-        const mem = dbTask.id ? memoryMap.get(dbTask.id) : undefined;
+        const mem = dbTask.id != null ? memoryMap.get(dbTask.id) : undefined;
 
         let runtimeStatus: RuntimeStatus = "not_loaded";
 
         if (!mem) {
             runtimeStatus = "not_loaded";
         } else if (
-            mem.nick !== dbTask.nick ||
-            mem.description !== dbTask.description ||
-            mem.is_active !== dbTask.is_active ||
-            mem.cooldown !== dbTask.cooldown ||
-            mem.delay !== dbTask.delay
+            mem.model.nick !== dbTask.nick ||
+            mem.model.description !== dbTask.description ||
+            mem.model.is_active !== dbTask.is_active ||
+            mem.model.cooldown !== dbTask.cooldown ||
+            mem.model.delay !== dbTask.delay
         ) {
             runtimeStatus = "outdated";
         } else {
@@ -149,6 +158,7 @@ function mergeTasks(db: Task[], memory: Task[]) {
         return {
             ...dbTask,
             runtimeStatus,
+            taskState: mem?.state,
         };
     });
 }

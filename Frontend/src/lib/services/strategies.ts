@@ -1,4 +1,4 @@
-import { CacheStrategy, Strategy } from "@/interfaces/entities/strategy";
+import { CacheStrategies, CacheStrategy, Strategy } from "@/interfaces/entities/strategy";
 import { Result } from "@/types/result";
 import { invoke } from "@tauri-apps/api/core";
 
@@ -85,9 +85,9 @@ async function delete_strategy(
 async function get_active_strategy(
     env: string,
     strategy?: Strategy
-): Promise<Result<Strategy>> {
+): Promise<Result<CacheStrategy | null>> {
     try {
-        const data = await invoke<Strategy>("get_active_strategy", {
+        const data = await invoke<CacheStrategy | null>("get_active_strategy", {
             env,
             strategy,
         });
@@ -101,9 +101,9 @@ async function get_active_strategy(
 async function get_active_strategies(
     env: string,
     strategy?: Strategy
-): Promise<Result<Record<string, CacheStrategy>>> {
+): Promise<Result<CacheStrategies>> {
     try {
-        const data = await invoke<Record<string, CacheStrategy>>(
+        const data = await invoke<CacheStrategies>(
             "get_active_strategies",
             { env, strategy }
         );
@@ -156,13 +156,13 @@ export const strategyService = {
         delete_strategy(env, strategy),
 
     // cache
-    getActive: (env: string, strategy?: Strategy): Promise<Result<Strategy>> =>
+    getActive: (env: string, strategy?: Strategy): Promise<Result<CacheStrategy | null>> =>
         get_active_strategy(env, strategy),
 
     getActiveAll: (
         env: string,
         strategy?: Strategy
-    ): Promise<Result<Record<string, CacheStrategy>>> =>
+    ): Promise<Result<CacheStrategies>> =>
         get_active_strategies(env, strategy),
 
     startActive: (env: string): Promise<Result<void>> =>

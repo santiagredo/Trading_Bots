@@ -39,3 +39,12 @@ pub use configuration_request::*;
 
 // pub mod general_query;
 // pub use general_query::*;
+
+pub mod integrations_request;
+pub use integrations_request::*;
+
+pub mod integrations_settings_request;
+pub use integrations_settings_request::*;
+
+pub mod metrics_request;
+pub use metrics_request::*;

@@ -4,7 +4,10 @@ use crate::{
         select_action_core, select_actions_core, start_active_actions_core,
         stop_active_actions_core, update_action_core,
     },
-    models::{entities::actions::Model, structs::ActionRequest},
+    models::{
+        entities::actions::Model,
+        structs::{ActionRequest, CacheActions},
+    },
 };
 
 // db
@@ -46,7 +49,7 @@ pub async fn get_active_action(
 }
 
 #[tauri::command]
-pub async fn get_active_actions(env: String) -> Result<Vec<Model>, String> {
+pub async fn get_active_actions(env: String) -> Result<Option<CacheActions>, String> {
     get_active_actions_core(env).await
 }
 

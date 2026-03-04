@@ -1,11 +1,11 @@
-import { Indicator } from "@/interfaces/entities/indicator";
+import { CacheIndicators, Indicator } from "@/interfaces/entities/indicator";
 import { Result } from "@/types/result";
 import { invoke } from "@tauri-apps/api/core";
 
 // db
 async function insert_indicator(
     env: string,
-    indicator: Indicator
+    indicator: Indicator,
 ): Promise<Result<Indicator>> {
     try {
         indicator.id = 0;
@@ -23,7 +23,7 @@ async function insert_indicator(
 
 async function select_indicator(
     env: string,
-    indicator?: Indicator
+    indicator?: Indicator,
 ): Promise<Result<Indicator>> {
     try {
         const data = await invoke<Indicator>("select_indicator", {
@@ -51,7 +51,7 @@ async function select_indicators(env: string): Promise<Result<Indicator[]>> {
 
 async function update_indicator(
     env: string,
-    indicator: Indicator
+    indicator: Indicator,
 ): Promise<Result<Indicator>> {
     try {
         const data = await invoke<Indicator>("update_indicator", {
@@ -67,7 +67,7 @@ async function update_indicator(
 
 async function delete_indicator(
     env: string,
-    indicator: Indicator
+    indicator: Indicator,
 ): Promise<Result<number>> {
     try {
         const data = await invoke<number>("delete_indicator", {
@@ -84,7 +84,7 @@ async function delete_indicator(
 // cache
 async function get_active_indicator(
     env: string,
-    indicator?: Indicator
+    indicator?: Indicator,
 ): Promise<Result<Indicator>> {
     try {
         const data = await invoke<Indicator>("get_active_indicator", {
@@ -99,12 +99,13 @@ async function get_active_indicator(
 }
 
 async function get_active_indicators(
-    env: string
-): Promise<Result<Indicator[]>> {
+    env: string,
+): Promise<Result<CacheIndicators | null>> {
     try {
-        const data = await invoke<Indicator[]>("get_active_indicators", {
-            env,
-        });
+        const data = await invoke<CacheIndicators | null>(
+            "get_active_indicators",
+            { env },
+        );
 
         return { ok: true, data };
     } catch (error) {
@@ -113,14 +114,14 @@ async function get_active_indicators(
 }
 
 async function get_subscribed_indicators(
-    env: string
+    env: string,
 ): Promise<Result<Record<string, number[]> | null>> {
     try {
         const data = await invoke<Record<string, number[]>>(
             "get_subscribed_indicators",
             {
                 env,
-            }
+            },
         );
 
         return { ok: true, data };
@@ -173,14 +174,14 @@ export const indicatorService = {
     // cache
     getActive: (
         env: string,
-        indicator?: Indicator
+        indicator?: Indicator,
     ): Promise<Result<Indicator>> => get_active_indicator(env, indicator),
 
-    getActiveAll: (env: string): Promise<Result<Indicator[]>> =>
+    getActiveAll: (env: string): Promise<Result<CacheIndicators | null>> =>
         get_active_indicators(env),
 
     getSubscribed: (
-        env: string
+        env: string,
     ): Promise<Result<Record<string, number[]> | null>> =>
         get_subscribed_indicators(env),
 

@@ -2,7 +2,7 @@ import { AccountInformation } from "@/interfaces/account-information";
 import { useCallback, useState } from "react";
 import { binanceService } from "../services/binance";
 
-export function useBinance() {
+export function useBinance(env: string) {
     const [accountInformation, setAccountInformation] =
         useState<AccountInformation | null>(null);
 
@@ -17,7 +17,7 @@ export function useBinance() {
         setLoading(true);
         setError(null);
 
-        const result = await binanceService.get();
+        const result = await binanceService.get(env);
 
         if (result.ok) {
             setAccountInformation(result.data);
@@ -26,7 +26,7 @@ export function useBinance() {
         }
 
         setLoading(false);
-    }, []);
+    }, [env]);
 
     return {
         accountInformation,

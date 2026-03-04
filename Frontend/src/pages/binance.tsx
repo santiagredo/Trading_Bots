@@ -15,9 +15,12 @@ import Loading from "@/components/ui/loading";
 import { Activity, Clock, Zap } from "lucide-react";
 import { useBinance } from "@/lib/hooks/use-binance";
 import Refresh from "@/components/ui/refresh";
+import { useEnvironment } from "@/lib/hooks/use-environment";
 
 export default function BinancePage() {
-    const { accountInformation, loading, error, load } = useBinance();
+    const { environment } = useEnvironment();
+    const { accountInformation, loading, error, load } =
+        useBinance(environment);
 
     useEffect(() => {
         load();
@@ -32,6 +35,7 @@ export default function BinancePage() {
                     actions={
                         <Refresh onRefresh={load} isRefreshing={loading} />
                     }
+                    showEnvironmentSelector
                 />
 
                 <div className="flex-1 overflow-auto p-6">
@@ -152,7 +156,7 @@ export default function BinancePage() {
                                         .filter(
                                             (b) =>
                                                 Number(b.free) > 0 ||
-                                                Number(b.locked) > 0
+                                                Number(b.locked) > 0,
                                         )
                                         .map((balance) => (
                                             <div
@@ -191,7 +195,7 @@ export default function BinancePage() {
                                                     {permission}
                                                 </span>
                                             </div>
-                                        )
+                                        ),
                                     )}
                                 </CardContent>
                             </Card>

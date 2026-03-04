@@ -17,3 +17,4 @@ pub static ERROR_LOG: &str = "/error_log";
 pub static INTEGRATION_LOG: &str = "/integration_log";
 pub static STRATEGIES_OVERVIEW: &str = "/strategies_overview";
 pub static TASKS: &str = "/tasks";
+pub static INTEGRATIONS_SETTINGS: &str = "/integrations_settings";

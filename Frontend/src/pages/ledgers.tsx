@@ -42,6 +42,11 @@ export default function LedgersPage() {
             render: (value) => <Badge variant="outline">{String(value)}</Badge>,
         },
         {
+            key: "order_id",
+            label: "Order ID",
+            render: (id) => <p className="font-medium">{id}</p>,
+        },
+        {
             key: "asset_id",
             label: "Asset",
             render: (value) => <p className="font-medium">{value}</p>,

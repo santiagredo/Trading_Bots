@@ -1,16 +1,18 @@
 use crate::command::{
     delete_action, delete_indicator, delete_strategy, get_account, get_active_action,
     get_active_actions, get_active_indicator, get_active_indicators, get_active_metric,
-    get_active_strategies, get_active_strategy, get_subscribed_indicators, insert_action,
-    insert_configuration, insert_indicator, insert_ledger, insert_order, insert_strategy,
-    post_user_command, select_action, select_actions, select_active_tasks, select_assets,
-    select_configuration, select_error_logs, select_health_check, select_indicator,
-    select_indicators, select_integration_logs, select_ledger, select_ledgers, select_metrics,
-    select_order, select_orders, select_pairs, select_strategies, select_strategies_overview,
-    select_strategy, select_task, select_tasks, set_engine_running, start_active_actions,
-    start_active_indicators, start_active_strategies, start_active_tasks, stop_active_actions,
-    stop_active_indicators, stop_active_strategies, stop_active_tasks, update_action,
-    update_indicator, update_order, update_strategy, update_task,
+    get_active_strategies, get_active_strategy, get_integration_setting, get_integrations_settings,
+    get_subscribed_indicators, insert_action, insert_configuration, insert_indicator,
+    insert_ledger, insert_order, insert_strategy, post_user_command, select_action, select_actions,
+    select_active_tasks, select_assets, select_configuration, select_error_logs,
+    select_health_check, select_indicator, select_indicators, select_integration_logs,
+    select_integration_setting, select_integrations_settings, select_ledger, select_ledgers,
+    select_metrics, select_order, select_orders, select_pairs, select_strategies,
+    select_strategies_overview, select_strategy, select_task, select_tasks, set_engine_running,
+    start_active_actions, start_active_indicators, start_active_strategies, start_active_tasks,
+    stop_active_actions, stop_active_indicators, stop_active_strategies, stop_active_tasks,
+    update_action, update_indicator, update_integration_setting, update_order, update_strategy,
+    update_task,
 };
 
 pub mod command;
@@ -79,7 +81,12 @@ pub fn run() {
             update_task,
             select_active_tasks,
             start_active_tasks,
-            stop_active_tasks
+            stop_active_tasks,
+            select_integration_setting,
+            select_integrations_settings,
+            update_integration_setting,
+            get_integration_setting,
+            get_integrations_settings
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

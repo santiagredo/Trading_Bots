@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use crate::{
     integration::{
         delete_action_integration, get_active_action_integration, get_active_actions_integration,
@@ -7,7 +5,10 @@ use crate::{
         start_active_actions_integration, stop_active_actions_integration,
         update_action_integration,
     },
-    models::{entities::actions::Model, structs::ActionRequest},
+    models::{
+        entities::actions::Model,
+        structs::{ActionRequest, CacheActions},
+    },
     utils::handle_response,
 };
 
@@ -57,15 +58,10 @@ pub async fn get_active_action_core(
     Ok(result)
 }
 
-pub async fn get_active_actions_core(env: String) -> Result<Vec<Model>, String> {
+pub async fn get_active_actions_core(env: String) -> Result<Option<CacheActions>, String> {
     let response = get_active_actions_integration(env).await?;
 
-    let models = handle_response::<Option<HashMap<i32, Model>>>(response)
-        .await?
-        .unwrap_or_default()
-        .into_iter()
-        .map(|(_, val)| val)
-        .collect();
+    let models = handle_response::<Option<CacheActions>>(response).await?;
 
     Ok(models)
 }

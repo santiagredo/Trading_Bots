@@ -1,15 +1,22 @@
 import { useCallback, useMemo, useState } from "react";
-import { Action } from "@/interfaces/entities/action";
+import { Action, CacheActions } from "@/interfaces/entities/action";
 import { actionService } from "@/lib/services/actions";
 import { RuntimeStatus } from "@/types/runtime-status";
 
 export function useActions(env: string) {
     const [actions, setActions] = useState<Action[]>([]);
-    const [activeActions, setActiveActions] = useState<Action[]>([]);
+    const [activeCache, setActiveCache] = useState<CacheActions | null>(null);
+
+    const activeActions = useMemo<Action[]>(() => {
+        if (!activeCache) return [];
+        return Object.values(activeCache.models);
+    }, [activeCache]);
+
+    const runtimeState = activeCache?.status ?? "Stopped";
 
     const uiActions = useMemo(
         () => mergeActions(actions, activeActions),
-        [actions, activeActions]
+        [actions, activeActions],
     );
 
     const [loading, setLoading] = useState(false);
@@ -41,7 +48,7 @@ export function useActions(env: string) {
         const result = await actionService.getActiveAll(env);
 
         if (result.ok) {
-            setActiveActions(result.data);
+            setActiveCache(result.data);
         } else {
             setError(String(result.error));
         }
@@ -69,7 +76,7 @@ export function useActions(env: string) {
             setLoading(false);
             return result;
         },
-        [env]
+        [env],
     );
 
     const update = useCallback(
@@ -81,7 +88,9 @@ export function useActions(env: string) {
 
             if (result.ok) {
                 setActions((prev) =>
-                    prev.map((a) => (a.id === result.data.id ? result.data : a))
+                    prev.map((a) =>
+                        a.id === result.data.id ? result.data : a,
+                    ),
                 );
             } else {
                 setError(String(result.error));
@@ -90,7 +99,7 @@ export function useActions(env: string) {
             setLoading(false);
             return result;
         },
-        [env]
+        [env],
     );
 
     const remove = useCallback(
@@ -107,9 +116,18 @@ export function useActions(env: string) {
 
             if (result.ok) {
                 setActions((prev) => prev.filter((a) => a.id !== action.id));
-                setActiveActions((prev) =>
-                    prev.filter((a) => a.id !== action.id)
-                );
+
+                setActiveCache((prev) => {
+                    if (!prev) return prev;
+
+                    const updatedModels = { ...prev.models };
+                    delete updatedModels[String(action.id)];
+
+                    return {
+                        ...prev,
+                        models: updatedModels,
+                    };
+                });
             } else {
                 setError(String(result.error));
             }
@@ -117,7 +135,7 @@ export function useActions(env: string) {
             setLoading(false);
             return result;
         },
-        [env]
+        [env],
     );
 
     // =======================
@@ -146,7 +164,7 @@ export function useActions(env: string) {
         const result = await actionService.stopActive(env);
 
         if (result.ok) {
-            setActiveActions([]);
+            setActiveCache(null);
         } else {
             setError(String(result.error));
         }
@@ -161,6 +179,8 @@ export function useActions(env: string) {
     return {
         actions,
         activeActions,
+        activeCache,
+        runtimeState,
         uiActions,
         loading,
         error,
@@ -193,7 +213,8 @@ function mergeActions(db: Action[], memory: Action[]) {
     }
 
     return db.map((dbAction) => {
-        const mem = dbAction.id ? memoryMap.get(dbAction.id) : undefined;
+        const mem =
+            dbAction.id != null ? memoryMap.get(dbAction.id) : undefined;
 
         let runtimeStatus: RuntimeStatus = "not_loaded";
 

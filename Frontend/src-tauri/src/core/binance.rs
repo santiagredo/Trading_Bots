@@ -3,7 +3,7 @@ use crate::{
     utils::handle_response,
 };
 
-pub async fn get_account_core() -> Result<AccountInformation, String> {
-    let response = get_account_integration().await?;
+pub async fn get_account_core(env: String) -> Result<AccountInformation, String> {
+    let response = get_account_integration(env).await?;
     handle_response::<AccountInformation>(response).await
 }

@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::models::entities::status::Model;
+use crate::models::entities::status;
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, Eq, Hash)]
 pub enum Status {
@@ -11,7 +11,7 @@ pub enum Status {
 }
 
 impl Status {
-    pub fn from_model(model: &Model) -> Self {
+    pub fn from_model(model: &status::Model) -> Self {
         match model.name.as_ref() {
             "COMPLETED" => Self::Completed,
             "ABORTED" => Self::Aborted,

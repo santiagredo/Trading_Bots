@@ -1,13 +1,10 @@
 use reqwest::{Client, Response};
 
-use crate::{
-    models::enums::UserCommands,
-    static_strings::{BACKEND_URL, USER_COMMANDS},
-};
+use crate::static_strings::{BACKEND_URL, USER_COMMANDS};
 
 pub async fn post_user_command_integration(
     env: String,
-    command: UserCommands,
+    command: String,
 ) -> Result<Response, String> {
     let command = command.as_str();
 

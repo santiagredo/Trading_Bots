@@ -13,8 +13,16 @@ import {
 import { Badge } from "@/components/ui/badge";
 import Loading from "@/components/ui/loading";
 import Refresh from "@/components/ui/refresh";
-import { Database, Server, Clock } from "lucide-react";
+import { Server, Clock } from "lucide-react";
 import { useEngineConfiguration } from "@/lib/hooks/use-engine-configuration";
+import { format_datetime } from "@/lib/utils";
+import {
+    LifecycleState,
+    mapRuntimeState,
+    mapSocketState,
+    SocketState,
+} from "@/types/life-cycle-state";
+import { DatabaseStatusCard } from "@/components/ui/database-status-card";
 
 export default function HealthCheckPage() {
     const { healthCheck, loading, error, loadHealthCheck } =
@@ -53,26 +61,18 @@ export default function HealthCheckPage() {
                             <div className="grid gap-4 md:grid-cols-4">
                                 <Stat
                                     title="Uptime"
-                                    value={healthCheck.uptime}
+                                    value={format_datetime(
+                                        healthCheck.engine_startup_date,
+                                    )}
                                     icon={Clock}
                                 />
                                 <Stat
                                     title="Startup Date"
-                                    value={healthCheck.startup_date}
+                                    value={healthCheck.engine_startup_date}
                                     icon={Server}
                                 />
-                                <Stat
-                                    title="DB (Dev)"
-                                    value={healthCheck.db_dev_conn_is_valid}
-                                    icon={Database}
-                                    variant="status"
-                                />
-                                <Stat
-                                    title="DB (Prod)"
-                                    value={healthCheck.db_prod_conn_is_valid}
-                                    icon={Database}
-                                    variant="status"
-                                />
+
+                                <DatabaseStatusCard healthCheck={healthCheck} />
                             </div>
 
                             {/* Cache - Dev */}
@@ -86,51 +86,79 @@ export default function HealthCheckPage() {
                                 <CardContent className="space-y-2">
                                     <HealthRow
                                         label="Actions"
-                                        value={
-                                            healthCheck.cache_actions_dev_is_initialized
-                                        }
+                                        value={mapRuntimeState(
+                                            healthCheck.cache_actions_dev_status,
+                                        )}
                                     />
+
                                     <HealthRow
                                         label="Assets"
-                                        value={
-                                            healthCheck.cache_assets_dev_is_initialized
-                                        }
+                                        value={mapRuntimeState(
+                                            healthCheck.cache_assets_dev_status,
+                                        )}
                                     />
+
                                     <HealthRow
                                         label="Indicators"
-                                        value={
-                                            healthCheck.cache_indicators_dev_is_initialized
-                                        }
+                                        value={mapRuntimeState(
+                                            healthCheck.cache_indicators_dev_status,
+                                        )}
                                     />
+
+                                    <HealthRow
+                                        label="Integrations"
+                                        value={mapRuntimeState(
+                                            healthCheck.cache_integrations_dev_status,
+                                        )}
+                                    />
+
+                                    <HealthRow
+                                        label="Integrations settings"
+                                        value={mapRuntimeState(
+                                            healthCheck.cache_integrations_settings_dev_status,
+                                        )}
+                                    />
+
+                                    <HealthRow
+                                        label="Metrics"
+                                        value={mapRuntimeState(
+                                            healthCheck.cache_metrics_dev_status,
+                                        )}
+                                    />
+
+                                    <HealthRow
+                                        label="Order status"
+                                        value={mapRuntimeState(
+                                            healthCheck.cache_order_status_dev_status,
+                                        )}
+                                    />
+
                                     <HealthRow
                                         label="Pairs"
-                                        value={
-                                            healthCheck.cache_pairs_dev_is_initialized
-                                        }
+                                        value={mapRuntimeState(
+                                            healthCheck.cache_pairs_dev_status,
+                                        )}
                                     />
-                                    <HealthRow
-                                        label="Status"
-                                        value={
-                                            healthCheck.cache_status_dev_is_initialized
-                                        }
-                                    />
+
                                     <HealthRow
                                         label="Strategies"
-                                        value={
-                                            healthCheck.cache_strategies_dev_is_initialized
-                                        }
+                                        value={mapRuntimeState(
+                                            healthCheck.cache_strategies_dev_status,
+                                        )}
                                     />
+
                                     <HealthRow
                                         label="Subscribed Indicators"
-                                        value={
-                                            healthCheck.cache_subscribed_indicators_dev_is_initialized
-                                        }
+                                        value={mapRuntimeState(
+                                            healthCheck.cache_subscribed_indicators_status,
+                                        )}
                                     />
+
                                     <HealthRow
                                         label="Tasks"
-                                        value={
-                                            healthCheck.cache_tasks_dev_is_initialized
-                                        }
+                                        value={mapRuntimeState(
+                                            healthCheck.cache_tasks_dev_status,
+                                        )}
                                     />
                                 </CardContent>
                             </Card>
@@ -146,51 +174,79 @@ export default function HealthCheckPage() {
                                 <CardContent className="space-y-2">
                                     <HealthRow
                                         label="Actions"
-                                        value={
-                                            healthCheck.cache_actions_prod_is_initialized
-                                        }
+                                        value={mapRuntimeState(
+                                            healthCheck.cache_actions_prod_status,
+                                        )}
                                     />
+
                                     <HealthRow
                                         label="Assets"
-                                        value={
-                                            healthCheck.cache_assets_prod_is_initialized
-                                        }
+                                        value={mapRuntimeState(
+                                            healthCheck.cache_assets_prod_status,
+                                        )}
                                     />
+
                                     <HealthRow
                                         label="Indicators"
-                                        value={
-                                            healthCheck.cache_indicators_prod_is_initialized
-                                        }
+                                        value={mapRuntimeState(
+                                            healthCheck.cache_indicators_prod_status,
+                                        )}
                                     />
+
+                                    <HealthRow
+                                        label="Integrations"
+                                        value={mapRuntimeState(
+                                            healthCheck.cache_integrations_prod_status,
+                                        )}
+                                    />
+
+                                    <HealthRow
+                                        label="Integrations settings"
+                                        value={mapRuntimeState(
+                                            healthCheck.cache_integrations_settings_prod_status,
+                                        )}
+                                    />
+
+                                    <HealthRow
+                                        label="Metrics"
+                                        value={mapRuntimeState(
+                                            healthCheck.cache_metrics_prod_status,
+                                        )}
+                                    />
+
+                                    <HealthRow
+                                        label="Order status"
+                                        value={mapRuntimeState(
+                                            healthCheck.cache_order_status_prod_status,
+                                        )}
+                                    />
+
                                     <HealthRow
                                         label="Pairs"
-                                        value={
-                                            healthCheck.cache_pairs_prod_is_initialized
-                                        }
+                                        value={mapRuntimeState(
+                                            healthCheck.cache_pairs_prod_status,
+                                        )}
                                     />
-                                    <HealthRow
-                                        label="Status"
-                                        value={
-                                            healthCheck.cache_status_prod_is_initialized
-                                        }
-                                    />
+
                                     <HealthRow
                                         label="Strategies"
-                                        value={
-                                            healthCheck.cache_strategies_prod_is_initialized
-                                        }
+                                        value={mapRuntimeState(
+                                            healthCheck.cache_strategies_prod_status,
+                                        )}
                                     />
+
                                     <HealthRow
                                         label="Subscribed Indicators"
-                                        value={
-                                            healthCheck.cache_subscribed_indicators_prod_is_initialized
-                                        }
+                                        value={mapRuntimeState(
+                                            healthCheck.cache_subscribed_indicators_status,
+                                        )}
                                     />
+
                                     <HealthRow
                                         label="Tasks"
-                                        value={
-                                            healthCheck.cache_tasks_prod_is_initialized
-                                        }
+                                        value={mapRuntimeState(
+                                            healthCheck.cache_tasks_prod_status,
+                                        )}
                                     />
                                 </CardContent>
                             </Card>
@@ -204,16 +260,10 @@ export default function HealthCheckPage() {
                                     </CardDescription>
                                 </CardHeader>
                                 <CardContent className="space-y-2">
-                                    <HealthRow
-                                        label="Abort Handle Exists"
+                                    <SocketHealthRow
+                                        label="Websocket"
                                         value={
-                                            healthCheck.cache_ws_binance_abort_handle_is_some
-                                        }
-                                    />
-                                    <HealthRow
-                                        label="Abort Handle Finished"
-                                        value={
-                                            healthCheck.cache_ws_binance_abort_handle_is_finished
+                                            healthCheck.cache_websocket_status
                                         }
                                     />
                                 </CardContent>
@@ -237,7 +287,8 @@ function Stat({
     icon: React.ElementType;
     variant?: "info" | "status";
 }) {
-    const status = variant === "status" ? resolveStatus(value) : null;
+    const status =
+        variant === "status" ? resolveStatus(mapRuntimeState(value)) : null;
 
     return (
         <Card>
@@ -274,17 +325,66 @@ function Stat({
     );
 }
 
-function StatusBadge({ value }: { value: string }) {
-    const ok = value === "true" || value === "ok" || value === "initialized";
+function resolveStatus(value: LifecycleState) {
+    switch (value) {
+        case "Running":
+            return {
+                ok: true,
+                label: "RUNNING",
+                iconBg: "bg-emerald-500/10",
+                iconColor: "text-emerald-500",
+                textColor: "text-emerald-500",
+            };
+
+        case "Starting":
+            return {
+                ok: false,
+                label: "STARTING",
+                iconBg: "bg-amber-500/10",
+                iconColor: "text-amber-500",
+                textColor: "text-amber-500",
+            };
+
+        case "Stopping":
+            return {
+                ok: false,
+                label: "STOPPING",
+                iconBg: "bg-orange-500/10",
+                iconColor: "text-orange-500",
+                textColor: "text-orange-500",
+            };
+
+        case "Off":
+        default:
+            return {
+                ok: false,
+                label: "OFF",
+                iconBg: "bg-red-500/10",
+                iconColor: "text-red-500",
+                textColor: "text-red-500",
+            };
+    }
+}
+
+function StatusBadge({ value }: { value: LifecycleState }) {
+    const status = resolveStatus(value);
 
     return (
-        <Badge variant={ok ? "default" : "destructive"}>
-            {ok ? "OK" : "ERROR"}
+        <Badge
+            variant={
+                value === "Off"
+                    ? "destructive"
+                    : value === "Running"
+                      ? "default"
+                      : "secondary"
+            }
+        >
+            {status.label}
         </Badge>
     );
 }
 
-function HealthRow({ label, value }: { label: string; value: string }) {
+function HealthRow({ label, value }: { label: string; value: LifecycleState }) {
     return (
         <div className="flex items-center justify-between text-sm">
             <span className="text-muted-foreground">{label}</span>
@@ -293,14 +393,44 @@ function HealthRow({ label, value }: { label: string; value: string }) {
     );
 }
 
-function resolveStatus(value: string) {
-    const ok = value === "true" || value === "ok" || value === "initialized";
+function resolveSocketStatus(value: SocketState) {
+    switch (value) {
+        case "Connected":
+            return { label: "Connected", variant: "default" };
 
-    return {
-        ok,
-        label: ok ? "OK" : "ERROR",
-        iconBg: ok ? "bg-emerald-500/10" : "bg-red-500/10",
-        iconColor: ok ? "text-emerald-500" : "text-red-500",
-        textColor: ok ? "text-emerald-500" : "text-red-500",
-    };
+        case "Connecting":
+        case "Reconnecting":
+            return { label: value, variant: "secondary" };
+
+        case "ShuttingDown":
+            return { label: "Shutting Down", variant: "secondary" };
+
+        case "Closed":
+        case "Disconnected":
+        default:
+            return { label: value ?? "Disconnected", variant: "destructive" };
+    }
+}
+
+function SocketStatusBadge({ value }: { value: SocketState }) {
+    const status = resolveSocketStatus(value);
+
+    return <Badge variant={status.variant as any}>{status.label}</Badge>;
+}
+
+function SocketHealthRow({
+    label,
+    value,
+}: {
+    label: string;
+    value: string | undefined; // viene crudo del backend
+}) {
+    const mapped = mapSocketState(value);
+
+    return (
+        <div className="flex items-center justify-between text-sm">
+            <span className="text-muted-foreground">{label}</span>
+            <SocketStatusBadge value={mapped} />
+        </div>
+    );
 }

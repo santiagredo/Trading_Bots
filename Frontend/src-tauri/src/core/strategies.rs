@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use crate::{
     integration::{
         delete_strategy_integration, get_active_strategies_integration,
@@ -10,7 +8,7 @@ use crate::{
     },
     models::{
         entities::strategies::Model,
-        structs::{CacheStrategy, StrategyRequest},
+        structs::{CacheStrategies, StrategyRequest},
     },
     utils::handle_response,
 };
@@ -60,10 +58,10 @@ pub async fn get_active_strategy_core(
 pub async fn get_active_strategies_core(
     env: String,
     strategy: Option<StrategyRequest>,
-) -> Result<Option<HashMap<i32, CacheStrategy>>, String> {
+) -> Result<Option<CacheStrategies>, String> {
     let response = get_active_strategies_integration(env, strategy).await?;
 
-    let models = handle_response::<Option<HashMap<i32, CacheStrategy>>>(response).await?;
+    let models = handle_response::<Option<CacheStrategies>>(response).await?;
 
     Ok(models)
 }

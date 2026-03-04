@@ -12,7 +12,6 @@ import {
     CardHeader,
     CardTitle,
 } from "@/components/ui/card";
-import { durationToMs } from "@/interfaces/entities/metric";
 
 interface CriticalMetricsProps {
     env: string;
@@ -82,7 +81,7 @@ export function CriticalMetrics({ env, refreshKey }: CriticalMetricsProps) {
 
                 <StatCard
                     title="Max Exec Time"
-                    value={`${durationToMs(metric.max_execution_time)} ms`}
+                    value={`${metric.max_execution_time} ms`}
                     description="Worst execution"
                     icon={Clock}
                 />
@@ -101,15 +100,11 @@ export function CriticalMetrics({ env, refreshKey }: CriticalMetricsProps) {
                     <CardContent className="space-y-4">
                         <MetricRow
                             label="Total Execution Time"
-                            value={`${durationToMs(
-                                metric.total_execution_time
-                            )} ms`}
+                            value={`${metric.total_execution_time} ms`}
                         />
                         <MetricRow
                             label="Slowest Duration"
-                            value={`${durationToMs(
-                                metric.slowest_duration
-                            )} ms`}
+                            value={`${metric.slowest_duration} ms`}
                         />
                         <MetricRow
                             label="Skipped Due To Lock"
@@ -137,7 +132,7 @@ export function CriticalMetrics({ env, refreshKey }: CriticalMetricsProps) {
                             value={
                                 metric.last_success
                                     ? new Date(
-                                          metric.last_success
+                                          metric.last_success,
                                       ).toLocaleString()
                                     : "—"
                             }
@@ -147,7 +142,7 @@ export function CriticalMetrics({ env, refreshKey }: CriticalMetricsProps) {
                             value={
                                 metric.last_error
                                     ? new Date(
-                                          metric.last_error
+                                          metric.last_error,
                                       ).toLocaleString()
                                     : "—"
                             }

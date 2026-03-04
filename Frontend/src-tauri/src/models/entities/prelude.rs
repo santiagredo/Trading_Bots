@@ -6,6 +6,8 @@ pub use super::critical_metrics::Entity as CriticalMetrics;
 pub use super::error_log::Entity as ErrorLog;
 pub use super::indicators::Entity as Indicators;
 pub use super::integration_log::Entity as IntegrationLog;
+pub use super::integration_settings::Entity as IntegrationSettings;
+pub use super::integrations::Entity as Integrations;
 pub use super::ledgers::Entity as Ledgers;
 pub use super::orders::Entity as Orders;
 pub use super::pairs::Entity as Pairs;

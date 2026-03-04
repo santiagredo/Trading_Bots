@@ -4,7 +4,7 @@ import { Play, Square, RotateCcw } from "lucide-react";
 import { UserCommand } from "@/types/user-commands";
 import { Environment } from "@/lib/hooks/use-environment";
 import { CacheHealthCheck } from "@/interfaces/health-check";
-import { RuntimeHealthState } from "@/types/runtime-health-state";
+import { LifecycleState, mapRuntimeState } from "@/types/life-cycle-state";
 
 interface EngineControlPanelProps {
     engineRunning?: boolean;
@@ -19,14 +19,29 @@ export function EngineControlPanel({
     env,
     healthCheck,
 }: EngineControlPanelProps) {
-    const flags = getEnvHealthFlags(healthCheck, env);
-    const healthState = resolveRuntimeHealthState(flags);
+    const rawState =
+        env === "dev"
+            ? healthCheck?.runtime_dev_status
+            : healthCheck?.runtime_prod_status;
+
+    const healthState = mapRuntimeState(rawState);
+
     const envDesc = env === "dev" ? "development" : "production";
 
-    const canStart = healthState === "down";
-    const canStop = healthState === "healthy" || healthState === "degraded";
-    const canRestart = healthState === "healthy" || healthState === "degraded";
+    const canStart =
+        env === "dev"
+            ? healthCheck?.runtime_dev_status === "off"
+            : healthCheck?.runtime_prod_status === "off";
 
+    const canStop =
+        env === "dev"
+            ? healthCheck?.runtime_dev_status === "running"
+            : healthCheck?.runtime_prod_status === "running";
+
+    const canRestart =
+        env === "dev"
+            ? healthCheck?.runtime_dev_status === "running"
+            : healthCheck?.runtime_prod_status === "running";
     return (
         <Card>
             <CardHeader className="flex flex-row items-center justify-between">
@@ -71,48 +86,19 @@ export function EngineControlPanel({
     );
 }
 
-function getEnvHealthFlags(
-    health: CacheHealthCheck | null,
-    env: Environment
-): string[] {
-    if (!health) return [];
-
-    const suffix = env === "prod" ? "_prod_is_init" : "_dev_is_init";
-
-    return Object.entries(health)
-        .filter(([key]) => key.includes(suffix))
-        .map(([, value]) => value);
-}
-
-function resolveRuntimeHealthState(flags: string[]): RuntimeHealthState {
-    if (flags.length < 1) return "down";
-
-    const allOk = flags.every((v) => v === "true");
-    const allFalse = flags.every((v) => v === "false");
-
-    if (allOk) return "healthy";
-    if (allFalse) return "down";
-    return "degraded";
-}
-
-function RuntimeHealthBadge({ state }: { state: RuntimeHealthState }) {
+function RuntimeHealthBadge({ state }: { state: LifecycleState }) {
     const map = {
-        healthy: "bg-success text-black",
-        degraded: "bg-yellow-500 text-black",
-        down: "bg-red-500 text-white",
-    };
-
-    const label = {
-        healthy: "RUNTIME HEALTHY",
-        degraded: "RUNTIME DEGRADED",
-        down: "RUNTIME DOWN",
+        Running: "bg-success text-black",
+        Stopping: "bg-yellow-500 text-black",
+        Starting: "bg-yellow-500 text-black",
+        Off: "bg-red-500 text-white",
     };
 
     return (
         <div
             className={`text-xs px-2 py-1 rounded font-semibold ${map[state]}`}
         >
-            {label[state]}
+            {state}
         </div>
     );
 }

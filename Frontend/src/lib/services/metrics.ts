@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { CriticalMetric, Metric } from "@/interfaces/entities/metric";
+import { Metric } from "@/interfaces/entities/metric";
 import { Result } from "@/types/result";
 
 // db
@@ -17,10 +17,10 @@ async function select_metrics(env: string): Promise<Result<Metric[]>> {
 
 // runtime
 async function get_active_metric(
-    env: string
-): Promise<Result<CriticalMetric | null>> {
+    env: string,
+): Promise<Result<Metric | null>> {
     try {
-        const data = await invoke<CriticalMetric | null>("get_active_metric", {
+        const data = await invoke<Metric | null>("get_active_metric", {
             env,
         });
 
@@ -35,6 +35,6 @@ export const metricService = {
     selectAll: (env: string): Promise<Result<Metric[]>> => select_metrics(env),
 
     // runtime
-    getActive: (env: string): Promise<Result<CriticalMetric | null>> =>
+    getActive: (env: string): Promise<Result<Metric | null>> =>
         get_active_metric(env),
 };

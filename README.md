@@ -4,6 +4,9 @@ A modular, real-time, multi-strategy trading engine built in Rust, designed to e
 
 > Built for performance, extensibility, and full runtime control.
 
+<img width="1920" height="1030" alt="image" src="https://github.com/user-attachments/assets/83b193e3-ff66-4ab8-b9b9-9b9e43ad84c2" />
+
+
 ---
 
 ## Overview
